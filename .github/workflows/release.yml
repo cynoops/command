@@ -6,6 +6,8 @@ on:
       - 'v*'
 jobs:
   build:
+    permissions:
+      contents: write
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
