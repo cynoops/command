@@ -1,0 +1,213 @@
+:root{
+  --bg: #0b1118;
+  --bg-elev: #111927;
+  --line: #213043;
+  --text: #e7edf6;
+  --muted: #a9b7c6;
+  --accent: #3b82f6;
+  --accent-2: #60a5fa;
+  --danger: #ef4444;
+  --ok: #10b981;
+  --tab-h: 42px;
+  --header-h: 56px;
+  --footer-h: 40px;
+  --radius: 12px;
+  --shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+
+*{ box-sizing: border-box; }
+html, body { height: 100%; }
+body{
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--text);
+  background: linear-gradient(180deg, #0b1118 0%, #0a0f16 100%);
+}
+
+.app{
+  display: grid;
+  grid-template-rows: var(--header-h) 1fr var(--footer-h);
+  height: 100vh;
+}
+
+/* ---------------- Header ---------------- */
+.app-header{
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand{
+  display: flex; align-items: center; gap: 8px;
+  min-width: 0;
+}
+.brand-mark{ font-size: 18px; }
+.brand-name{
+  font-size: 14px; font-weight: 700; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Hide the tab radios */
+.tab-input{ position: absolute; left: -9999px; }
+
+/* Center menu */
+.main-menu{
+  display: inline-flex; align-items: center; gap: 6px;
+  justify-self: center;
+  background: color-mix(in oklab, var(--bg-elev) 75%, #000 25%);
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.tab{
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--tab-h);
+  min-width: 92px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px; font-weight: 600; letter-spacing: .02em;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s ease;
+}
+.tab:hover{ color: var(--text); }
+
+/* Checked states */
+#tab-map:checked ~ .main-menu label[for="tab-map"],
+#tab-settings:checked ~ .main-menu label[for="tab-settings"]{
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #001225;
+  box-shadow: var(--shadow);
+}
+
+/* Right actions */
+.actions{
+  justify-self: end;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.serial-btn{
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  height: 36px;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, transform .04s ease-in-out;
+}
+.serial-btn:hover{ border-color: var(--accent); }
+.serial-btn:active{ transform: translateY(1px); }
+.serial-btn .icon{ width: 18px; height: 18px; fill: currentColor; opacity: .9; }
+.serial-btn .serial-label{ font-size: 13px; font-weight: 600; }
+
+.status-dot{
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid #0008;
+  box-shadow: 0 0 0 2px #0003 inset;
+}
+.status-dot[data-state="disconnected"]{ background: var(--danger); }
+.status-dot[data-state="connecting"]  { background: #f59e0b; } /* amber */
+.status-dot[data-state="connected"]   { background: var(--ok); }
+
+/* ---------------- Main ---------------- */
+.app-main{
+  position: relative;
+  overflow: hidden;
+}
+
+/* View switching via CSS */
+.view{ display: none; height: 100%; }
+#tab-map:checked ~ .app-main #view-map{ display: block; }
+#tab-settings:checked ~ .app-main #view-settings{ display: block; }
+
+/* MAP view */
+.view-map{
+  position: relative;
+}
+.map-container{
+  position: absolute; inset: 0;
+  /* keep controls above footer */
+  padding-bottom: calc(var(--footer-h) + 6px);
+}
+
+/* SETTINGS view */
+.view-settings{
+  padding: 16px;
+  overflow: auto;
+}
+.panel{
+  max-width: 960px;
+  margin: 0 auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.panel h2{
+  margin: 0 0 12px 0;
+  font-size: 16px;
+}
+.form-grid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 12px;
+}
+@media (max-width: 720px){
+  .form-grid{ grid-template-columns: 1fr; }
+}
+.field{ display: flex; flex-direction: column; gap: 6px; }
+.label{ font-size: 12px; color: var(--muted); }
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select{
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  height: 36px;
+  padding: 0 10px;
+  outline: none;
+}
+input:focus, select:focus{ border-color: var(--accent); }
+
+/* ---------------- Footer ---------------- */
+.app-footer{
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.stat{
+  display: inline-flex; align-items: baseline; gap: 6px;
+  min-width: 0;
+}
+.k{ color: var(--muted); }
+.v{
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Mapbox GL niceties (optional) */
+.mapboxgl-control-container{
+  margin-bottom: var(--footer-h);
+}
+.mapboxgl-ctrl, .mapboxgl-ctrl-group{
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.4));
+}
