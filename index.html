@@ -44,6 +44,12 @@
           <span class="serial-label">Connect</span>
           <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
         </button>
+        <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 10V4h6v2H6v4H4zm10-6h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 6h-6v-2h4v-4h2v6z" />
+          </svg>
+          <span class="serial-label">Full Screen</span>
+        </button>
       </div>
     </header>
 
@@ -52,6 +58,14 @@
       <!-- MAP VIEW -->
       <section id="view-map" class="view view-map" role="tabpanel" aria-labelledby="tab-map">
         <div id="map" class="map-container" aria-label="Interactive map"></div>
+        <!-- Floating serial monitor -->
+        <div id="serialFloat" class="serial-float" hidden>
+          <div class="serial-float-header">
+            <span>Serial Monitor</span>
+            <button id="serialFloatClose" class="btn-icon" title="Close serial monitor">×</button>
+          </div>
+          <pre id="serialFloatBody" class="serial-float-body" aria-live="polite"></pre>
+        </div>
         <!-- You’ll initialize the map in your preload/renderer JS and update footer stats by ID -->
       </section>
 
@@ -104,7 +118,32 @@
     </footer>
   </div>
 
+  <!-- Connect Modal -->
+  <div id="connectModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="connectTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="connectTitle">Connect to Serial Port</h3>
+        <button id="connectClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="portsContainer" class="ports-list" role="listbox" aria-label="Available serial ports">
+          <div class="muted">Scanning ports…</div>
+        </div>
+        <div class="modal-row">
+          <label class="field small">
+            <span class="label">Baud</span>
+            <input id="connectBaud" type="number" value="115200" />
+          </label>
+          <div class="spacer"></div>
+          <button id="refreshPorts" class="btn">Refresh</button>
+          <button id="connectBtnAction" class="btn btn-primary">Connect to port</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Your renderer bundle goes here if needed -->
-  <!-- <script src="./renderer.js"></script> -->
+  <script src="./renderer.js"></script>
 </body>
 </html>
