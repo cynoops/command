@@ -1,12 +1,12 @@
 {
   "name": "command",
-  "version": "1.0.0",
+  "version": "0.0.1-alpha",
   "main": "index.js",
   "build": {
     "appId": "com.cynoops.command",
     "files": [
       "dist/**",
-      "main.js",
+      "index.js",
       "preload.js",
       "index.html",
       "styles.css"
