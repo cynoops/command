@@ -2,6 +2,8 @@
 
 Cross‑platform desktop app for planning and annotating maps, built with Electron and Mapbox GL. Command lets you browse a map, search places, draw shapes/lines/POIs, measure distance/area, and save your work as a portable GeoJSON FeatureCollection. It also includes a simple serial monitor for field devices.
 
+[![Build & Release](https://github.com/cynoops/command/actions/workflows/release.yml/badge.svg)](https://github.com/cynoops/command/actions/workflows/release.yml)
+
 ## Features
 
 - Mapbox GL map with live stats: zoom, center, bearing, pitch, and current style.
@@ -121,5 +123,3 @@ git push origin v0.0.1
 ## License
 
 ISC
-
-[![Build & Release](https://github.com/cynoops/command/actions/workflows/release.yml/badge.svg)](https://github.com/cynoops/command/actions/workflows/release.yml)
