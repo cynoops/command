@@ -217,18 +217,32 @@
       if (!map.getLayer('draw-line')) {
         map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 } });
       }
+      // Base point as colored circle for robust visibility
+      if (!map.getLayer('draw-point-circle')) {
+        map.addLayer({
+          id: 'draw-point-circle', type: 'circle', source: 'draw',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-color': ['coalesce', ['get','color'], '#2196F3'],
+            'circle-radius': 5,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 1
+          }
+        });
+      }
+      // Optional label using icon/text if available
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
           filter: ['==', ['geometry-type'], 'Point'],
           layout: {
-            'text-field': ['coalesce', ['get','icon'], '•'],
+            'text-field': ['coalesce', ['get','icon'], ''],
             'text-size': 18,
             'text-allow-overlap': true,
             'text-anchor': 'center'
           },
           paint: {
-            'text-color': ['coalesce', ['get','color'], '#2196F3']
+            'text-color': ['coalesce', ['get','color'], '#001225']
           }
         });
       }
@@ -1128,14 +1142,17 @@
       (window)._currentTool = tool;
       const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI];
       all.forEach(btn => btn?.classList.remove('active'));
+      // aria-pressed state for buttons
+      all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
       if (poiPalette) poiPalette.hidden = true;
       switch (tool) {
-        case 'rect': toolRect?.classList.add('active'); break;
-        case 'poly': toolPoly?.classList.add('active'); break;
-        case 'circle': toolCircle?.classList.add('active'); break;
-        case 'line': toolLine?.classList.add('active'); break;
+        case 'rect': toolRect?.classList.add('active'); toolRect?.setAttribute('aria-pressed', String(true)); break;
+        case 'poly': toolPoly?.classList.add('active'); toolPoly?.setAttribute('aria-pressed', String(true)); break;
+        case 'circle': toolCircle?.classList.add('active'); toolCircle?.setAttribute('aria-pressed', String(true)); break;
+        case 'line': toolLine?.classList.add('active'); toolLine?.setAttribute('aria-pressed', String(true)); break;
         case 'poi':
           toolPOI?.classList.add('active');
+          toolPOI?.setAttribute('aria-pressed', String(true));
           if (poiPalette) poiPalette.hidden = false;
           break;
         default: break;

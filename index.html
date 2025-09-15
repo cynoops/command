@@ -260,6 +260,20 @@
     </div>
   </div>
 
+  <!-- Color Picker Modal -->
+  <div id="colorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="colorTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="colorTitle">Pick Color</h3>
+        <button id="colorClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="colorGrid" class="color-grid" role="grid" aria-label="Colors"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Mapbox GL JS (CSP build) -->
   <script src="./dist/vendor/mapbox-gl/mapbox-gl-csp.js"></script>
   <!-- Your renderer bundle goes here -->
