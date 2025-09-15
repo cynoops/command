@@ -296,6 +296,9 @@
       if (src) src.setData(drawStore);
       updateDrawingsPanel();
     };
+    const refreshDrawMapOnly = () => {
+      try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
+    };
 
     // Expose a loader to replace drawings from external data (file open)
     (window).loadDrawings = (fc) => {
@@ -579,7 +582,7 @@
         f.properties.name = (nameEl.textContent || '').trim();
       };
       nameEl.addEventListener('blur', () => { commitName(); setDirty(true); refreshDraw(); });
-      nameEl.addEventListener('input', () => { commitName(); setDirty(true); refreshDraw(); });
+      nameEl.addEventListener('input', () => { commitName(); setDirty(true); refreshDrawMapOnly(); });
       nameEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
       });
