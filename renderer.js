@@ -233,6 +233,9 @@
       if (!map.getSource('edit-verts')) {
         map.addSource('edit-verts', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
       }
+      if (!map.getSource('edit-mid')) {
+        map.addSource('edit-mid', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
+      }
       if (!map.getLayer('draw-fill')) {
         map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 } });
       }
@@ -301,10 +304,13 @@
       if (!map.getLayer('edit-verts')) {
         map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 7 }, layout: { visibility: 'none' } });
       }
+      if (!map.getLayer('edit-mid')) {
+        map.addLayer({ id: 'edit-mid', type: 'circle', source: 'edit-mid', paint: { 'circle-color': '#00E5FF', 'circle-stroke-color': '#004d5a', 'circle-stroke-width': 1, 'circle-radius': 5 }, layout: { visibility: 'none' } });
+      }
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); (window)._bindEditInteractions && (window)._bindEditInteractions(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
+    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); (window)._bindEditInteractions && (window)._bindEditInteractions(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); map.setLayoutProperty('edit-mid','visibility','visible'); } } catch {} });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
@@ -323,6 +329,7 @@
     const refreshEditVerts = () => {
       try{
         const verts = [];
+        const mids = [];
         const eid = (window)._editTarget;
         if (eid) {
           const f = drawStore.features.find(x => x.properties?.id === eid);
@@ -332,12 +339,17 @@
               for (let i=0;i<ring.length-1;i++){
                 const c = ring[i];
                 verts.push({ type:'Feature', properties:{ fid: f.properties?.id, idx: i }, geometry:{ type:'Point', coordinates:[c[0], c[1]] } });
+                const n = ring[i+1];
+                const mx = (c[0]+n[0])/2, my = (c[1]+n[1])/2;
+                mids.push({ type:'Feature', properties:{ fid: f.properties?.id, insAfter: i }, geometry:{ type:'Point', coordinates:[mx, my] } });
               }
             }
           }
         }
         const src = map.getSource('edit-verts');
         if (src) src.setData({ type:'FeatureCollection', features: verts });
+        const msrc = map.getSource('edit-mid');
+        if (msrc) msrc.setData({ type:'FeatureCollection', features: mids });
       }catch{}
     };
     (window)._refreshEditVerts = refreshEditVerts;
@@ -666,13 +678,13 @@
       const startEdit = () => {
         (window)._editTarget = f.properties?.id || null;
         updateEditBtnState();
-        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-verts'); }catch{} } }catch{}
+        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); m.setLayoutProperty('edit-mid','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-mid'); m.moveLayer('edit-verts'); }catch{} } }catch{}
         if (f.geometry?.type==='Polygon') flyToFeaturePolygon(f);
       };
       const stopEdit = () => {
         (window)._editTarget = null;
         updateEditBtnState();
-        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); refreshEditVerts(); } }catch{}
+        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); m.setLayoutProperty('edit-mid','visibility','none'); refreshEditVerts(); } }catch{}
         setDirty(true); refreshDraw();
       };
       editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
@@ -1695,6 +1707,18 @@
       } catch {}
       try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
     };
+    // Begin drag helpers
+    const beginDrag = () => {
+      try {
+        const m = getM(); if (!m) return;
+        m.getCanvas().style.cursor = 'grabbing';
+        m.dragPan.disable();
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', onUp, true);
+        document.addEventListener('touchmove', onMove, { capture:true, passive:false });
+        document.addEventListener('touchend', onUp, { capture:true });
+      } catch {}
+    };
     const onDown = (e) => {
       console.log((window)._editTarget);
       if (!(window)._editTarget) return;
@@ -1702,17 +1726,7 @@
       if (!feat) return;
       if (e.originalEvent && 'button' in e.originalEvent && e.originalEvent.button !== 0) return; // left click only
       dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
-      try {
-        const m = getM(); if (!m) return;
-        m.getCanvas().style.cursor = 'grabbing';
-        m.dragPan.disable();
-        // use document-level listeners to avoid duplicate events from map + document
-        // Also listen on document to ensure we keep tracking outside the canvas
-        document.addEventListener('mousemove', onMove, true);
-        document.addEventListener('mouseup', onUp, true);
-        document.addEventListener('touchmove', onMove, { capture:true, passive:false });
-        document.addEventListener('touchend', onUp, { capture:true });
-      } catch {}
+      beginDrag();
       e.preventDefault();
     };
     // Provide a binder we can call once the map exists
@@ -1733,6 +1747,40 @@
           // Layer-specific events (attach now; Mapbox allows binding before layer exists)
           m.on('mousedown', 'edit-verts', onDown);
           m.on('touchstart', 'edit-verts', onDown, { passive:false });
+          m.on('mousedown', 'edit-mid', (e) => {
+            if (!(window)._editTarget) return;
+            const feat = e.features && e.features[0]; if (!feat) return;
+            const fid = feat.properties?.fid; const after = Number(feat.properties?.insAfter);
+            const ds = (window)._drawStore; if (!ds) return;
+            const f = ds.features.find(x => x.properties?.id === fid); if (!f || f.geometry?.type !== 'Polygon') return;
+            const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+            if (!Array.isArray(ring) || after < 0 || after >= ring.length-1) return;
+            const coord = feat.geometry && feat.geometry.coordinates; if (!coord) return;
+            ring.splice(after+1, 0, [coord[0], coord[1]]);
+            ring[ring.length-1] = ring[0];
+            try{ const src = m.getSource('draw'); if (src) src.setData(ds); }catch{}
+            try{ (window)._refreshEditVerts && (window)._refreshEditVerts(); }catch{}
+            dragging = { fid, idx: after+1 };
+            beginDrag();
+            e.preventDefault();
+          });
+          m.on('touchstart', 'edit-mid', (e) => {
+            if (!(window)._editTarget) return;
+            const feat = e.features && e.features[0]; if (!feat) return;
+            const fid = feat.properties?.fid; const after = Number(feat.properties?.insAfter);
+            const ds = (window)._drawStore; if (!ds) return;
+            const f = ds.features.find(x => x.properties?.id === fid); if (!f || f.geometry?.type !== 'Polygon') return;
+            const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+            if (!Array.isArray(ring) || after < 0 || after >= ring.length-1) return;
+            const coord = feat.geometry && feat.geometry.coordinates; if (!coord) return;
+            ring.splice(after+1, 0, [coord[0], coord[1]]);
+            ring[ring.length-1] = ring[0];
+            try{ const src = m.getSource('draw'); if (src) src.setData(ds); }catch{}
+            try{ (window)._refreshEditVerts && (window)._refreshEditVerts(); }catch{}
+            dragging = { fid, idx: after+1 };
+            beginDrag();
+            e.preventDefault();
+          }, { passive:false });
           m.on('mouseenter', 'edit-verts', () => { if ((window)._editTarget) m.getCanvas().style.cursor = 'grab'; });
           m.on('mouseleave', 'edit-verts', () => { if ((window)._editTarget && !dragging) m.getCanvas().style.cursor = ''; });
           bound = true;
