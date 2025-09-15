@@ -334,7 +334,7 @@ ipcMain.handle('ai:transform-drawing', async (_e, { feature, prompt, apiKey: pro
         { role: 'system', content: sys },
         { role: 'user', content: user }
       ],
-      temperature: 0.2,
+      temperature: 1,
     });
 
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {

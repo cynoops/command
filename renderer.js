@@ -736,13 +736,16 @@
         const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt, openaiKey);
         if (!result || !result.ok) { aiError.textContent = result?.error || 'AI request failed'; return; }
         // Constrain features to original geometry region
-        const fc = constrainToOriginal(aiTarget, result.featureCollection);
-        // Replace the target with new features
+        const constrained = constrainToOriginal(aiTarget, result.featureCollection);
+        const candidates = (constrained && Array.isArray(constrained.features)) ? constrained.features.filter(f => f && f.type === 'Feature' && f.geometry && ['Polygon','LineString','Point'].includes(f.geometry.type)) : [];
+        if (!candidates.length) {
+          aiError.textContent = 'The AI response did not contain valid features within the original area. The drawing was not changed.';
+          return;
+        }
+        // Replace the target with new features only after validating we have some
         const idx = drawStore.features.findIndex(x => x.properties?.id === aiTarget.properties?.id);
         if (idx >= 0) drawStore.features.splice(idx, 1);
-        const addable = Array.isArray(fc.features) ? fc.features : [];
-        addable.forEach(feat => {
-          if (!feat || feat.type !== 'Feature') return;
+        candidates.forEach(feat => {
           drawStore.features.push(annotateFeature(feat, (feat.geometry?.type === 'Polygon') ? 'polygon' : (feat.geometry?.type === 'LineString') ? 'line' : 'poi'));
         });
         setDirty(true);
