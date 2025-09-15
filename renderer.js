@@ -64,6 +64,7 @@
   const aiInput = q('#aiInput');
   const aiSubmit = q('#aiSubmit');
   const aiError = q('#aiError');
+  const aiSpinner = q('#aiSpinner');
   let aiTarget = null;
 
   let selectedPath = null;
@@ -650,6 +651,61 @@
       if (g.type === 'LineString') return `Length: ${fmtLen(lengthMeters(g.coordinates||[]))}`;
       return '';
     }
+    // ---- Constraint helpers ----
+    function bboxOfGeom(g){
+      let minLng=Infinity,minLat=Infinity,maxLng=-Infinity,maxLat=-Infinity;
+      const upd=(lng,lat)=>{ if(!Number.isFinite(lng)||!Number.isFinite(lat))return; if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng; if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat; };
+      if(!g) return null;
+      const t=g.type, c=g.coordinates;
+      if(t==='Point'){ upd(c[0],c[1]); }
+      else if(t==='LineString'||t==='MultiPoint'){ c.forEach(p=>upd(p[0],p[1])); }
+      else if(t==='Polygon'||t==='MultiLineString'){ c.forEach(r=>r.forEach(p=>upd(p[0],p[1]))); }
+      else if(t==='MultiPolygon'){ c.forEach(poly=>poly.forEach(r=>r.forEach(p=>upd(p[0],p[1])))); }
+      if(!Number.isFinite(minLng)) return null;
+      return {minLng,minLat,maxLng,maxLat};
+    }
+    function pointInPoly(pt, ring){
+      // ray casting; ring is array of [lng,lat]
+      let [x,y]=pt, inside=false;
+      for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+        const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+        const intersect=((yi>y)!=(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi+1e-12)+xi);
+        if(intersect) inside=!inside;
+      }
+      return inside;
+    }
+    function constrainToOriginal(orig, fc){
+      const out = { type:'FeatureCollection', features: [] };
+      const g0 = orig?.geometry; if(!g0) return fc || out;
+      const type0 = g0.type;
+      let polyRing = null; let bbox=null; let buf=0;
+      if(type0==='Polygon'){
+        polyRing = Array.isArray(g0.coordinates)&&g0.coordinates[0] ? g0.coordinates[0] : null;
+      } else {
+        // For lines/points, use bbox with small buffer (~2% of span)
+        bbox = bboxOfGeom(g0);
+        if(bbox){ const spanLng=bbox.maxLng-bbox.minLng, spanLat=bbox.maxLat-bbox.minLat; buf = 0.02*Math.max(spanLng,spanLat); }
+      }
+      const withinBbox = (lng,lat)=> lng>= (bbox.minLng-buf) && lng<= (bbox.maxLng+buf) && lat>= (bbox.minLat-buf) && lat<= (bbox.maxLat+buf);
+      const keepPoint = (lng,lat)=> polyRing ? pointInPoly([lng,lat], polyRing) : withinBbox(lng,lat);
+      (fc?.features||[]).forEach(f=>{
+        const g=f?.geometry; if(!g){ return; }
+        const t=g.type, c=g.coordinates;
+        let ok=false;
+        if(t==='Point'){
+          ok = keepPoint(c[0],c[1]);
+        } else if(t==='LineString'){
+          ok = Array.isArray(c) && c.every(p=>keepPoint(p[0],p[1]));
+        } else if(t==='Polygon'){
+          const ring = Array.isArray(c)&&c[0] ? c[0] : [];
+          ok = ring.length>2 && ring.every(p=>keepPoint(p[0],p[1]));
+        } else {
+          ok = false;
+        }
+        if(ok) out.features.push(f);
+      });
+      return out;
+    }
     async function openAiModal(feature){
       aiTarget = feature;
       aiError.textContent = '';
@@ -674,10 +730,13 @@
         if (!aiTarget) return;
         const prompt = (aiInput?.value || '').trim();
         aiError.textContent = '';
-        aiSubmit.disabled = true; aiSubmit.textContent = 'Submitting…';
-        const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt);
+        aiSubmit.disabled = true; aiSubmit.textContent = 'Submitting…'; if (aiSpinner) aiSpinner.style.display='inline-block'; if (aiInput) aiInput.disabled = true;
+        // API key from settings/localStorage
+        const openaiKey = (localStorage.getItem('openai.key') || q('#settingOpenAIKey')?.value || '').trim();
+        const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt, openaiKey);
         if (!result || !result.ok) { aiError.textContent = result?.error || 'AI request failed'; return; }
-        const fc = result.featureCollection;
+        // Constrain features to original geometry region
+        const fc = constrainToOriginal(aiTarget, result.featureCollection);
         // Replace the target with new features
         const idx = drawStore.features.findIndex(x => x.properties?.id === aiTarget.properties?.id);
         if (idx >= 0) drawStore.features.splice(idx, 1);
@@ -692,7 +751,7 @@
       } catch(e){
         aiError.textContent = String(e);
       } finally {
-        aiSubmit.disabled = false; aiSubmit.textContent = 'SUBMIT';
+        aiSubmit.disabled = false; aiSubmit.textContent = 'SUBMIT'; if (aiSpinner) aiSpinner.style.display='none'; if (aiInput) aiInput.disabled = false;
       }
     });
 
@@ -720,6 +779,13 @@
       settingHomeAddress.addEventListener('change', () => {
         localStorage.setItem('map.homeAddress', settingHomeAddress.value.trim());
       });
+    }
+    // Persist OpenAI API key
+    const settingOpenAIKey = q('#settingOpenAIKey');
+    if (settingOpenAIKey) {
+      const saved = localStorage.getItem('openai.key');
+      if (saved && !settingOpenAIKey.value) settingOpenAIKey.value = saved;
+      settingOpenAIKey.addEventListener('change', () => { localStorage.setItem('openai.key', settingOpenAIKey.value.trim()); });
     }
     styleInput?.addEventListener('change', () => {
       const v = styleInput.value.trim();

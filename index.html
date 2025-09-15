@@ -166,6 +166,10 @@
               <input id="settingGoogleKey" type="password" placeholder="AIza•••" />
             </label>
             <label class="field">
+              <span class="label">OpenAI API Key</span>
+              <input id="settingOpenAIKey" type="password" placeholder="sk-•••" />
+            </label>
+            <label class="field">
               <span class="label">Home Address</span>
               <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
             </label>
@@ -280,6 +284,7 @@
           <textarea id="aiInput" rows="4" placeholder="For example: Split the polygon into 2 equal areas; Divide the polygon into cells of 40,000 m²; Extend the line by 2 km to the northeast; Replace with 5 evenly spaced POIs along the line;"></textarea>
         </label>
         <div class="modal-row">
+          <div id="aiSpinner" aria-hidden="true"></div>
           <div class="spacer"></div>
           <button id="aiSubmit" class="btn btn-primary">SUBMIT</button>
         </div>

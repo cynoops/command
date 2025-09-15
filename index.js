@@ -309,9 +309,9 @@ ipcMain.handle("app:toggleFullScreen", () => {
 });
 
 // --- AI: transform a drawing via OpenAI ---
-ipcMain.handle('ai:transform-drawing', async (_e, { feature, prompt }) => {
+ipcMain.handle('ai:transform-drawing', async (_e, { feature, prompt, apiKey: providedKey }) => {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = providedKey || process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return { ok: false, error: 'Missing OPENAI_API_KEY in environment.' };
     }

@@ -64,5 +64,5 @@ contextBridge.exposeInMainWorld("file", {
 
 // AI bridge
 contextBridge.exposeInMainWorld("ai", {
-  transformDrawing: (feature, prompt) => ipcRenderer.invoke('ai:transform-drawing', { feature, prompt })
+  transformDrawing: (feature, prompt, apiKey) => ipcRenderer.invoke('ai:transform-drawing', { feature, prompt, apiKey })
 });
