@@ -212,10 +212,10 @@
         map.addSource('draw-draft', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       }
       if (!map.getLayer('draw-fill')) {
-        map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#2196F3', 'fill-opacity': 0.2 } });
+        map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 } });
       }
       if (!map.getLayer('draw-line')) {
-        map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', paint: { 'line-color': '#64b5f6', 'line-width': 2 } });
+        map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 } });
       }
       if (!map.getLayer('draw-point')) {
         map.addLayer({
@@ -226,6 +226,9 @@
             'text-size': 18,
             'text-allow-overlap': true,
             'text-anchor': 'center'
+          },
+          paint: {
+            'text-color': ['coalesce', ['get','color'], '#2196F3']
           }
         });
       }
@@ -306,7 +309,14 @@
     const fmtLen = (m) => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
     const fmtArea = (a) => a >= 1_000_000 ? `${(a/1_000_000).toFixed(2)} km²` : `${Math.round(a).toLocaleString()} m²`;
     const newId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
-    const annotateFeature = (f, kind) => { f.properties = { ...(f.properties||{}), id: newId(), kind }; return f; };
+    const colorPalette = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#4caf50','#ff9800','#795548','#607d8b','#f44336'];
+    let lastColorIndex = -1;
+    const nextColor = () => { lastColorIndex = (lastColorIndex + 1) % colorPalette.length; return colorPalette[lastColorIndex]; };
+    const annotateFeature = (f, kind) => {
+      f.properties = { ...(f.properties||{}), id: newId(), kind };
+      if (!f.properties.color) f.properties.color = nextColor();
+      return f;
+    };
     const circleFrom = (center, edge, steps=64) => {
       const latRad = center.lat * Math.PI/180;
       const mPerDegLng = Math.max(1e-6, Math.cos(latRad) * metersPerDegLat);
@@ -361,7 +371,8 @@
       if (tool === 'poi') {
         const icon = (window)._currentPoiIcon || '📍';
         // Store as a Point feature so it can be saved/loaded
-        drawStore.features.push({ type:'Feature', properties:{ id: `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`, kind:'poi', icon }, geometry:{ type:'Point', coordinates:[e.lngLat.lng, e.lngLat.lat] } });
+        const poi = { type:'Feature', properties:{ icon }, geometry:{ type:'Point', coordinates:[e.lngLat.lng, e.lngLat.lat] } };
+        drawStore.features.push(annotateFeature(poi, 'poi'));
         setDirty(true);
         refreshDraw();
         return;
@@ -425,6 +436,29 @@
       typeEl.className = 'drawing-type';
       const size = document.createElement('div');
       size.className = 'drawing-size';
+      const actions = document.createElement('div');
+      actions.className = 'drawing-actions';
+      const colorBtn = document.createElement('button');
+      colorBtn.className = 'drawing-color';
+      const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#2196F3';
+      const applyColorToBtn = () => { try { colorBtn.style.backgroundColor = getColor(); } catch {} };
+      applyColorToBtn();
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = getColor();
+      colorInput.style.position = 'absolute';
+      colorInput.style.left = '-9999px';
+      colorInput.tabIndex = -1;
+      colorBtn.title = 'Change color';
+      colorBtn.addEventListener('click', () => { try { colorInput.click(); } catch {} });
+      colorInput.addEventListener('change', () => {
+        f.properties = f.properties || {};
+        f.properties.color = colorInput.value;
+        applyColorToBtn();
+        setDirty(true);
+        refreshDraw();
+      });
+
       const del = document.createElement('button');
       del.className = 'drawing-del'; del.textContent = '×'; del.title = 'Delete';
       const g = f.geometry;
@@ -444,9 +478,12 @@
       typeEl.textContent = label;
       size.textContent = sizeText;
       meta.appendChild(typeEl); meta.appendChild(size);
-      // Place as grid items: name (col 1, row 1), delete (col 2, row 1), meta spans both columns in row 2
+      // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
-      row.appendChild(del);
+      actions.appendChild(colorBtn);
+      actions.appendChild(colorInput);
+      actions.appendChild(del);
+      row.appendChild(actions);
       row.appendChild(meta);
       row.addEventListener('mouseenter', () => setHighlight(f.properties.id));
       row.addEventListener('mouseleave', () => setHighlight(null));
