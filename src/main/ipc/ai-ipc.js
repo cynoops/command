@@ -8,6 +8,7 @@ function registerAIIPC({ ipcMain }, state) {
   ipcMain.handle('ai:transform-drawing', async (_e, { feature, prompt, apiKey: providedKey }) => {
     try {
       const apiKey = providedKey || process.env.OPENAI_API_KEY;
+      console.log({apiKey});
       if (!apiKey) {
         return { ok: false, error: 'Missing OPENAI_API_KEY in environment.' };
       }
@@ -16,6 +17,7 @@ function registerAIIPC({ ipcMain }, state) {
         catch { return { ok:false, error:'OpenAI SDK not installed. Add \'openai\' to dependencies and run npm install.' }; }
       }
       const geomStr = JSON.stringify(feature?.geometry || null);
+      console.log({geomStr})
       const sys = [
         'You are a mapping assistant. Your task is to transform a given geometry into new geometries as requested.',
         'Output strictly a GeoJSON FeatureCollection in JSON with no additional commentary.',
@@ -29,7 +31,8 @@ function registerAIIPC({ ipcMain }, state) {
 
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
-        model: 'gpt-5',
+        model: "gpt-4o",
+        max_tokens: 100,
         messages: [
           { role: 'system', content: sys },
           { role: 'user', content: user }
