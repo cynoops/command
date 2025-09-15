@@ -674,6 +674,18 @@
       }
       return inside;
     }
+    function centroidOfGeom(g){
+      try{
+        if (!g) return null;
+        if (g.type === 'Point') return { lng: g.coordinates[0], lat: g.coordinates[1] };
+        const acc = { x:0, y:0, n:0 };
+        const push = (lng,lat)=>{ if(Number.isFinite(lng)&&Number.isFinite(lat)){ acc.x+=lng; acc.y+=lat; acc.n++; } };
+        if (g.type === 'LineString') g.coordinates.forEach(c=>push(c[0],c[1]));
+        if (g.type === 'Polygon') (g.coordinates?.[0]||[]).forEach(c=>push(c[0],c[1]));
+        if (acc.n>0) return { lng: acc.x/acc.n, lat: acc.y/acc.n };
+      }catch{}
+      return null;
+    }
     function constrainToOriginal(orig, fc){
       const out = { type:'FeatureCollection', features: [] };
       const g0 = orig?.geometry; if(!g0) return fc || out;
@@ -682,9 +694,9 @@
       if(type0==='Polygon'){
         polyRing = Array.isArray(g0.coordinates)&&g0.coordinates[0] ? g0.coordinates[0] : null;
       } else {
-        // For lines/points, use bbox with small buffer (~2% of span)
+        // For lines/points, use bbox with relaxed buffer (~10% of span)
         bbox = bboxOfGeom(g0);
-        if(bbox){ const spanLng=bbox.maxLng-bbox.minLng, spanLat=bbox.maxLat-bbox.minLat; buf = 0.02*Math.max(spanLng,spanLat); }
+        if(bbox){ const spanLng=bbox.maxLng-bbox.minLng, spanLat=bbox.maxLat-bbox.minLat; buf = 0.10*Math.max(spanLng,spanLat); }
       }
       const withinBbox = (lng,lat)=> lng>= (bbox.minLng-buf) && lng<= (bbox.maxLng+buf) && lat>= (bbox.minLat-buf) && lat<= (bbox.maxLat+buf);
       const keepPoint = (lng,lat)=> polyRing ? pointInPoly([lng,lat], polyRing) : withinBbox(lng,lat);
@@ -695,10 +707,28 @@
         if(t==='Point'){
           ok = keepPoint(c[0],c[1]);
         } else if(t==='LineString'){
-          ok = Array.isArray(c) && c.every(p=>keepPoint(p[0],p[1]));
+          if (polyRing) {
+            // Relaxed: centroid inside OR at least half the vertices inside
+            const center = centroidOfGeom(g);
+            const insideCount = Array.isArray(c)? c.filter(p=>keepPoint(p[0],p[1])).length : 0;
+            ok = (center && keepPoint(center.lng, center.lat)) || (insideCount >= Math.ceil((c?.length||0)*0.5));
+          } else {
+            // bbox mode: centroid in expanded bbox OR any vertex inside
+            const center = centroidOfGeom(g);
+            const anyInside = Array.isArray(c) && c.some(p=>keepPoint(p[0],p[1]));
+            ok = (center && keepPoint(center.lng, center.lat)) || anyInside;
+          }
         } else if(t==='Polygon'){
           const ring = Array.isArray(c)&&c[0] ? c[0] : [];
-          ok = ring.length>2 && ring.every(p=>keepPoint(p[0],p[1]));
+          if (polyRing) {
+            // Relaxed: centroid inside polygon
+            const center = centroidOfGeom(g);
+            ok = !!(center && keepPoint(center.lng, center.lat)) && ring.length>2;
+          } else {
+            // bbox mode: centroid inside bbox
+            const center = centroidOfGeom(g);
+            ok = !!(center && keepPoint(center.lng, center.lat)) && ring.length>2;
+          }
         } else {
           ok = false;
         }
