@@ -61,3 +61,8 @@ contextBridge.exposeInMainWorld("file", {
     return () => ipcRenderer.off('file:current-file', listener);
   }
 });
+
+// AI bridge
+contextBridge.exposeInMainWorld("ai", {
+  transformDrawing: (feature, prompt) => ipcRenderer.invoke('ai:transform-drawing', { feature, prompt })
+});

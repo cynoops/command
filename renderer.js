@@ -57,6 +57,14 @@
   const colorClose = q('#colorClose');
   const colorGrid = q('#colorGrid');
   const colorState = { onPick: null, current: null };
+  // AI modal
+  const aiModal = q('#aiModal');
+  const aiClose = q('#aiClose');
+  const aiMeta = q('#aiMeta');
+  const aiInput = q('#aiInput');
+  const aiSubmit = q('#aiSubmit');
+  const aiError = q('#aiError');
+  let aiTarget = null;
 
   let selectedPath = null;
   let rxCount = 0;
@@ -552,6 +560,8 @@
 
       const del = document.createElement('button');
       del.className = 'drawing-del'; del.textContent = '×'; del.title = 'Delete';
+      const aiBtn = document.createElement('button');
+      aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions'); aiBtn.textContent = 'AI';
       const g = f.geometry;
       let label = f.properties.kind || g.type;
       let sizeText = '';
@@ -572,6 +582,7 @@
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
       actions.appendChild(colorWrap);
+      actions.appendChild(aiBtn);
       actions.appendChild(del);
       row.appendChild(actions);
       row.appendChild(meta);
@@ -593,6 +604,7 @@
         const idx = drawStore.features.findIndex(x => x.properties?.id === f.properties.id);
         if (idx >= 0) { drawStore.features.splice(idx, 1); setDirty(true); refreshDraw(); setHighlight(null); }
       });
+      aiBtn.addEventListener('click', (e) => { e.stopPropagation(); openAiModal(f); });
       return row;
     };
     const updateDrawingsPanel = () => {
@@ -602,6 +614,87 @@
     };
     updateDrawingsPanel();
     setDirty(false);
+
+    // ---- AI modal helpers ----
+    function centroidOf(f){
+      try{
+        const g = f?.geometry; if (!g) return null;
+        if (g.type === 'Point') return { lng: g.coordinates[0], lat: g.coordinates[1] };
+        const acc = { x:0, y:0, n:0 };
+        const push = (lng,lat)=>{ if(Number.isFinite(lng)&&Number.isFinite(lat)){ acc.x+=lng; acc.y+=lat; acc.n++; } };
+        if (g.type === 'LineString') g.coordinates.forEach(c=>push(c[0],c[1]));
+        if (g.type === 'Polygon') g.coordinates[0].forEach(c=>push(c[0],c[1]));
+        if (acc.n>0) return { lng: acc.x/acc.n, lat: acc.y/acc.n };
+      }catch{}
+      return null;
+    }
+    async function describeLocation(p){
+      try{
+        const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
+        if (!key || !p) return '';
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(p.lat+','+p.lng)}&key=${encodeURIComponent(key)}`;
+        const resp = await fetch(url); const data = await resp.json();
+        if (data.status !== 'OK' || !data.results?.length) return '';
+        const res = data.results[0];
+        const comps = res.address_components || [];
+        const country = comps.find(c => (c.types||[]).includes('country'))?.long_name || '';
+        const city = comps.find(c => (c.types||[]).includes('locality'))?.long_name || '';
+        return [city, country].filter(Boolean).join(', ');
+      }catch{ return ''; }
+    }
+    function summarizeSize(f){
+      const g = f?.geometry; if (!g) return '';
+      if (g.type === 'Polygon') {
+        const ring = g.coordinates?.[0]||[]; return `Area: ${fmtArea(areaSqm(ring))}`;
+      }
+      if (g.type === 'LineString') return `Length: ${fmtLen(lengthMeters(g.coordinates||[]))}`;
+      return '';
+    }
+    async function openAiModal(feature){
+      aiTarget = feature;
+      aiError.textContent = '';
+      if (aiInput) aiInput.value = '';
+      if (aiModal) aiModal.hidden = false;
+      if (aiMeta) {
+        aiMeta.innerHTML = '<div>Loading…</div>';
+        const center = centroidOf(feature);
+        const loc = await describeLocation(center);
+        const parts = [];
+        const sizeText = summarizeSize(feature); if (sizeText) parts.push(`<div>${sizeText}</div>`);
+        if (center) parts.push(`<div>Center: ${center.lng.toFixed(5)}, ${center.lat.toFixed(5)}</div>`);
+        if (loc) parts.push(`<div>Location: ${loc}</div>`);
+        aiMeta.innerHTML = parts.join('');
+      }
+    }
+    function closeAiModal(){ if (aiModal) aiModal.hidden = true; }
+    aiClose?.addEventListener('click', closeAiModal);
+    aiModal?.addEventListener('click', (e) => { const t = e.target; if (t && t.dataset && t.dataset.action === 'close') closeAiModal(); });
+    aiSubmit?.addEventListener('click', async () => {
+      try{
+        if (!aiTarget) return;
+        const prompt = (aiInput?.value || '').trim();
+        aiError.textContent = '';
+        aiSubmit.disabled = true; aiSubmit.textContent = 'Submitting…';
+        const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt);
+        if (!result || !result.ok) { aiError.textContent = result?.error || 'AI request failed'; return; }
+        const fc = result.featureCollection;
+        // Replace the target with new features
+        const idx = drawStore.features.findIndex(x => x.properties?.id === aiTarget.properties?.id);
+        if (idx >= 0) drawStore.features.splice(idx, 1);
+        const addable = Array.isArray(fc.features) ? fc.features : [];
+        addable.forEach(feat => {
+          if (!feat || feat.type !== 'Feature') return;
+          drawStore.features.push(annotateFeature(feat, (feat.geometry?.type === 'Polygon') ? 'polygon' : (feat.geometry?.type === 'LineString') ? 'line' : 'poi'));
+        });
+        setDirty(true);
+        refreshDraw();
+        closeAiModal();
+      } catch(e){
+        aiError.textContent = String(e);
+      } finally {
+        aiSubmit.disabled = false; aiSubmit.textContent = 'SUBMIT';
+      }
+    });
 
     // Expose draw store for saving later
     (window).draw = {
