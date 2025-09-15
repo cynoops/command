@@ -438,23 +438,19 @@
       size.className = 'drawing-size';
       const actions = document.createElement('div');
       actions.className = 'drawing-actions';
-      const colorBtn = document.createElement('button');
-      colorBtn.className = 'drawing-color';
+      const colorWrap = document.createElement('label');
+      colorWrap.className = 'drawing-color';
       const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#2196F3';
-      const applyColorToBtn = () => { try { colorBtn.style.backgroundColor = getColor(); } catch {} };
-      applyColorToBtn();
+      const applyColorToWrap = () => { try { colorWrap.style.backgroundColor = getColor(); } catch {} };
+      applyColorToWrap();
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
       colorInput.value = getColor();
-      colorInput.style.position = 'absolute';
-      colorInput.style.left = '-9999px';
-      colorInput.tabIndex = -1;
-      colorBtn.title = 'Change color';
-      colorBtn.addEventListener('click', () => { try { colorInput.click(); } catch {} });
-      colorInput.addEventListener('change', () => {
+      colorInput.title = 'Change color';
+      colorInput.addEventListener('input', () => {
         f.properties = f.properties || {};
         f.properties.color = colorInput.value;
-        applyColorToBtn();
+        applyColorToWrap();
         setDirty(true);
         refreshDraw();
       });
@@ -480,8 +476,8 @@
       meta.appendChild(typeEl); meta.appendChild(size);
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
-      actions.appendChild(colorBtn);
-      actions.appendChild(colorInput);
+      colorWrap.appendChild(colorInput);
+      actions.appendChild(colorWrap);
       actions.appendChild(del);
       row.appendChild(actions);
       row.appendChild(meta);

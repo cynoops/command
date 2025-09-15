@@ -327,6 +327,18 @@ body{
   border: 1px solid var(--line);
   background: var(--accent);
   cursor: pointer;
+  position: relative;
+}
+.drawing-color input[type="color"]{
+  position: absolute;
+  inset: -2px; /* make the clickable area a bit larger */
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  cursor: pointer;
 }
 .drawing-title{
   flex: 1 1 auto;
