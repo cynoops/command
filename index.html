@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; script-src 'self'; connect-src 'self' data: blob:;"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com; worker-src 'self' blob:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Electron Map App</title>
@@ -12,27 +12,22 @@
   <!-- Your main app styles -->
   <link rel="stylesheet" href="./styles.css" />
 
-  <!-- Mapbox GL CSS (adjust the path if you bundle it locally) -->
-  <!-- <link rel="stylesheet" href="./vendor/mapbox-gl.css" /> -->
+  <!-- Mapbox GL CSS (bundled locally into dist/vendor) -->
+  <link rel="stylesheet" href="./dist/vendor/mapbox-gl/mapbox-gl.css" />
 </head>
 <body>
   <div class="app">
 
     <!-- Header -->
     <header class="app-header">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">🗺️</span>
-        <h1 class="brand-name">Map Console</h1>
-      </div>
-
-      <!-- Tabs (CSS-only) -->
-      <input id="tab-map" type="radio" name="main-tabs" class="tab-input" checked />
-      <input id="tab-settings" type="radio" name="main-tabs" class="tab-input" />
-
       <nav class="main-menu" role="tablist" aria-label="Main view">
         <label class="tab" for="tab-map" role="tab" aria-controls="view-map" aria-selected="true">MAP</label>
         <label class="tab" for="tab-settings" role="tab" aria-controls="view-settings" aria-selected="false">Settings</label>
       </nav>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🗺️</span>
+        <h1 class="brand-name">Command</h1>
+      </div>
 
       <!-- Right-side actions -->
       <div class="actions">
@@ -41,7 +36,7 @@
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7 7h10v4h-2v2h2v4H7v-4h2v-2H7V7zm4 4h2v2h-2v-2z" />
           </svg>
-          <span class="serial-label">Connect</span>
+          <span class="serial-label">Connects</span>
           <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
         </button>
         <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
@@ -53,16 +48,109 @@
       </div>
     </header>
 
+    <!-- Tabs (CSS-only) moved out of header so CSS sibling selectors work -->
+    <input id="tab-map" type="radio" name="main-tabs" class="tab-input" checked />
+    <input id="tab-settings" type="radio" name="main-tabs" class="tab-input" />
+
+    <!-- Map Tools Toolbar (visible only on MAP) -->
+    <div class="app-toolbar" role="toolbar" aria-label="Map tools">
+      <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <div class="tool-divider" aria-hidden="true"></div>
+      <!-- View controls -->
+      <button id="toolZoomIn" class="tool-btn" title="Zoom in">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M11 4h2v6h6v2h-6v6h-2v-6H5v-2h6z"/>
+        </svg>
+      </button>
+      <button id="toolZoomOut" class="tool-btn" title="Zoom out">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 11h14v2H5z"/>
+        </svg>
+      </button>
+      <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5h5v2h-7V7h2z"/>
+        </svg>
+      </button>
+      <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2l3 6h5l-4 4 2 6-6-3-6 3 2-6-4-4h5z"/>
+        </svg>
+      </button>
+      <div class="tool-divider" aria-hidden="true"></div>
+      <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
+      </button>
+      <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16l-2-6 6-4 8 3-3 9H6z"/></svg>
+      </button>
+      <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>
+      </button>
+      <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16l5-5 4 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <div class="tool-divider" aria-hidden="true"></div>
+      <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9a2 2 0 110-4 2 2 0 010 4z"/></svg>
+      </button>
+      <div id="poiPalette" class="poi-palette" hidden>
+        <button class="poi-opt" data-icon="📍" title="Pin">📍</button>
+        <button class="poi-opt" data-icon="🏠" title="Home">🏠</button>
+        <button class="poi-opt" data-icon="🚗" title="Car">🚗</button>
+        <button class="poi-opt" data-icon="🛠️" title="Work">🛠️</button>
+        <button class="poi-opt" data-icon="🏥" title="Hospital">🏥</button>
+        <button class="poi-opt" data-icon="🛒" title="Shop">🛒</button>
+        <button class="poi-opt" data-icon="⛽" title="Fuel">⛽</button>
+      </div>
+      <div class="tool-spacer"></div>
+      <button id="resetLayoutToolbarBtn" class="tool-btn" title="Reset panel layout">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5V2L8 6l4 4V7c2.8 0 5 2.2 5 5 0 1.1-.4 2.1-1 2.9l1.5 1.3C18.4 15.1 19 13.6 19 12c0-3.9-3.1-7-7-7zm-5 5c0-1.1.4-2.1 1-2.9L6.5 5.8C5.6 6.9 5 8.4 5 10c0 3.9 3.1 7 7 7v3l4-4-4-4v3c-2.8 0-5-2.2-5-5z"/>
+        </svg>
+      </button>
+    </div>
+
+    
+
     <!-- Main content -->
     <main class="app-main">
       <!-- MAP VIEW -->
       <section id="view-map" class="view view-map" role="tabpanel" aria-labelledby="tab-map">
         <div id="map" class="map-container" aria-label="Interactive map"></div>
+        <!-- Crosshair overlay -->
+        <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
+        <!-- Floating coordinates input -->
+        <div class="coord-float" role="group" aria-label="Map center coordinates">
+          <div class="coord-float-body">
+            <label class="coord-field">
+              <span class="coord-label">Longitude</span>
+              <input id="inputLng" type="number" step="0.000001" min="-180" max="180" placeholder="lng" />
+            </label>
+            <label class="coord-field">
+              <span class="coord-label">Latitude</span>
+              <input id="inputLat" type="number" step="0.000001" min="-90" max="90" placeholder="lat" />
+            </label>
+            <div class="coord-address" aria-live="polite">
+              <span id="coordPlace" class="coord-place">—</span>
+            </div>
+          </div>
+        </div>
+        <!-- Floating drawings list -->
+        <div id="drawingsFloat" class="drawings-float">
+          <div class="serial-float-header drawings-header">
+            <span>Drawings</span>
+            <button id="drawingsToggle" class="btn-icon" title="Collapse/expand drawings" aria-expanded="true">▾</button>
+          </div>
+          <div id="drawingsList" class="drawings-list" aria-live="polite"></div>
+        </div>
         <!-- Floating serial monitor -->
         <div id="serialFloat" class="serial-float" hidden>
           <div class="serial-float-header">
             <span>Serial Monitor</span>
-            <button id="serialFloatClose" class="btn-icon" title="Close serial monitor">×</button>
+            <button id="serialFloatToggle" class="btn-icon" title="Collapse/expand serial monitor" aria-expanded="true">▾</button>
           </div>
           <pre id="serialFloatBody" class="serial-float-body" aria-live="polite"></pre>
         </div>
@@ -83,6 +171,14 @@
               <input id="settingAccessToken" type="password" placeholder="pk.•••" />
             </label>
             <label class="field">
+              <span class="label">Google Maps API Key</span>
+              <input id="settingGoogleKey" type="password" placeholder="AIza•••" />
+            </label>
+            <label class="field">
+              <span class="label">Home Address</span>
+              <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
+            </label>
+            <label class="field">
               <span class="label">Start Position (lng, lat)</span>
               <input id="settingStartPos" type="text" placeholder="6.13, 49.61" />
             </label>
@@ -101,6 +197,9 @@
                 <option value="on" selected>On</option>
               </select>
             </label>
+          </div>
+          <div class="settings-actions" style="margin-top:12px;">
+            <button id="resetLayoutBtn" class="btn">Reset Panel Layout</button>
           </div>
         </div>
       </section>
@@ -143,7 +242,27 @@
     </div>
   </div>
 
-  <!-- Your renderer bundle goes here if needed -->
+  <!-- Search Modal -->
+  <div id="searchModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="searchTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="searchTitle">Search Address</h3>
+        <button id="searchClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <span class="label">Address</span>
+          <input id="searchQuery" type="text" placeholder="Type an address" autocomplete="off" />
+        </label>
+        <div id="searchResults" class="search-results" role="listbox" aria-label="Search results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mapbox GL JS (CSP build) -->
+  <script src="./dist/vendor/mapbox-gl/mapbox-gl-csp.js"></script>
+  <!-- Your renderer bundle goes here -->
   <script src="./renderer.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+/keys
 
 # Build outputs
 dist/
