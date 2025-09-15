@@ -1623,7 +1623,7 @@
     let dragging = null; // { fid, idx }
     const getM = () => (window)._map;
     const onMove = (e) => {
-      if (!dragging || (window)._currentTool !== 'edit') return;
+      if (!dragging || !(window)._editTarget) return;
       const m = getM(); if (!m) return;
       const lngLat = e.lngLat || (e.touches && e.touches[0] && m.unproject([e.touches[0].clientX, e.touches[0].clientY]));
       if (!lngLat) return;
@@ -1653,7 +1653,7 @@
       refreshDraw();
     };
     const onDown = (e) => {
-      if ((window)._currentTool !== 'edit') return;
+      if (!(window)._editTarget) return;
       const feat = e.features && e.features[0];
       if (!feat) return;
       if (e.originalEvent && 'button' in e.originalEvent && e.originalEvent.button !== 0) return; // left click only
@@ -1674,7 +1674,7 @@
       if (m) {
         // Global mousedown fallback using hit-test to find a vertex under pointer
         m.on('mousedown', (e) => {
-          if ((window)._currentTool !== 'edit') return;
+          if (!(window)._editTarget) return;
           try{
             const feats = m.queryRenderedFeatures(e.point, { layers: ['edit-verts'] });
             if (feats && feats[0]) { onDown({ ...e, features:[feats[0]], originalEvent: e.originalEvent }); }
@@ -1683,8 +1683,8 @@
         if (m.getLayer && m.getLayer('edit-verts')){
           m.on('mousedown', 'edit-verts', onDown);
           m.on('touchstart', 'edit-verts', onDown, { passive:false });
-          m.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') m.getCanvas().style.cursor = 'grab'; });
-          m.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) m.getCanvas().style.cursor = ''; });
+          m.on('mouseenter', 'edit-verts', () => { if ((window)._editTarget) m.getCanvas().style.cursor = 'grab'; });
+          m.on('mouseleave', 'edit-verts', () => { if ((window)._editTarget && !dragging) m.getCanvas().style.cursor = ''; });
         }
       }
     } catch {}
