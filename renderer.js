@@ -145,6 +145,7 @@
       attributionControl: true,
     });
     (window)._map = map; // for debugging
+    try { (window)._bindEditInteractions && (window)._bindEditInteractions(); } catch {}
 
     const fmt = (n, d=2) => (Number.isFinite(n) ? n.toFixed(d) : '—');
     function updateStats() {
@@ -220,6 +221,8 @@
 
     // ---- Drawing sources/layers ----
     const drawStore = { type: 'FeatureCollection', features: [] };
+    // Expose for edit interactions outside initMap scope
+    (window)._drawStore = drawStore;
     const ensureDrawLayers = () => {
       if (!map.getSource('draw')) {
         map.addSource('draw', { type: 'geojson', data: drawStore });
@@ -301,7 +304,7 @@
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
+    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); (window)._bindEditInteractions && (window)._bindEditInteractions(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
@@ -315,6 +318,8 @@
       updateDrawingsPanel();
       try { if ((window)._editTarget) refreshEditVerts(); } catch {}
     };
+    // Expose refreshers so edit interaction code can call them
+    (window)._refreshDraw = refreshDraw;
     const refreshEditVerts = () => {
       try{
         const verts = [];
@@ -335,6 +340,7 @@
         if (src) src.setData({ type:'FeatureCollection', features: verts });
       }catch{}
     };
+    (window)._refreshEditVerts = refreshEditVerts;
     const refreshDrawMapOnly = () => {
       try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
     };
@@ -1619,7 +1625,9 @@
   });
 
   // --- Edit vertices interactions ---
+  console.log('Setting up edit interactions');
   (function initEditInteractions(){
+    console.log('Init edit interactions');
     let dragging = null; // { fid, idx }
     const getM = () => (window)._map;
     const toLngLatFromEvent = (ev) => {
@@ -1640,7 +1648,8 @@
       const lngLat = toLngLatFromEvent(e);
       if (!lngLat) return;
       const { lng, lat } = lngLat;
-      const f = drawStore.features.find(x => x.properties?.id === dragging.fid);
+      const ds = (window)._drawStore; if (!ds) return;
+      const f = ds.features.find(x => x.properties?.id === dragging.fid);
       if (!f || f.geometry?.type !== 'Polygon') return;
       const ring = f.geometry.coordinates && f.geometry.coordinates[0];
       if (!Array.isArray(ring)) return;
@@ -1649,8 +1658,8 @@
       ring[i] = [lng, lat];
       ring[ring.length-1] = ring[0]; // keep closed
       setDirty(true);
-      try { const src = getM()?.getSource('draw'); if (src) src.setData(drawStore); } catch {}
-      refreshEditVerts();
+      try { const src = getM()?.getSource('draw'); if (src) src.setData(ds); } catch {}
+      try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
     };
     const onUp = () => {
       if (!dragging) return;
@@ -1666,9 +1675,10 @@
         document.removeEventListener('touchmove', onMove, { capture:true });
         document.removeEventListener('touchend', onUp, { capture:true });
       } catch {}
-      refreshDraw();
+      try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
     };
     const onDown = (e) => {
+      console.log((window)._editTarget);
       if (!(window)._editTarget) return;
       const feat = e.features && e.features[0];
       if (!feat) return;
@@ -1690,27 +1700,33 @@
       } catch {}
       e.preventDefault();
     };
-    try {
-      const m = getM();
-      if (m) {
-        // Global mousedown fallback using hit-test to find a vertex under pointer
-        m.on('mousedown', (e) => {
-          if (!(window)._editTarget) return;
-          try{
-            const feats = m.queryRenderedFeatures(e.point, { layers: ['edit-verts'] });
-            if (feats && feats[0]) { onDown({ ...e, features:[feats[0]], originalEvent: e.originalEvent }); }
-          }catch{}
-        });
-        if (m.getLayer && m.getLayer('edit-verts')){
+    // Provide a binder we can call once the map exists
+    (window)._bindEditInteractions = (function(){
+      let bound = false;
+      return function bind(){
+        if (bound) return;
+        const m = getM(); if (!m) return;
+        try{
+          // Global mousedown fallback using hit-test to find a vertex under pointer
+          m.on('mousedown', (e) => {
+            if (!(window)._editTarget) return;
+            try{
+              const feats = m.queryRenderedFeatures(e.point, { layers: ['edit-verts'] });
+              if (feats && feats[0]) { onDown({ ...e, features:[feats[0]], originalEvent: e.originalEvent }); }
+            }catch{}
+          });
+          // Layer-specific events (attach now; Mapbox allows binding before layer exists)
           m.on('mousedown', 'edit-verts', onDown);
           m.on('touchstart', 'edit-verts', onDown, { passive:false });
           m.on('mouseenter', 'edit-verts', () => { if ((window)._editTarget) m.getCanvas().style.cursor = 'grab'; });
           m.on('mouseleave', 'edit-verts', () => { if ((window)._editTarget && !dragging) m.getCanvas().style.cursor = ''; });
-        }
-      }
-    } catch {}
+          bound = true;
+        } catch {}
+      };
+    })();
+    try { (window)._bindEditInteractions(); } catch {}
   })();
-  console.log(window.serial);
+
   window.serial.onData((line) => {
     console.log({line})
     if (!serialFloatBody) return;
