@@ -135,7 +135,6 @@ Menu.setApplicationMenu(menu);
 
 // Graceful close: ask renderer to confirm close if needed
 let _allowClose = false;
-app.on('before-quit', () => { _allowClose = true; });
 
 app.on('browser-window-created', (_e, win) => {
   win.on('close', (evt) => {
