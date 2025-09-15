@@ -251,15 +251,17 @@
               ['get','name'],
               ''
             ],
-            'text-size': 12,
+            'text-size': 14,
             'text-allow-overlap': true,
             'text-anchor': 'left',
-            'text-offset': [0.9, 0]
+            'text-offset': [1, 0],
+            'text-letter-spacing': 0.02
           },
           paint: {
             'text-color': '#ffffff',
             'text-halo-color': '#000000',
-            'text-halo-width': 1
+            'text-halo-width': 2,
+            'text-halo-blur': 0.2
           }
         });
       }
@@ -576,8 +578,8 @@
         f.properties = f.properties || {};
         f.properties.name = (nameEl.textContent || '').trim();
       };
-      nameEl.addEventListener('blur', () => { commitName(); setDirty(true); });
-      nameEl.addEventListener('input', () => { /* live update optional; keep blur commit */ });
+      nameEl.addEventListener('blur', () => { commitName(); setDirty(true); refreshDraw(); });
+      nameEl.addEventListener('input', () => { commitName(); setDirty(true); refreshDraw(); });
       nameEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
       });
