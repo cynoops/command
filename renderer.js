@@ -234,19 +234,32 @@
           }
         });
       }
-      // Optional label using icon/text if available
+      // Optional label next to POI: show feature name when not empty/Untitled
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
           filter: ['==', ['geometry-type'], 'Point'],
           layout: {
-            'text-field': ['coalesce', ['get','icon'], ''],
-            'text-size': 18,
+            'text-field': [
+              'case',
+              [
+                'all',
+                ['has', 'name'],
+                ['!=', ['downcase', ['coalesce', ['get','name'], '']], 'untitled'],
+                ['!=', ['coalesce', ['get','name'], ''], '']
+              ],
+              ['get','name'],
+              ''
+            ],
+            'text-size': 12,
             'text-allow-overlap': true,
-            'text-anchor': 'center'
+            'text-anchor': 'left',
+            'text-offset': [0.9, 0]
           },
           paint: {
-            'text-color': ['coalesce', ['get','color'], '#001225']
+            'text-color': '#ffffff',
+            'text-halo-color': '#000000',
+            'text-halo-width': 1
           }
         });
       }
