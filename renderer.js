@@ -1622,10 +1622,22 @@
   (function initEditInteractions(){
     let dragging = null; // { fid, idx }
     const getM = () => (window)._map;
+    const toLngLatFromEvent = (ev) => {
+      const m = getM(); if (!m) return null;
+      if (ev && ev.lngLat) return ev.lngLat;
+      const oe = ev && (ev.originalEvent || ev);
+      if (oe && (oe.clientX != null) && (oe.clientY != null)) {
+        return m.unproject([oe.clientX, oe.clientY]);
+      }
+      if (oe && oe.touches && oe.touches[0]) {
+        return m.unproject([oe.touches[0].clientX, oe.touches[0].clientY]);
+      }
+      return null;
+    };
     const onMove = (e) => {
       if (!dragging || !(window)._editTarget) return;
       const m = getM(); if (!m) return;
-      const lngLat = e.lngLat || (e.touches && e.touches[0] && m.unproject([e.touches[0].clientX, e.touches[0].clientY]));
+      const lngLat = toLngLatFromEvent(e);
       if (!lngLat) return;
       const { lng, lat } = lngLat;
       const f = drawStore.features.find(x => x.properties?.id === dragging.fid);
@@ -1649,6 +1661,10 @@
         m.dragPan.enable();
         m.off('mousemove', onMove);
         m.off('mouseup', onUp);
+        document.removeEventListener('mousemove', onMove, true);
+        document.removeEventListener('mouseup', onUp, true);
+        document.removeEventListener('touchmove', onMove, { capture:true });
+        document.removeEventListener('touchend', onUp, { capture:true });
       } catch {}
       refreshDraw();
     };
@@ -1666,6 +1682,11 @@
         m.on('mouseup', onUp);
         m.on('touchmove', onMove, { passive:false });
         m.on('touchend', onUp);
+        // Also listen on document to ensure we keep tracking outside the canvas
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', onUp, true);
+        document.addEventListener('touchmove', onMove, { capture:true, passive:false });
+        document.addEventListener('touchend', onUp, { capture:true });
       } catch {}
       e.preventDefault();
     };
