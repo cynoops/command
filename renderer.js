@@ -36,6 +36,7 @@
   const toolCircle = q('#toolCircle');
   const toolLine = q('#toolLine');
   const toolPOI = q('#toolPOI');
+  const toolEdit = q('#toolEdit');
   const toolSearch = q('#toolSearch');
   const drawingsList = q('#drawingsList');
   const coordFloat = q('.coord-float');
@@ -224,6 +225,9 @@
       if (!map.getSource('draw-draft')) {
         map.addSource('draw-draft', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       }
+      if (!map.getSource('edit-verts')) {
+        map.addSource('edit-verts', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
+      }
       if (!map.getLayer('draw-fill')) {
         map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 } });
       }
@@ -289,10 +293,13 @@
       if (!map.getLayer('draw-hl-point')) {
         map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['==', ['get','id'], '__none__'], paint: { 'circle-color': '#FFC107', 'circle-radius': 8, 'circle-opacity': 0.5 } });
       }
+      if (!map.getLayer('edit-verts')) {
+        map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 4 }, layout: { visibility: 'none' } });
+      }
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); } catch {} });
+    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); if ((window)._currentTool==='edit') { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
@@ -304,6 +311,22 @@
       const src = map.getSource('draw');
       if (src) src.setData(drawStore);
       updateDrawingsPanel();
+    };
+    const refreshEditVerts = () => {
+      try{
+        const verts = [];
+        drawStore.features.forEach(f => {
+          if (!f || f.geometry?.type !== 'Polygon') return;
+          const ring = (f.geometry.coordinates?.[0] || []).slice();
+          if (ring.length < 4) return;
+          for (let i=0;i<ring.length-1;i++){
+            const c = ring[i];
+            verts.push({ type:'Feature', properties:{ fid: f.properties?.id, idx: i }, geometry:{ type:'Point', coordinates:[c[0], c[1]] } });
+          }
+        });
+        const src = map.getSource('edit-verts');
+        if (src) src.setData({ type:'FeatureCollection', features: verts });
+      }catch{}
     };
     const refreshDrawMapOnly = () => {
       try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
@@ -1412,7 +1435,7 @@
   (function initToolbar(){
     const setActiveTool = (tool) => {
       (window)._currentTool = tool;
-      const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI];
+      const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI, toolEdit];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
@@ -1426,8 +1449,14 @@
           toolPOI?.classList.add('active');
           toolPOI?.setAttribute('aria-pressed', String(true));
           break;
+        case 'edit':
+          toolEdit?.classList.add('active');
+          toolEdit?.setAttribute('aria-pressed', String(true));
+          try { map.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); } catch {}
+          break;
         default: break;
       }
+      if (tool !== 'edit') { try { map.setLayoutProperty('edit-verts','visibility','none'); } catch {} }
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
@@ -1446,6 +1475,7 @@
       }
     });
     toolPOI?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poi' ? null : 'poi'));
+    toolEdit?.addEventListener('click', () => setActiveTool((window)._currentTool === 'edit' ? null : 'edit'));
 
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
@@ -1539,6 +1569,47 @@
     try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
     try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
   });
+
+  // --- Edit vertices interactions ---
+  (function initEditInteractions(){
+    let dragging = null; // { fid, idx }
+    const onDown = (e) => {
+      if ((window)._currentTool !== 'edit') return;
+      const feat = e.features && e.features[0];
+      if (!feat) return;
+      dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
+      try { map.getCanvas().style.cursor = 'grabbing'; map.dragPan.disable(); } catch {}
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!dragging || (window)._currentTool !== 'edit') return;
+      const { lng, lat } = e.lngLat;
+      const f = drawStore.features.find(x => x.properties?.id === dragging.fid);
+      if (!f || f.geometry?.type !== 'Polygon') return;
+      const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+      if (!Array.isArray(ring)) return;
+      const i = dragging.idx;
+      if (!Number.isInteger(i) || i < 0 || i >= ring.length-1) return;
+      ring[i] = [lng, lat];
+      // keep ring closed
+      ring[ring.length-1] = ring[0];
+      setDirty(true);
+      refreshDraw(); // update panel with new area
+      refreshEditVerts();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = null;
+      try { map.getCanvas().style.cursor = ''; map.dragPan.enable(); } catch {}
+    };
+    try {
+      map.on('mousedown', 'edit-verts', onDown);
+      map.on('mousemove', onMove);
+      map.on('mouseup', onUp);
+      map.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = 'grab'; });
+      map.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = ''; });
+    } catch {}
+  })();
   console.log(window.serial);
   window.serial.onData((line) => {
     console.log({line})

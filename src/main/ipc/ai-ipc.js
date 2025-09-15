@@ -8,7 +8,7 @@ function registerAIIPC({ ipcMain }, state) {
   ipcMain.handle('ai:transform-drawing', async (_e, { feature, prompt, apiKey: providedKey }) => {
     try {
       const apiKey = providedKey || process.env.OPENAI_API_KEY;
-      console.log({apiKey});
+
       if (!apiKey) {
         return { ok: false, error: 'Missing OPENAI_API_KEY in environment.' };
       }
@@ -17,30 +17,28 @@ function registerAIIPC({ ipcMain }, state) {
         catch { return { ok:false, error:'OpenAI SDK not installed. Add \'openai\' to dependencies and run npm install.' }; }
       }
       const geomStr = JSON.stringify(feature?.geometry || null);
-      console.log({geomStr})
-      const sys = [
-        'You are a mapping assistant. Your task is to transform a given geometry into new geometries as requested.',
-        'Output strictly a GeoJSON FeatureCollection in JSON with no additional commentary.',
-        'Use WGS84 lon/lat coordinates. Keep topology valid. Ensure arrays are numeric.',
-      ].join(' ');
-      const user = [
-        'Original geometry (GeoJSON):', geomStr,
-        'Instruction:', String(prompt || '').trim() || 'Return the given geometry unchanged.',
-        'Return only: {"type":"FeatureCollection","features":[...]}',
-      ].join('\n');
 
       const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
-        model: "gpt-4o",
-        max_tokens: 100,
+        // model: "gpt-5-nano",
+        model: "gpt-4.1",
+        response_format: {
+          type: "json_object"
+        },
         messages: [
-          { role: 'system', content: sys },
-          { role: 'user', content: user }
+          { role: 'system', content: 'You are a mapping assistant. Your task is to transform a given geometry into new geometries as requested.' },
+          { role: 'system', content: 'Output strictly a GeoJSON FeatureCollection in JSON with no additional commentary.' },
+          { role: 'system', content: 'Use WGS84 lon/lat coordinates. Keep topology valid. Ensure arrays are numeric.' },
+          { role: 'user', content: 'Original geometry (GeoJSON):' + geomStr },
+          { role: 'user', content: 'Instruction:' + String(prompt || '').trim() || 'Return the given geometry unchanged.', },
+          { role: 'user', content: 'Return only: {"type":"FeatureCollection","features":[...]}' }
         ],
-        temperature: 0.2,
       });
       const text = completion?.choices?.[0]?.message?.content || '';
+      console.log('AI response:', text);
+
       let jsonStr = text.trim();
+      console.log(jsonStr);
       const firstBrace = jsonStr.indexOf('{');
       const lastBrace = jsonStr.lastIndexOf('}');
       if (firstBrace > 0 || lastBrace >= 0) jsonStr = jsonStr.slice(Math.max(0, firstBrace), lastBrace + 1);
