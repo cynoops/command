@@ -1452,11 +1452,11 @@
         case 'edit':
           toolEdit?.classList.add('active');
           toolEdit?.setAttribute('aria-pressed', String(true));
-          try { map.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); } catch {}
+          try { (window)._map && (window)._map.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); } catch {}
           break;
         default: break;
       }
-      if (tool !== 'edit') { try { map.setLayoutProperty('edit-verts','visibility','none'); } catch {} }
+      if (tool !== 'edit') { try { (window)._map && (window)._map.setLayoutProperty('edit-verts','visibility','none'); } catch {} }
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
@@ -1573,9 +1573,11 @@
   // --- Edit vertices interactions ---
   (function initEditInteractions(){
     let dragging = null; // { fid, idx }
+    const getM = () => (window)._map;
     const onMove = (e) => {
       if (!dragging || (window)._currentTool !== 'edit') return;
-      const lngLat = e.lngLat || (e.touches && e.touches[0] && map.unproject([e.touches[0].clientX, e.touches[0].clientY]));
+      const m = getM(); if (!m) return;
+      const lngLat = e.lngLat || (e.touches && e.touches[0] && m.unproject([e.touches[0].clientX, e.touches[0].clientY]));
       if (!lngLat) return;
       const { lng, lat } = lngLat;
       const f = drawStore.features.find(x => x.properties?.id === dragging.fid);
@@ -1587,17 +1589,18 @@
       ring[i] = [lng, lat];
       ring[ring.length-1] = ring[0]; // keep closed
       setDirty(true);
-      try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
+      try { const src = getM()?.getSource('draw'); if (src) src.setData(drawStore); } catch {}
       refreshEditVerts();
     };
     const onUp = () => {
       if (!dragging) return;
       dragging = null;
       try {
-        map.getCanvas().style.cursor = '';
-        map.dragPan.enable();
-        map.off('mousemove', onMove);
-        map.off('mouseup', onUp);
+        const m = getM(); if (!m) return;
+        m.getCanvas().style.cursor = '';
+        m.dragPan.enable();
+        m.off('mousemove', onMove);
+        m.off('mouseup', onUp);
       } catch {}
       refreshDraw();
     };
@@ -1608,20 +1611,23 @@
       if (e.originalEvent && 'button' in e.originalEvent && e.originalEvent.button !== 0) return; // left click only
       dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
       try {
-        map.getCanvas().style.cursor = 'grabbing';
-        map.dragPan.disable();
-        map.on('mousemove', onMove);
-        map.on('mouseup', onUp);
-        map.on('touchmove', onMove, { passive:false });
-        map.on('touchend', onUp);
+        const m = getM(); if (!m) return;
+        m.getCanvas().style.cursor = 'grabbing';
+        m.dragPan.disable();
+        m.on('mousemove', onMove);
+        m.on('mouseup', onUp);
+        m.on('touchmove', onMove, { passive:false });
+        m.on('touchend', onUp);
       } catch {}
       e.preventDefault();
     };
     try {
-      map.on('mousedown', 'edit-verts', onDown);
-      map.on('touchstart', 'edit-verts', onDown, { passive:false });
-      map.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = 'grab'; });
-      map.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) map.getCanvas().style.cursor = ''; });
+      const m = getM(); if (m && m.getLayer && m.getLayer('edit-verts')){
+        m.on('mousedown', 'edit-verts', onDown);
+        m.on('touchstart', 'edit-verts', onDown, { passive:false });
+        m.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') m.getCanvas().style.cursor = 'grab'; });
+        m.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) m.getCanvas().style.cursor = ''; });
+      }
     } catch {}
   })();
   console.log(window.serial);
