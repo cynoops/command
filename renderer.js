@@ -292,7 +292,7 @@
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', ensureDrawLayers);
+    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); } catch {} });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
@@ -820,11 +820,19 @@
       if (saved && !settingOpenAIKey.value) settingOpenAIKey.value = saved;
       settingOpenAIKey.addEventListener('change', () => { localStorage.setItem('openai.key', settingOpenAIKey.value.trim()); });
     }
-    styleInput?.addEventListener('change', () => {
-      const v = styleInput.value.trim();
-      localStorage.setItem('map.styleUrl', v);
-      try { map.setStyle(v); } catch (e) { console.error(e); }
-    });
+    const applyStyle = () => {
+      try {
+        const v = (styleInput?.value || '').trim();
+        if (!v) return;
+        const prev = (window)._lastStyleUrl || '';
+        if (v === prev) return;
+        localStorage.setItem('map.styleUrl', v);
+        (window)._lastStyleUrl = v;
+        map.setStyle(v);
+      } catch (e) { console.error('setStyle failed', e); }
+    };
+    styleInput?.addEventListener('change', applyStyle);
+    styleInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyStyle(); } });
     startPosInput?.addEventListener('change', () => {
       const p = parseStartPos(startPosInput.value);
       localStorage.setItem('map.startPos', p.join(', '));
