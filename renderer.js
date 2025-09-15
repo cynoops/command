@@ -1642,10 +1642,11 @@
       }
       return null;
     };
-    const onMove = (e) => {
+    let rafPending = false; let lastEvt = null;
+    const applyFrom = (evt) => {
       if (!dragging || !(window)._editTarget) return;
       const m = getM(); if (!m) return;
-      const lngLat = toLngLatFromEvent(e);
+      const lngLat = toLngLatFromEvent(evt);
       if (!lngLat) return;
       const { lng, lat } = lngLat;
       const ds = (window)._drawStore; if (!ds) return;
@@ -1657,9 +1658,15 @@
       if (!Number.isInteger(i) || i < 0 || i >= ring.length-1) return;
       ring[i] = [lng, lat];
       ring[ring.length-1] = ring[0]; // keep closed
-      setDirty(true);
-      try { const src = getM()?.getSource('draw'); if (src) src.setData(ds); } catch {}
+      try { const src = m.getSource('draw'); if (src) src.setData(ds); } catch {}
       try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
+    };
+    const onMove = (e) => {
+      if (!dragging || !(window)._editTarget) return;
+      lastEvt = e;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => { rafPending = false; applyFrom(lastEvt); });
     };
     const onUp = () => {
       if (!dragging) return;
@@ -1688,10 +1695,7 @@
         const m = getM(); if (!m) return;
         m.getCanvas().style.cursor = 'grabbing';
         m.dragPan.disable();
-        m.on('mousemove', onMove);
-        m.on('mouseup', onUp);
-        m.on('touchmove', onMove, { passive:false });
-        m.on('touchend', onUp);
+        // use document-level listeners to avoid duplicate events from map + document
         // Also listen on document to ensure we keep tracking outside the canvas
         document.addEventListener('mousemove', onMove, true);
         document.addEventListener('mouseup', onUp, true);
