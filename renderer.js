@@ -53,6 +53,11 @@
   const searchClose = q('#searchClose');
   const searchQuery = q('#searchQuery');
   const searchResults = q('#searchResults');
+  // Color picker modal
+  const colorModal = q('#colorModal');
+  const colorClose = q('#colorClose');
+  const colorGrid = q('#colorGrid');
+  const colorState = { onPick: null, current: null };
 
   let selectedPath = null;
   let rxCount = 0;
@@ -323,7 +328,16 @@
     const fmtLen = (m) => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
     const fmtArea = (a) => a >= 1_000_000 ? `${(a/1_000_000).toFixed(2)} km²` : `${Math.round(a).toLocaleString()} m²`;
     const newId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
+    // Auto-assign palette (cycling)
     const colorPalette = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#4caf50','#ff9800','#795548','#607d8b','#f44336'];
+    // Picker palette (30+ choices)
+    const colorChoices = [
+      '#f44336','#e91e63','#9c27b0','#673ab7','#3f51b5','#2196f3','#03a9f4','#00bcd4','#009688',
+      '#4caf50','#8bc34a','#cddc39','#ffeb3b','#ffc107','#ff9800','#ff5722','#795548','#9e9e9e',
+      '#607d8b','#000000','#ffffff','#b71c1c','#880e4f','#4a148c','#311b92','#1a237e','#0d47a1',
+      '#01579b','#006064','#004d40','#1b5e20','#33691e','#827717','#f57f17','#ff6f00','#e65100',
+      '#bf360c'
+    ];
     let lastColorIndex = -1;
     const nextColor = () => { lastColorIndex = (lastColorIndex + 1) % colorPalette.length; return colorPalette[lastColorIndex]; };
     const annotateFeature = (f, kind) => {
@@ -438,6 +452,49 @@
       try { map.setFilter('draw-hl-line', filt); } catch {}
       try { map.setFilter('draw-hl-point', filt); } catch {}
     };
+    // Color modal helpers
+    function buildColorGridOnce(){
+      if (!colorGrid || colorGrid.dataset.built === '1') return;
+      colorChoices.forEach((hex) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'color-opt';
+        btn.style.backgroundColor = hex;
+        btn.setAttribute('data-color', hex);
+        btn.setAttribute('aria-selected', 'false');
+        btn.title = hex;
+        colorGrid.appendChild(btn);
+      });
+      colorGrid.dataset.built = '1';
+      colorGrid.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement)) return;
+        const hex = t.getAttribute('data-color');
+        if (!hex) return;
+        if (typeof colorState.onPick === 'function') colorState.onPick(hex);
+        closeColorModal();
+      });
+    }
+    function openColorModal(currentHex, onPick){
+      if (!colorModal) return;
+      colorState.onPick = onPick;
+      colorState.current = currentHex;
+      buildColorGridOnce();
+      // Mark selected
+      try {
+        colorGrid.querySelectorAll('.color-opt').forEach(el => {
+          const hex = el.getAttribute('data-color') || '';
+          el.setAttribute('aria-selected', String(hex.toLowerCase() === String(currentHex||'').toLowerCase()));
+        });
+      } catch {}
+      colorModal.hidden = false;
+    }
+    function closeColorModal(){ if (colorModal) colorModal.hidden = true; colorState.onPick = null; colorState.current = null; }
+    colorClose?.addEventListener('click', () => closeColorModal());
+    colorModal?.addEventListener('click', (e) => {
+      const t = e.target; if (t && t instanceof HTMLElement && t.classList.contains('modal-backdrop')) closeColorModal();
+    });
+
     const renderRow = (f) => {
       const row = document.createElement('div');
       row.className = 'drawing-row';
@@ -460,21 +517,21 @@
       size.className = 'drawing-size';
       const actions = document.createElement('div');
       actions.className = 'drawing-actions';
-      const colorWrap = document.createElement('label');
+      const colorWrap = document.createElement('button');
+      colorWrap.type = 'button';
       colorWrap.className = 'drawing-color';
       const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#2196F3';
       const applyColorToWrap = () => { try { colorWrap.style.backgroundColor = getColor(); } catch {} };
       applyColorToWrap();
-      const colorInput = document.createElement('input');
-      colorInput.type = 'color';
-      colorInput.value = getColor();
-      colorInput.title = 'Change color';
-      colorInput.addEventListener('input', () => {
-        f.properties = f.properties || {};
-        f.properties.color = colorInput.value;
-        applyColorToWrap();
-        setDirty(true);
-        refreshDraw();
+      colorWrap.title = 'Change color';
+      colorWrap.addEventListener('click', () => {
+        openColorModal(getColor(), (hex) => {
+          f.properties = f.properties || {};
+          f.properties.color = hex;
+          applyColorToWrap();
+          setDirty(true);
+          refreshDraw();
+        });
       });
 
       const del = document.createElement('button');
@@ -498,7 +555,6 @@
       meta.appendChild(typeEl); meta.appendChild(size);
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
-      colorWrap.appendChild(colorInput);
       actions.appendChild(colorWrap);
       actions.appendChild(del);
       row.appendChild(actions);
@@ -1274,9 +1330,15 @@
     });
   })();
 
-  // Global ESC handler: exit active tool and cancel any drafts
+  // Global ESC handler: close modals first; else exit active tool and cancel any drafts
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    // Close color modal if open
+    if (colorModal && colorModal.hidden === false) {
+      try { colorModal.hidden = true; } catch {}
+      e.preventDefault();
+      return;
+    }
     const target = e.target;
     // Ignore when typing in inputs or contenteditable
     if (target && (target.closest && target.closest('input, textarea, select')))
