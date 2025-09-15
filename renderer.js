@@ -73,6 +73,8 @@
   let lastTick = Date.now();
   let isDirty = false;
   const setDirty = (v=true) => { isDirty = !!v; (window)._dirty = isDirty; };
+  // Per-drawing edit state
+  (window)._editTarget = (window)._editTarget || null;
   let currentFilePath = null;
   window.file?.onCurrentFile?.((p) => { currentFilePath = p; });
 
@@ -299,7 +301,7 @@
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); if ((window)._currentTool==='edit') { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
+    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); } } catch {} });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
@@ -311,20 +313,24 @@
       const src = map.getSource('draw');
       if (src) src.setData(drawStore);
       updateDrawingsPanel();
-      try { if ((window)._currentTool === 'edit') refreshEditVerts(); } catch {}
+      try { if ((window)._editTarget) refreshEditVerts(); } catch {}
     };
     const refreshEditVerts = () => {
       try{
         const verts = [];
-        drawStore.features.forEach(f => {
-          if (!f || f.geometry?.type !== 'Polygon') return;
-          const ring = (f.geometry.coordinates?.[0] || []).slice();
-          if (ring.length < 4) return;
-          for (let i=0;i<ring.length-1;i++){
-            const c = ring[i];
-            verts.push({ type:'Feature', properties:{ fid: f.properties?.id, idx: i }, geometry:{ type:'Point', coordinates:[c[0], c[1]] } });
+        const eid = (window)._editTarget;
+        if (eid) {
+          const f = drawStore.features.find(x => x.properties?.id === eid);
+          if (f && f.geometry?.type === 'Polygon') {
+            const ring = (f.geometry.coordinates?.[0] || []).slice();
+            if (ring.length >= 4) {
+              for (let i=0;i<ring.length-1;i++){
+                const c = ring[i];
+                verts.push({ type:'Feature', properties:{ fid: f.properties?.id, idx: i }, geometry:{ type:'Point', coordinates:[c[0], c[1]] } });
+              }
+            }
           }
-        });
+        }
         const src = map.getSource('edit-verts');
         if (src) src.setData({ type:'FeatureCollection', features: verts });
       }catch{}
@@ -585,6 +591,15 @@
 
       const del = document.createElement('button');
       del.className = 'drawing-del'; del.textContent = '×'; del.title = 'Delete';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'drawing-edit'; editBtn.title = 'Edit polygon'; editBtn.setAttribute('aria-label','Edit polygon'); editBtn.textContent = '✎';
+      const updateEditBtnState = () => {
+        const active = (window)._editTarget && f.properties?.id === (window)._editTarget;
+        editBtn.classList.toggle('active', !!active);
+        editBtn.title = active ? 'Save edits' : 'Edit polygon';
+        editBtn.textContent = active ? '💾' : '✎';
+      };
+      updateEditBtnState();
       const aiBtn = document.createElement('button');
       aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions'); aiBtn.textContent = 'AI';
       const g = f.geometry;
@@ -607,6 +622,7 @@
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
       actions.appendChild(colorWrap);
+      actions.appendChild(editBtn);
       actions.appendChild(aiBtn);
       actions.appendChild(del);
       row.appendChild(actions);
@@ -629,6 +645,31 @@
         const idx = drawStore.features.findIndex(x => x.properties?.id === f.properties.id);
         if (idx >= 0) { drawStore.features.splice(idx, 1); setDirty(true); refreshDraw(); setHighlight(null); }
       });
+      // Toggle per-feature edit
+      const flyToFeaturePolygon = (feat) => {
+        try{
+          const ring = feat?.geometry?.coordinates?.[0] || [];
+          if (!ring.length) return;
+          let minLng=Infinity,minLat=Infinity,maxLng=-Infinity,maxLat=-Infinity;
+          ring.forEach(p=>{ const [lng,lat]=p; if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng; if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat; });
+          if (Number.isFinite(minLng)&&Number.isFinite(minLat)&&Number.isFinite(maxLng)&&Number.isFinite(maxLat)){
+            const m = (window)._map; if (m) m.fitBounds([[minLng,minLat],[maxLng,maxLat]], { padding: 80, duration: 500, maxZoom: 17 });
+          }
+        }catch{}
+      };
+      const startEdit = () => {
+        (window)._editTarget = f.properties?.id || null;
+        updateEditBtnState();
+        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-verts'); }catch{} } }catch{}
+        if (f.geometry?.type==='Polygon') flyToFeaturePolygon(f);
+      };
+      const stopEdit = () => {
+        (window)._editTarget = null;
+        updateEditBtnState();
+        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); refreshEditVerts(); } }catch{}
+        setDirty(true); refreshDraw();
+      };
+      editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
       aiBtn.addEventListener('click', (e) => { e.stopPropagation(); openAiModal(f); });
       return row;
     };
