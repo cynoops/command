@@ -1632,15 +1632,26 @@
     const getM = () => (window)._map;
     const toLngLatFromEvent = (ev) => {
       const m = getM(); if (!m) return null;
+      // Mapbox event: has lngLat or point
       if (ev && ev.lngLat) return ev.lngLat;
+      if (ev && ev.point && Number.isFinite(ev.point.x) && Number.isFinite(ev.point.y)) {
+        return m.unproject([ev.point.x, ev.point.y]);
+      }
+      // DOM event: convert viewport coords to container-relative coords
       const oe = ev && (ev.originalEvent || ev);
-      if (oe && (oe.clientX != null) && (oe.clientY != null)) {
-        return m.unproject([oe.clientX, oe.clientY]);
-      }
+      const canvas = m.getCanvas();
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      let x = null, y = null;
       if (oe && oe.touches && oe.touches[0]) {
-        return m.unproject([oe.touches[0].clientX, oe.touches[0].clientY]);
+        x = oe.touches[0].clientX - rect.left;
+        y = oe.touches[0].clientY - rect.top;
+      } else if (oe && (oe.clientX != null) && (oe.clientY != null)) {
+        x = oe.clientX - rect.left;
+        y = oe.clientY - rect.top;
       }
-      return null;
+      if (x == null || y == null) return null;
+      return m.unproject([x, y]);
     };
     let rafPending = false; let lastEvt = null;
     const applyFrom = (evt) => {
