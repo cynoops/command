@@ -9,13 +9,15 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '22' }
       - run: npm ci
       - run: npm run dist
       - uses: softprops/action-gh-release@v2
