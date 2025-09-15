@@ -136,6 +136,8 @@ Menu.setApplicationMenu(menu);
 
 // Graceful close: ask renderer to confirm close if needed
 let _allowClose = false;
+let _quitRequested = false;
+app.on('before-quit', () => { _quitRequested = true; });
 
 app.on('browser-window-created', (_e, win) => {
   win.on('close', (evt) => {
@@ -149,7 +151,13 @@ ipcMain.on('app:confirm-close-result', (_e, payload) => {
   if (!mainWindow) return;
   if (payload && payload.ok) {
     _allowClose = true;
+    const shouldQuit = _quitRequested;
+    _quitRequested = false;
     try { mainWindow.close(); } catch {}
+    if (shouldQuit) {
+      // Ensure full app exit (especially on macOS where window-all-closed doesn't quit)
+      try { app.quit(); } catch {}
+    }
   }
 });
 
