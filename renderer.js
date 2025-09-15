@@ -224,7 +224,7 @@
           filter: ['==', ['geometry-type'], 'Point'],
           paint: {
             'circle-color': ['coalesce', ['get','color'], '#2196F3'],
-            'circle-radius': 5,
+            'circle-radius': 7,
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 1
           }
@@ -1183,8 +1183,22 @@
       const icon = target.dataset.icon;
       if (!icon) return;
       (window)._currentPoiIcon = icon;
+      // mark active icon
+      try {
+        poiPalette.querySelectorAll('.poi-opt').forEach(btn => btn.classList.remove('active'));
+        target.classList.add('active');
+        localStorage.setItem('ui.poi.icon', icon);
+      } catch {}
       setActiveTool('poi');
     });
+    // Restore last POI icon selection
+    try {
+      const savedIcon = localStorage.getItem('ui.poi.icon');
+      if (savedIcon) {
+        const btn = poiPalette.querySelector(`.poi-opt[data-icon="${savedIcon}"]`);
+        if (btn) { btn.classList.add('active'); (window)._currentPoiIcon = savedIcon; }
+      }
+    } catch {}
 
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open

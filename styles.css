@@ -137,6 +137,7 @@ body{
   background: var(--bg); color: var(--text); cursor: pointer;
 }
 .poi-opt:hover{ border-color: var(--accent); }
+.poi-opt.active{ border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 60%, #000 40%); }
 
 .brand{
   display: flex; align-items: center; gap: 8px;
