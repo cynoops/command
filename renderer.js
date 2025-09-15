@@ -407,6 +407,14 @@
     map.on('click', onClick);
     map.on('dblclick', onDblClick);
 
+    // Expose an abort helper so global handlers (e.g., ESC) can cancel drawing
+    (window).abortActiveTool = () => {
+      try { setDraft(null); } catch {}
+      try { (window)._lineInProgress = false; } catch {}
+      try { vertCoords = null; dragStart = null; } catch {}
+      try { const m = (window)._map; if (m) { m.dragPan.enable(); m.getCanvas().style.cursor = ''; } } catch {}
+    };
+
     // ---------- Drawings floating list ----------
     let hoveredId = null;
     const setHighlight = (id) => {
@@ -1133,6 +1141,8 @@
         default: break;
       }
     };
+    // Expose for global key handlers
+    (window).setActiveTool = setActiveTool;
     toolRect?.addEventListener('click', () => setActiveTool((window)._currentTool === 'rect' ? null : 'rect'));
     toolPoly?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poly' ? null : 'poly'));
     toolCircle?.addEventListener('click', () => setActiveTool((window)._currentTool === 'circle' ? null : 'circle'));
@@ -1232,6 +1242,19 @@
       try { m.easeTo({ bearing: 0, pitch: 0, duration: 400 }); } catch {}
     });
   })();
+
+  // Global ESC handler: exit active tool and cancel any drafts
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const target = e.target;
+    // Ignore when typing in inputs or contenteditable
+    if (target && (target.closest && target.closest('input, textarea, select')))
+      return;
+    if (target && (target.isContentEditable || (target.closest && target.closest('[contenteditable="true"]'))))
+      return;
+    try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
+    try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
+  });
   console.log(window.serial);
   window.serial.onData((line) => {
     console.log({line})
