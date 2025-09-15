@@ -1573,14 +1573,6 @@
   // --- Edit vertices interactions ---
   (function initEditInteractions(){
     let dragging = null; // { fid, idx }
-    const onDown = (e) => {
-      if ((window)._currentTool !== 'edit') return;
-      const feat = e.features && e.features[0];
-      if (!feat) return;
-      dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
-      try { map.getCanvas().style.cursor = 'grabbing'; map.dragPan.disable(); } catch {}
-      e.preventDefault();
-    };
     const onMove = (e) => {
       if (!dragging || (window)._currentTool !== 'edit') return;
       const { lng, lat } = e.lngLat;
@@ -1591,23 +1583,39 @@
       const i = dragging.idx;
       if (!Number.isInteger(i) || i < 0 || i >= ring.length-1) return;
       ring[i] = [lng, lat];
-      // keep ring closed
-      ring[ring.length-1] = ring[0];
+      ring[ring.length-1] = ring[0]; // keep closed
       setDirty(true);
-      refreshDraw(); // update panel with new area
+      try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
       refreshEditVerts();
     };
     const onUp = () => {
       if (!dragging) return;
       dragging = null;
-      try { map.getCanvas().style.cursor = ''; map.dragPan.enable(); } catch {}
+      try {
+        map.getCanvas().style.cursor = '';
+        map.dragPan.enable();
+        map.off('mousemove', onMove);
+        map.off('mouseup', onUp);
+      } catch {}
+      refreshDraw();
+    };
+    const onDown = (e) => {
+      if ((window)._currentTool !== 'edit') return;
+      const feat = e.features && e.features[0];
+      if (!feat) return;
+      dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
+      try {
+        map.getCanvas().style.cursor = 'grabbing';
+        map.dragPan.disable();
+        map.on('mousemove', onMove);
+        map.on('mouseup', onUp);
+      } catch {}
+      e.preventDefault();
     };
     try {
       map.on('mousedown', 'edit-verts', onDown);
-      map.on('mousemove', onMove);
-      map.on('mouseup', onUp);
       map.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = 'grab'; });
-      map.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) map.getCanvas().style.cursor = ''; });
     } catch {}
   })();
   console.log(window.serial);
