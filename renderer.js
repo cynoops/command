@@ -294,7 +294,7 @@
         map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['==', ['get','id'], '__none__'], paint: { 'circle-color': '#FFC107', 'circle-radius': 8, 'circle-opacity': 0.5 } });
       }
       if (!map.getLayer('edit-verts')) {
-        map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 4 }, layout: { visibility: 'none' } });
+        map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 7 }, layout: { visibility: 'none' } });
       }
     };
     map.on('load', ensureDrawLayers);
@@ -1575,7 +1575,9 @@
     let dragging = null; // { fid, idx }
     const onMove = (e) => {
       if (!dragging || (window)._currentTool !== 'edit') return;
-      const { lng, lat } = e.lngLat;
+      const lngLat = e.lngLat || (e.touches && e.touches[0] && map.unproject([e.touches[0].clientX, e.touches[0].clientY]));
+      if (!lngLat) return;
+      const { lng, lat } = lngLat;
       const f = drawStore.features.find(x => x.properties?.id === dragging.fid);
       if (!f || f.geometry?.type !== 'Polygon') return;
       const ring = f.geometry.coordinates && f.geometry.coordinates[0];
@@ -1603,17 +1605,21 @@
       if ((window)._currentTool !== 'edit') return;
       const feat = e.features && e.features[0];
       if (!feat) return;
+      if (e.originalEvent && 'button' in e.originalEvent && e.originalEvent.button !== 0) return; // left click only
       dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
       try {
         map.getCanvas().style.cursor = 'grabbing';
         map.dragPan.disable();
         map.on('mousemove', onMove);
         map.on('mouseup', onUp);
+        map.on('touchmove', onMove, { passive:false });
+        map.on('touchend', onUp);
       } catch {}
       e.preventDefault();
     };
     try {
       map.on('mousedown', 'edit-verts', onDown);
+      map.on('touchstart', 'edit-verts', onDown, { passive:false });
       map.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') map.getCanvas().style.cursor = 'grab'; });
       map.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) map.getCanvas().style.cursor = ''; });
     } catch {}
