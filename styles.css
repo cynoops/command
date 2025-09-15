@@ -518,13 +518,13 @@ input:focus, select:focus{ border-color: var(--accent); }
 /* -------- Color Picker Modal -------- */
 .color-grid{
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  grid-template-columns: repeat(10, 24px); /* 10 columns, each ~20px + 2px border both sides */
   gap: 10px;
-  max-width: 420px;
+  justify-content: center;
 }
 .color-opt{
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   border: 2px solid #0006;
   box-shadow: 0 2px 6px rgba(0,0,0,.35);
@@ -532,3 +532,16 @@ input:focus, select:focus{ border-color: var(--accent); }
 }
 .color-opt:focus{ outline: 2px solid var(--accent); outline-offset: 2px; }
 .color-opt[aria-selected="true"]{ box-shadow: 0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,.35); }
+
+/* Constrain the color modal size so it doesn't look oversized */
+#colorModal .modal-panel{
+  width: auto;
+  max-width: 520px;
+  min-width: 360px;
+}
+#colorModal .modal-body{ padding: 16px; }
+
+@media (max-width: 460px){
+  #colorModal .modal-panel{ min-width: auto; width: calc(100vw - 32px); }
+  .color-grid{ grid-template-columns: repeat(7, 24px); }
+}
