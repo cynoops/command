@@ -311,6 +311,7 @@
       const src = map.getSource('draw');
       if (src) src.setData(drawStore);
       updateDrawingsPanel();
+      try { if ((window)._currentTool === 'edit') refreshEditVerts(); } catch {}
     };
     const refreshEditVerts = () => {
       try{
@@ -1452,7 +1453,13 @@
         case 'edit':
           toolEdit?.classList.add('active');
           toolEdit?.setAttribute('aria-pressed', String(true));
-          try { (window)._map && (window)._map.setLayoutProperty('edit-verts','visibility','visible'); refreshEditVerts(); } catch {}
+          try {
+            const m = (window)._map; if (m) {
+              m.setLayoutProperty('edit-verts','visibility','visible');
+              refreshEditVerts();
+              try { m.moveLayer('edit-verts'); } catch {}
+            }
+          } catch {}
           break;
         default: break;
       }
@@ -1622,11 +1629,22 @@
       e.preventDefault();
     };
     try {
-      const m = getM(); if (m && m.getLayer && m.getLayer('edit-verts')){
-        m.on('mousedown', 'edit-verts', onDown);
-        m.on('touchstart', 'edit-verts', onDown, { passive:false });
-        m.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') m.getCanvas().style.cursor = 'grab'; });
-        m.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) m.getCanvas().style.cursor = ''; });
+      const m = getM();
+      if (m) {
+        // Global mousedown fallback using hit-test to find a vertex under pointer
+        m.on('mousedown', (e) => {
+          if ((window)._currentTool !== 'edit') return;
+          try{
+            const feats = m.queryRenderedFeatures(e.point, { layers: ['edit-verts'] });
+            if (feats && feats[0]) { onDown({ ...e, features:[feats[0]], originalEvent: e.originalEvent }); }
+          }catch{}
+        });
+        if (m.getLayer && m.getLayer('edit-verts')){
+          m.on('mousedown', 'edit-verts', onDown);
+          m.on('touchstart', 'edit-verts', onDown, { passive:false });
+          m.on('mouseenter', 'edit-verts', () => { if ((window)._currentTool==='edit') m.getCanvas().style.cursor = 'grab'; });
+          m.on('mouseleave', 'edit-verts', () => { if ((window)._currentTool==='edit' && !dragging) m.getCanvas().style.cursor = ''; });
+        }
       }
     } catch {}
   })();
