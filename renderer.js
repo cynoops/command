@@ -13,6 +13,7 @@
   const serialStatusDot = q('#serialStatusDot');
   const statSerial = q('#statSerial');
   const statRxRate = q('#statRxRate');
+  const footerAddress = q('#footerAddress');
   const fullscreenBtn = q('#fullscreenBtn');
   const tabMapInput = q('#tab-map');
   const tabSettingsInput = q('#tab-settings');
@@ -196,19 +197,27 @@
 
     async function updatePlaceFromCenter(){
       try{
-        if (!coordPlace) return;
+        // If footer address element is missing and no coord place, skip
+        if (!coordPlace && !footerAddress) return;
         const c = map.getCenter();
         const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
-        if (!key) { coordPlace.textContent = '—'; return; }
+        if (!key) {
+          if (coordPlace) coordPlace.textContent = '—';
+          if (footerAddress) footerAddress.textContent = '—';
+          return;
+        }
         const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(c.lat + ',' + c.lng)}&key=${encodeURIComponent(key)}`;
         const resp = await fetch(url);
         const data = await resp.json();
         if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) {
-          coordPlace.textContent = '—';
+          if (coordPlace) coordPlace.textContent = '—';
+          if (footerAddress) footerAddress.textContent = '—';
           return;
         }
         const res = data.results[0];
-        coordPlace.textContent = res.formatted_address || res.formattedAddress || '—';
+        const addr = res.formatted_address || res.formattedAddress || '—';
+        if (coordPlace) coordPlace.textContent = addr;
+        if (footerAddress) footerAddress.textContent = addr;
         try{
           const comps = res.address_components || [];
           const country = comps.find(c => (c.types||[]).includes('country'));
@@ -676,6 +685,8 @@
         }catch{}
       };
       const startEdit = () => {
+        try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
+        try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
         (window)._editTarget = f.properties?.id || null;
         updateEditBtnState();
         try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); m.setLayoutProperty('edit-mid','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-mid'); m.moveLayer('edit-verts'); }catch{} } }catch{}
@@ -929,8 +940,8 @@
   }
 
   function setStatus(state, path) {
-    serialStatusDot.dataset.state = state;
-    statSerial.textContent = state === 'connected' ? (path || 'connected') : state;
+    if (serialStatusDot) serialStatusDot.dataset.state = state;
+    if (statSerial) statSerial.textContent = state === 'connected' ? (path || 'connected') : state;
   }
 
   async function refreshPortsList() {
@@ -999,7 +1010,7 @@
     const dt = (now - lastTick) / 1000;
     if (dt >= 1) {
       const rate = Math.round(rxCount / dt);
-      statRxRate.textContent = `${rate}/s`;
+      if (statRxRate) statRxRate.textContent = `${rate}/s`;
       rxCount = 0; lastTick = now;
     }
   }, 250);

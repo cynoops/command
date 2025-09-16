@@ -118,22 +118,7 @@
         <div id="map" class="map-container" aria-label="Interactive map"></div>
         <!-- Crosshair overlay -->
         <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
-        <!-- Floating coordinates input -->
-        <div class="coord-float" role="group" aria-label="Map center coordinates">
-          <div class="coord-float-body">
-            <label class="coord-field">
-              <span class="coord-label">Longitude</span>
-              <input id="inputLng" type="number" step="0.000001" min="-180" max="180" placeholder="lng" />
-            </label>
-            <label class="coord-field">
-              <span class="coord-label">Latitude</span>
-              <input id="inputLat" type="number" step="0.000001" min="-90" max="90" placeholder="lat" />
-            </label>
-            <div class="coord-address" aria-live="polite">
-              <span id="coordPlace" class="coord-place">—</span>
-            </div>
-          </div>
-        </div>
+        <!-- Location inputs panel removed -->
         <!-- Floating drawings list -->
         <div id="drawingsFloat" class="drawings-float">
           <div class="serial-float-header drawings-header">
@@ -211,9 +196,11 @@
       <div class="stat"><span class="k">Center</span><span id="statCenter" class="v">—</span></div>
       <div class="stat"><span class="k">Bearing</span><span id="statBearing" class="v">—</span></div>
       <div class="stat"><span class="k">Pitch</span><span id="statPitch" class="v">—</span></div>
-      <div class="stat"><span class="k">Layer</span><span id="statLayer" class="v">—</span></div>
-      <div class="stat"><span class="k">Serial</span><span id="statSerial" class="v">disconnected</span></div>
-      <div class="stat"><span class="k">RX</span><span id="statRxRate" class="v">0/s</span></div>
+      <!-- Removed: Layer, Serial, RX -->
+      <div class="stat" style="justify-self:end; text-align:right;">
+        <span class="k">Address</span>
+        <span id="footerAddress" class="v">—</span>
+      </div>
     </footer>
   </div>
 
