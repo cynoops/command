@@ -296,7 +296,7 @@ body{
 /* Floating drawings panel */
 .drawings-float{
   position: absolute; left: 10px; top: 60px;
-  width: 260px; max-height: 42vh;
+  width: 320px; max-height: 48vh;
   display: flex; flex-direction: column;
   background: var(--bg-elev);
   border: 1px solid var(--line);
