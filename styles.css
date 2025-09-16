@@ -117,6 +117,7 @@ body{
   cursor: pointer;
 }
 .tool-btn .icon{ width: 18px; height: 18px; fill: currentColor; }
+.tool-btn img.icon{ filter: invert(1); }
 .tool-btn:hover{ border-color: var(--accent); }
 .tool-btn.active{
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
@@ -496,8 +497,8 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
 .app-footer{
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 8px;
+  grid-auto-columns: auto auto auto auto 1fr;
+  gap: 30px;
   align-items: center;
   padding: 0 10px;
   background: var(--bg-elev);

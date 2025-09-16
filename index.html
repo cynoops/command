@@ -55,56 +55,41 @@
     <!-- Map Tools Toolbar (visible only on MAP) -->
     <div class="app-toolbar" role="toolbar" aria-label="Map tools">
       <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2"/></svg>
+        <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
       </button>
       <div class="tool-divider" aria-hidden="true"></div>
       <!-- View controls -->
       <button id="toolZoomIn" class="tool-btn" title="Zoom in">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M11 4h2v6h6v2h-6v6h-2v-6H5v-2h6z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolZoomOut" class="tool-btn" title="Zoom out">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 11h14v2H5z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 5v5h5v2h-7V7h2z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 2l3 6h5l-4 4 2 6-6-3-6 3 2-6-4-4h5z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
       </button>
       <div class="tool-divider" aria-hidden="true"></div>
       <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
+        <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16l-2-6 6-4 8 3-3 9H6z"/></svg>
+        <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>
+        <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
       </button>
       <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16l5-5 4 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
       </button>
       <!-- POI button sits next to Line -->
       <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9a2 2 0 110-4 2 2 0 010 4z"/></svg>
-      </button>
-      <button id="toolEdit" class="tool-btn" title="Edit polygon nodes" aria-pressed="false">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 6h4v4H6zM14 4h4v4h-4zM14 14h4v4h-4zM5 11h6v2H5zM11 7h2v6h-2zM11 13h6v2h-6z"/>
-        </svg>
+        <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
       </button>
       <div class="tool-spacer"></div>
       <button id="resetLayoutToolbarBtn" class="tool-btn" title="Reset panel layout">
@@ -197,8 +182,8 @@
 
     <!-- Footer: map & data stats -->
     <footer class="app-footer" aria-live="polite">
+      <div class="stat"><span class="k">Lat/Long</span><span id="statCenter" class="v">—</span></div>
       <div class="stat"><span class="k">Zoom</span><span id="statZoom" class="v">—</span></div>
-      <div class="stat"><span class="k">Center</span><span id="statCenter" class="v">—</span></div>
       <div class="stat"><span class="k">Bearing</span><span id="statBearing" class="v">—</span></div>
       <div class="stat"><span class="k">Pitch</span><span id="statPitch" class="v">—</span></div>
       <!-- Removed: Layer, Serial, RX -->

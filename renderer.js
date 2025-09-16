@@ -37,7 +37,6 @@
   const toolCircle = q('#toolCircle');
   const toolLine = q('#toolLine');
   const toolPOI = q('#toolPOI');
-  const toolEdit = q('#toolEdit');
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
@@ -370,6 +369,42 @@
       }catch{}
     };
     (window)._refreshEditVerts = refreshEditVerts;
+
+    // Helper: point in polygon ring (ray casting)
+    function pointInRing(pt, ring){
+      try{
+        let x = pt[0], y = pt[1], inside = false;
+        for (let i=0, j=ring.length-1; i<ring.length; j=i++){
+          const xi = ring[i][0], yi = ring[i][1];
+          const xj = ring[j][0], yj = ring[j][1];
+          const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/((yj-yi)||1e-12) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }catch{ return false; }
+    }
+
+    // Finish edit when clicking outside the edited polygon
+    map.on('mousedown', (e) => {
+      try{
+        const eid = (window)._editTarget; if (!eid) return;
+        // If clicking on edit handles, ignore (drag/insert will handle it)
+        const feats = map.queryRenderedFeatures(e.point, { layers: ['edit-verts','edit-mid'] });
+        if (feats && feats.length) return;
+        const ds = (window)._drawStore || drawStore;
+        const f = ds.features.find(x => x.properties?.id === eid);
+        if (!f || f.geometry?.type !== 'Polygon') { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
+        const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+        if (!Array.isArray(ring) || ring.length < 4) { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
+        const inside = pointInRing([e.lngLat.lng, e.lngLat.lat], ring);
+        if (!inside) {
+          (window)._editTarget = null;
+          try { map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); } catch {}
+          try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
+          try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
+        }
+      }catch{}
+    });
     const refreshDrawMapOnly = () => {
       try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
     };
@@ -484,6 +519,7 @@
     // Click-to-vertex for Line/Polygon and POI
     let vertCoords = null; // array of [lng,lat]
     (window)._lineInProgress = false;
+    const coordsEqual = (a, b, eps=1e-6) => !!a && !!b && Math.abs(a[0]-b[0]) <= eps && Math.abs(a[1]-b[1]) <= eps;
     const onClick = (e) => {
       const tool = (window)._currentTool;
       if (!tool) return;
@@ -497,7 +533,11 @@
       }
       if (tool !== 'poly' && tool !== 'line') return;
       if (!vertCoords) vertCoords = [];
-      vertCoords.push([e.lngLat.lng, e.lngLat.lat]);
+      const newPt = [e.lngLat.lng, e.lngLat.lat];
+      // Avoid pushing a duplicate point when double-clicking
+      if (vertCoords.length === 0 || !coordsEqual(vertCoords[vertCoords.length-1], newPt)) {
+        vertCoords.push(newPt);
+      }
       (window)._lineInProgress = (Array.isArray(vertCoords) && vertCoords.length > 0 && tool === 'line');
       if (tool === 'poly') {
         const ring = vertCoords.length > 1 ? [...vertCoords, vertCoords[0]] : [...vertCoords];
@@ -510,6 +550,12 @@
       const tool = (window)._currentTool;
       if (!vertCoords || !tool) { setDraft(null); vertCoords = null; return; }
       if (tool === 'poly' && vertCoords.length >= 3) {
+        // If the last two vertices are the same (double-click), drop the last
+        if (vertCoords.length >= 2 && coordsEqual(vertCoords[vertCoords.length-1], vertCoords[vertCoords.length-2])) {
+          vertCoords.pop();
+        }
+        // Ensure we still have a valid polygon
+        if (vertCoords.length < 3) { setDraft(null); vertCoords = null; return; }
         const ring = [...vertCoords, vertCoords[0]];
         drawStore.features.push(annotateFeature({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates:[ring] } }, 'polygon'));
       } else if (tool === 'line' && vertCoords.length >= 2) {
@@ -688,7 +734,22 @@
           let minLng=Infinity,minLat=Infinity,maxLng=-Infinity,maxLat=-Infinity;
           ring.forEach(p=>{ const [lng,lat]=p; if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng; if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat; });
           if (Number.isFinite(minLng)&&Number.isFinite(minLat)&&Number.isFinite(maxLng)&&Number.isFinite(maxLat)){
-            const m = (window)._map; if (m) m.fitBounds([[minLng,minLat],[maxLng,maxLat]], { padding: 80, duration: 500, maxZoom: 17 });
+            const m = (window)._map; if (!m) return;
+            try {
+              if (typeof m.cameraForBounds === 'function') {
+                const cam = m.cameraForBounds([[minLng,minLat],[maxLng,maxLat]], { padding: 80, maxZoom: 17 });
+                const baseZoom = (cam && Number.isFinite(cam.zoom)) ? cam.zoom : (m.getZoom() || 12);
+                const reducedZoom = Math.max(0, baseZoom * 0.90); // reduce by ~10%
+                const center = cam && cam.center ? cam.center : { lng:(minLng+maxLng)/2, lat:(minLat+maxLat)/2 };
+                m.easeTo({ center, zoom: reducedZoom, duration: 500 });
+              } else {
+                // Fallback: fit then zoom out by 25%
+                m.fitBounds([[minLng,minLat],[maxLng,maxLat]], { padding: 80, duration: 400, maxZoom: 17 });
+                m.once('moveend', () => {
+                  try { m.easeTo({ zoom: Math.max(0, (m.getZoom() || 12) * 0.90), duration: 150 }); } catch {}
+                });
+              }
+            } catch {}
           }
         }catch{}
       };
@@ -1514,7 +1575,7 @@
   (function initToolbar(){
     const setActiveTool = (tool) => {
       (window)._currentTool = tool;
-      const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI, toolEdit];
+      const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
@@ -1528,20 +1589,8 @@
           toolPOI?.classList.add('active');
           toolPOI?.setAttribute('aria-pressed', String(true));
           break;
-        case 'edit':
-          toolEdit?.classList.add('active');
-          toolEdit?.setAttribute('aria-pressed', String(true));
-          try {
-            const m = (window)._map; if (m) {
-              m.setLayoutProperty('edit-verts','visibility','visible');
-              refreshEditVerts();
-              try { m.moveLayer('edit-verts'); } catch {}
-            }
-          } catch {}
-          break;
         default: break;
       }
-      if (tool !== 'edit') { try { (window)._map && (window)._map.setLayoutProperty('edit-verts','visibility','none'); } catch {} }
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
@@ -1560,7 +1609,6 @@
       }
     });
     toolPOI?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poi' ? null : 'poi'));
-    toolEdit?.addEventListener('click', () => setActiveTool((window)._currentTool === 'edit' ? null : 'edit'));
 
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
@@ -1592,7 +1640,7 @@
     toolGoTo?.addEventListener('click', openGotoModal);
     gotoClose?.addEventListener('click', closeGotoModal);
     gotoModal?.addEventListener('click', (e) => { const t=e.target; if (t && t.dataset && t.dataset.action==='close') closeGotoModal(); });
-    gotoSubmit?.addEventListener('click', async () => {
+    const performGoto = async () => {
       try{
         const lng = Number(gotoLng?.value);
         const lat = Number(gotoLat?.value);
@@ -1603,16 +1651,30 @@
         m.flyTo({ center: [lng, lat], zoom: Math.max(14, m.getZoom() || 14), duration: 600 });
         if (gotoAddPoi && gotoAddPoi.checked) {
           try {
+            const ds = (window)._drawStore || drawStore;
             const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[lng, lat] } };
-            // annotateFeature exists in this scope
-            drawStore.features.push(annotateFeature(poi, 'poi'));
+            const af = (typeof annotateFeature === 'function') ? annotateFeature : (f)=>f;
+            ds.features.push(af(poi, 'poi'));
             setDirty(true);
-            refreshDraw();
-          } catch {}
+            if (typeof (window)._refreshDraw === 'function') (window)._refreshDraw(); else refreshDraw();
+          } catch (err) { console.error('Add POI failed', err); }
         }
         closeGotoModal();
       }catch{}
-    });
+    };
+    gotoSubmit?.addEventListener('click', performGoto);
+    // Allow Enter key to submit from either field
+    gotoLng?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
+    gotoLat?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
+
+    // Clicking the LAT/LONG in footer opens the same Go To dialog
+    try {
+      if (statCenter) {
+        statCenter.style.cursor = 'pointer';
+        statCenter.title = 'Click to enter coordinates';
+        statCenter.addEventListener('click', openGotoModal);
+      }
+    } catch {}
 
     // Live search with debounce
     let searchTimer = null;
