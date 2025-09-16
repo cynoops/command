@@ -39,6 +39,7 @@
   const toolPOI = q('#toolPOI');
   const toolEdit = q('#toolEdit');
   const toolSearch = q('#toolSearch');
+  const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
   const coordFloat = q('.coord-float');
   const drawingsFloat = q('#drawingsFloat');
@@ -54,6 +55,13 @@
   const searchClose = q('#searchClose');
   const searchQuery = q('#searchQuery');
   const searchResults = q('#searchResults');
+  // Go To modal
+  const gotoModal = q('#gotoModal');
+  const gotoClose = q('#gotoClose');
+  const gotoLng = q('#gotoLng');
+  const gotoLat = q('#gotoLat');
+  const gotoAddPoi = q('#gotoAddPoi');
+  const gotoSubmit = q('#gotoSubmit');
   // Color picker modal
   const colorModal = q('#colorModal');
   const colorClose = q('#colorClose');
@@ -1569,6 +1577,43 @@
       const t = e.target; if (t && t.dataset && t.dataset.action === 'close') closeSearchModal();
     });
 
+    // Go To coordinates modal
+    function openGotoModal(){
+      if (!gotoModal) return;
+      try{
+        const c = (window)._map?.getCenter();
+        if (gotoLng && c) gotoLng.value = Number(c.lng).toFixed(6);
+        if (gotoLat && c) gotoLat.value = Number(c.lat).toFixed(6);
+      }catch{}
+      gotoModal.hidden = false;
+      setTimeout(() => gotoLng?.focus(), 0);
+    }
+    function closeGotoModal(){ if (gotoModal) gotoModal.hidden = true; }
+    toolGoTo?.addEventListener('click', openGotoModal);
+    gotoClose?.addEventListener('click', closeGotoModal);
+    gotoModal?.addEventListener('click', (e) => { const t=e.target; if (t && t.dataset && t.dataset.action==='close') closeGotoModal(); });
+    gotoSubmit?.addEventListener('click', async () => {
+      try{
+        const lng = Number(gotoLng?.value);
+        const lat = Number(gotoLat?.value);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+          alert('Please enter valid coordinates.'); return;
+        }
+        const m = (window)._map; if (!m) return;
+        m.flyTo({ center: [lng, lat], zoom: Math.max(14, m.getZoom() || 14), duration: 600 });
+        if (gotoAddPoi && gotoAddPoi.checked) {
+          try {
+            const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[lng, lat] } };
+            // annotateFeature exists in this scope
+            drawStore.features.push(annotateFeature(poi, 'poi'));
+            setDirty(true);
+            refreshDraw();
+          } catch {}
+        }
+        closeGotoModal();
+      }catch{}
+    });
+
     // Live search with debounce
     let searchTimer = null;
     async function performSearch(qstr){
@@ -1634,6 +1679,11 @@
     // Close color modal if open
     if (colorModal && colorModal.hidden === false) {
       try { colorModal.hidden = true; } catch {}
+      e.preventDefault();
+      return;
+    }
+    if (gotoModal && gotoModal.hidden === false) {
+      try { gotoModal.hidden = true; } catch {}
       e.preventDefault();
       return;
     }
