@@ -39,6 +39,14 @@
           <span class="serial-label">Connects</span>
           <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
         </button>
+        <button id="serialMonitorBtn" class="serial-btn" title="Open serial monitor" aria-label="Open serial monitor" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v10H4z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M6 9h3l2 2 2-4 2 2h3" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M8 19h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span class="serial-label">Serial Monitor</span>
+        </button>
         <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 10V4h6v2H6v4H4zm10-6h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 6h-6v-2h4v-4h2v6z" />
@@ -105,9 +113,10 @@
     <main class="app-main">
       <!-- MAP VIEW -->
       <section id="view-map" class="view view-map" role="tabpanel" aria-labelledby="tab-map">
-        <div id="map" class="map-container" aria-label="Interactive map"></div>
-        <!-- Crosshair overlay -->
-        <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
+        <div id="map" class="map-container" aria-label="Interactive map">
+          <!-- Crosshair overlay (placed inside container so it's always centered) -->
+          <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
+        </div>
         <!-- Location inputs panel removed -->
         <!-- Sidebar: Features -->
         <aside id="featuresSidebar" class="features-sidebar" aria-label="Features panel">
@@ -119,14 +128,7 @@
           <div id="featuresResizer" class="features-resizer" title="Drag to resize" aria-hidden="true"></div>
         </aside>
         <div id="featuresHandle" class="features-handle" hidden title="Show Features"></div>
-        <!-- Floating serial monitor -->
-        <div id="serialFloat" class="serial-float" hidden>
-          <div class="serial-float-header">
-            <span>Serial Monitor</span>
-            <button id="serialFloatToggle" class="btn-icon" title="Collapse/expand serial monitor" aria-expanded="true">▾</button>
-          </div>
-          <pre id="serialFloatBody" class="serial-float-body" aria-live="polite"></pre>
-        </div>
+        <!-- Serial monitor moved to modal -->
         <!-- You’ll initialize the map in your preload/renderer JS and update footer stats by ID -->
       </section>
 
@@ -304,6 +306,26 @@
           <button id="aiSubmit" class="btn btn-primary">SUBMIT</button>
         </div>
         <div id="aiError" class="muted" role="alert" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Serial Monitor Modal -->
+  <div id="serialMonitorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="serialMonTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(820px,92vw);">
+      <div class="modal-header">
+        <h3 id="serialMonTitle">Serial Monitor</h3>
+        <button id="serialMonitorClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-row" style="gap:12px; align-items:center;">
+          <div class="muted">Connected:</div>
+          <div id="serialConnPath" class="v">—</div>
+          <div class="spacer"></div>
+          <button id="serialDisconnectBtn" class="btn">Disconnect</button>
+        </div>
+        <pre id="serialMonitorBody" class="serial-float-body" aria-live="polite" style="height:40vh; border:1px solid var(--line); border-radius:8px; background: var(--bg);"></pre>
       </div>
     </div>
   </div>

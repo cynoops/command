@@ -233,14 +233,16 @@ body{
 .map-container{
   position: absolute;
   top: 0; right: 0; bottom: 0; left: var(--sidebar-w, 0px);
-  width: 100%;
   height: 100%;
+  transition: left .25s ease;
 }
 
 /* Crosshair overlay */
 .map-crosshair{
   position: absolute;
-  left: 50%; top: 50%;
+  /* Center within the map container */
+  left: 50%;
+  top: 50%;
   width: 28px; height: 28px;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -308,13 +310,32 @@ body{
   display: flex; flex-direction: column;
   overflow: hidden;
   z-index: 12;
+  transition: width .25s ease, opacity .2s ease;
 }
+.features-sidebar.anim-enter{ opacity: 0; }
+.features-sidebar.anim-enter-active{ opacity: 1; }
+.features-sidebar.anim-exit{ opacity: 1; }
+.features-sidebar.anim-exit-active{ opacity: 0; }
 .features-header{ display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 700; }
 .features-title{ font-size: 13px; }
 .features-list{ overflow: auto; padding: 4px 0; }
+.features-empty{ color: var(--muted); padding: 12px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .features-resizer{ position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; background: transparent; }
-.features-handle{ position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: color-mix(in oklab, var(--bg-elev) 70%, #000 30%); border-right: 1px solid var(--line); z-index: 13; cursor: pointer; opacity: .6; }
+.features-handle{ position: absolute; left: 0; top: 0; bottom: 0; width: 16px; background: color-mix(in oklab, var(--bg-elev) 70%, #000 30%); border-right: 1px solid var(--line); z-index: 13; cursor: pointer; opacity: .8; display: flex; align-items: center; justify-content: center; transition: opacity .2s ease; }
 .features-handle:hover{ opacity: 1; }
+.features-handle::after{
+  content: 'FEATURES';
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .12em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg); /* makes text read top-to-bottom */
+}
+/* When sidebar is open (or handle hidden), suppress the label */
+.features-handle[hidden]::after{ content: none; }
+.features-handle[data-open="1"]::after{ content: none; }
+/* Hide the handle bar entirely when the sidebar is visible */
+.features-sidebar:not([hidden]) + .features-handle{ display: none !important; }
 .drawing-row{
   display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 0; align-items: center;
   padding: 8px;

@@ -30,6 +30,13 @@
   const serialFloat = q('#serialFloat');
   const serialFloatBody = q('#serialFloatBody');
   const serialFloatToggle = q('#serialFloatToggle');
+  // New serial monitor modal
+  const serialMonitorBtn = q('#serialMonitorBtn');
+  const serialMonitorModal = q('#serialMonitorModal');
+  const serialMonitorClose = q('#serialMonitorClose');
+  const serialMonitorBody = q('#serialMonitorBody');
+  const serialConnPath = q('#serialConnPath');
+  const serialDisconnectBtn = q('#serialDisconnectBtn');
   const inputLng = q('#inputLng');
   const inputLat = q('#inputLat');
   const toolRect = q('#toolRect');
@@ -80,6 +87,9 @@
   const aiError = q('#aiError');
   const aiSpinner = q('#aiSpinner');
   let aiTarget = null;
+
+  // Helper to get current Mapbox instance
+  const getMap = () => (window)._map;
 
   let selectedPath = null;
   let rxCount = 0;
@@ -779,6 +789,13 @@
     const updateDrawingsPanel = () => {
       if (!drawingsList) return;
       drawingsList.innerHTML = '';
+      if (!drawStore.features || drawStore.features.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'features-empty';
+        empty.textContent = 'No features yet. Start drawing on the map.';
+        drawingsList.appendChild(empty);
+        return;
+      }
       drawStore.features.forEach(f => drawingsList.appendChild(renderRow(f)));
     };
     updateDrawingsPanel();
@@ -1064,14 +1081,15 @@
     connectBtnAction.disabled = true;
     try {
       const baud = Number(connectBaud.value || 115200);
+      if (serialMonitorBtn) serialMonitorBtn.hidden = true; // ensure hidden until confirmed connected
       await window.serial.open(selectedPath, baud);
       setStatus('connected', selectedPath);
-      serialFloat.hidden = false;
-      serialFloat.classList.add('collapsed');
-      if (serialFloatToggle) serialFloatToggle.setAttribute('aria-expanded', 'false');
+      if (serialMonitorBtn) serialMonitorBtn.hidden = false;
+      if (serialConnPath) serialConnPath.textContent = selectedPath;
       closeModal();
     } catch (e) {
       setStatus('disconnected');
+      if (serialMonitorBtn) serialMonitorBtn.hidden = true;
       alert(`Failed to open ${selectedPath}: ${String(e)}`);
     } finally {
       connectBtnAction.disabled = false;
@@ -1099,11 +1117,10 @@
   refreshPorts?.addEventListener('click', refreshPortsList);
   connectBtnAction?.addEventListener('click', connectSelected);
 
-  serialFloatToggle?.addEventListener('click', () => {
-    if (!serialFloat) return;
-    const isCollapsed = serialFloat.classList.toggle('collapsed');
-    serialFloatToggle.setAttribute('aria-expanded', String(!isCollapsed));
-  });
+  // Ensure the serial monitor button starts hidden
+  try { if (serialMonitorBtn) serialMonitorBtn.hidden = true; } catch {}
+
+  // deprecated: old floating monitor toggle (removed)
 
   fullscreenBtn?.addEventListener('click', async () => {
     try { await window.app.toggleFullScreen(); } catch {}
@@ -1310,6 +1327,12 @@
   function initSidebar(){
     const root = document.documentElement;
     const minW = 280, maxW = 400;
+    
+    let resizeTimer = null;
+    const scheduleResize = (delay=260) => {
+      try { if (resizeTimer) clearTimeout(resizeTimer); } catch {}
+      resizeTimer = setTimeout(() => { try { getMap()?.resize(); } catch {} }, delay);
+    };
     const readW = () => {
       const saved = Number(localStorage.getItem('ui.sidebar.w'));
       return Number.isFinite(saved) ? Math.min(maxW, Math.max(minW, saved)) : 320;
@@ -1318,14 +1341,33 @@
       if (open) {
         const w = readW();
         root.style.setProperty('--sidebar-w', w + 'px');
-        featuresSidebar && (featuresSidebar.hidden = false);
-        featuresHandle && (featuresHandle.hidden = true);
+        if (featuresSidebar) {
+          featuresSidebar.hidden = false;
+          featuresSidebar.classList.remove('anim-exit','anim-exit-active');
+          featuresSidebar.classList.add('anim-enter');
+          requestAnimationFrame(() => featuresSidebar.classList.add('anim-enter-active'));
+          setTimeout(() => featuresSidebar && featuresSidebar.classList.remove('anim-enter','anim-enter-active'), 220);
+        }
+        if (featuresHandle) { featuresHandle.hidden = true; featuresHandle.setAttribute('data-open','1'); }
         try { localStorage.setItem('ui.sidebar.open', '1'); } catch {}
+        scheduleResize();
       } else {
         root.style.setProperty('--sidebar-w', '0px');
-        featuresSidebar && (featuresSidebar.hidden = true);
-        featuresHandle && (featuresHandle.hidden = false);
+        if (featuresSidebar) {
+          // animate out opacity while width transitions to 0
+          featuresSidebar.classList.remove('anim-enter','anim-enter-active');
+          featuresSidebar.classList.add('anim-exit');
+          requestAnimationFrame(() => featuresSidebar.classList.add('anim-exit-active'));
+          const onEnd = () => {
+            if (featuresSidebar) featuresSidebar.hidden = true;
+            featuresSidebar && featuresSidebar.classList.remove('anim-exit','anim-exit-active');
+            featuresSidebar && featuresSidebar.removeEventListener('transitionend', onEnd);
+          };
+          featuresSidebar.addEventListener('transitionend', onEnd);
+        }
+        if (featuresHandle) { featuresHandle.hidden = false; featuresHandle.setAttribute('data-open','0'); }
         try { localStorage.setItem('ui.sidebar.open', '0'); } catch {}
+        scheduleResize();
       }
     };
     // initial state
@@ -1343,6 +1385,8 @@
         root.style.setProperty('--sidebar-w', w + 'px');
         try { localStorage.setItem('ui.sidebar.w', String(w)); } catch {}
         e.preventDefault?.();
+        // debounce map resize while dragging
+        scheduleResize(50);
       };
       const onUp = () => { if (!dragging) return; dragging=false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
       const onDown = (e) => { if (featuresSidebar?.hidden) return; dragging=true; startX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX; startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || readW(); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); document.addEventListener('touchmove', onMove, { passive:false }); document.addEventListener('touchend', onUp); e.preventDefault?.(); };
@@ -1436,23 +1480,17 @@
   // Serial event listeners
   window.serial.onStatus((payload) => {
     console.log({payload})
+    // Hide monitor button by default; only show on connected
+    if (serialMonitorBtn) serialMonitorBtn.hidden = true;
     if (!payload) return;
     if (payload.state === 'connected') {
       setStatus('connected', payload.path);
-      if (serialFloat) {
-        serialFloat.hidden = false;
-        serialFloat.classList.add('collapsed');
-      }
-      if (serialFloatToggle) serialFloatToggle.setAttribute('aria-expanded', 'false');
-    } else if (payload.state === 'disconnected') {
-      setStatus('disconnected');
-      if (serialFloat) serialFloat.hidden = true;
-      if (serialFloat) serialFloat.classList.remove('collapsed');
-    } else if (payload.state === 'error') {
-      setStatus('disconnected');
-      console.error('Serial error:', payload.message);
-      if (serialFloat) serialFloat.hidden = true;
-      if (serialFloat) serialFloat.classList.remove('collapsed');
+      if (serialMonitorBtn) serialMonitorBtn.hidden = false;
+      if (serialConnPath) serialConnPath.textContent = payload.path || 'connected';
+    } else if (payload.state === 'disconnected' || payload.state === 'connecting' || payload.state === 'error') {
+      setStatus(payload.state === 'connecting' ? 'connecting' : 'disconnected');
+      if (payload.state === 'error') console.error('Serial error:', payload.message);
+      if (serialMonitorModal && serialMonitorModal.hidden === false) serialMonitorModal.hidden = true;
     }
   });
 
@@ -1627,6 +1665,14 @@
 
   // ---- Toolbar wiring ----
   (function initToolbar(){
+    const visibleCenter = () => {
+      try{
+        const m = getMap(); if (!m) return null;
+        const canvas = m.getCanvas();
+        const px = [ canvas.clientWidth / 2, canvas.clientHeight / 2 ];
+        return m.unproject(px);
+      }catch{ return null; }
+    };
     const setActiveTool = (tool) => {
       (window)._currentTool = tool;
       const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI];
@@ -1780,9 +1826,9 @@
     });
 
     // View controls
-    const getMap = () => (window)._map;
-    toolZoomIn?.addEventListener('click', () => { try { getMap()?.zoomIn({ duration: 300 }); } catch {} });
-    toolZoomOut?.addEventListener('click', () => { try { getMap()?.zoomOut({ duration: 300 }); } catch {} });
+    
+    toolZoomIn?.addEventListener('click', () => { try { const m=getMap(); if (!m) return; const around = visibleCenter() || m.getCenter(); m.zoomIn({ duration: 300, around }); } catch {} });
+    toolZoomOut?.addEventListener('click', () => { try { const m=getMap(); if (!m) return; const around = visibleCenter() || m.getCenter(); m.zoomOut({ duration: 300, around }); } catch {} });
     toolResetView?.addEventListener('click', () => {
       const m = getMap(); if (!m) return;
       try { m.easeTo({ bearing: 0, pitch: 0, duration: 400 }); } catch {}
@@ -1969,19 +2015,39 @@
 
   window.serial.onData((line) => {
     console.log({line})
-    if (!serialFloatBody) return;
+    const outEl = serialMonitorBody || serialFloatBody;
+    if (!outEl) return;
     rxCount += 1;
-    const atBottom = Math.abs(serialFloatBody.scrollHeight - serialFloatBody.scrollTop - serialFloatBody.clientHeight) < 8;
+    const atBottom = Math.abs(outEl.scrollHeight - outEl.scrollTop - outEl.clientHeight) < 8;
     const text = typeof line === 'string' ? line : String(line);
-    serialFloatBody.append(document.createTextNode(text.replace(/\r?\n$/, '')));
-    serialFloatBody.append(document.createTextNode('\n'));
+    outEl.append(document.createTextNode(text.replace(/\r?\n$/, '')));
+    outEl.append(document.createTextNode('\n'));
     // Trim lines
-    const all = serialFloatBody.textContent || '';
+    const all = outEl.textContent || '';
     const lines = all.split('\n');
     if (lines.length > maxLines) {
       const trimmed = lines.slice(lines.length - maxLines).join('\n');
-      serialFloatBody.textContent = trimmed;
+      outEl.textContent = trimmed;
     }
-    if (atBottom) serialFloatBody.scrollTop = serialFloatBody.scrollHeight;
+    if (atBottom) outEl.scrollTop = outEl.scrollHeight;
   });
+})();
+
+// Serial monitor modal wiring
+(function initSerialMonitor(){
+  const btn = document.querySelector('#serialMonitorBtn');
+  const modal = document.querySelector('#serialMonitorModal');
+  const closeBtn = document.querySelector('#serialMonitorClose');
+  const disconnectBtn = document.querySelector('#serialDisconnectBtn');
+  if (btn && modal) {
+    btn.addEventListener('click', () => { modal.hidden = false; });
+    closeBtn?.addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (e) => { const t=e.target; if (t && t.dataset && t.dataset.action==='close') modal.hidden = true; });
+  }
+  if (disconnectBtn) {
+    disconnectBtn.addEventListener('click', async () => {
+      try { await window.serial.close(); } catch {}
+      try { modal.hidden = true; } catch {}
+    });
+  }
 })();
