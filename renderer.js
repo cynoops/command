@@ -61,6 +61,11 @@
   const gotoLat = q('#gotoLat');
   const gotoAddPoi = q('#gotoAddPoi');
   const gotoSubmit = q('#gotoSubmit');
+  // Sidebar elements
+  const featuresSidebar = q('#featuresSidebar');
+  const featuresResizer = q('#featuresResizer');
+  const featuresCollapse = q('#featuresCollapse');
+  const featuresHandle = q('#featuresHandle');
   // Color picker modal
   const colorModal = q('#colorModal');
   const colorClose = q('#colorClose');
@@ -1301,6 +1306,54 @@
     });
   }
 
+  // --- Features sidebar: sizing, collapse ---
+  function initSidebar(){
+    const root = document.documentElement;
+    const minW = 280, maxW = 400;
+    const readW = () => {
+      const saved = Number(localStorage.getItem('ui.sidebar.w'));
+      return Number.isFinite(saved) ? Math.min(maxW, Math.max(minW, saved)) : 320;
+    };
+    const applyOpen = (open) => {
+      if (open) {
+        const w = readW();
+        root.style.setProperty('--sidebar-w', w + 'px');
+        featuresSidebar && (featuresSidebar.hidden = false);
+        featuresHandle && (featuresHandle.hidden = true);
+        try { localStorage.setItem('ui.sidebar.open', '1'); } catch {}
+      } else {
+        root.style.setProperty('--sidebar-w', '0px');
+        featuresSidebar && (featuresSidebar.hidden = true);
+        featuresHandle && (featuresHandle.hidden = false);
+        try { localStorage.setItem('ui.sidebar.open', '0'); } catch {}
+      }
+    };
+    // initial state
+    const open = localStorage.getItem('ui.sidebar.open') !== '0';
+    applyOpen(open);
+
+    // Resizer drag
+    if (featuresResizer) {
+      let startX=0, startW=readW(), dragging=false;
+      const onMove = (e) => {
+        if (!dragging) return;
+        const clientX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
+        const dx = clientX - startX;
+        const w = Math.min(maxW, Math.max(minW, startW + dx));
+        root.style.setProperty('--sidebar-w', w + 'px');
+        try { localStorage.setItem('ui.sidebar.w', String(w)); } catch {}
+        e.preventDefault?.();
+      };
+      const onUp = () => { if (!dragging) return; dragging=false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
+      const onDown = (e) => { if (featuresSidebar?.hidden) return; dragging=true; startX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX; startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || readW(); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); document.addEventListener('touchmove', onMove, { passive:false }); document.addEventListener('touchend', onUp); e.preventDefault?.(); };
+      featuresResizer.addEventListener('mousedown', onDown);
+      featuresResizer.addEventListener('touchstart', onDown, { passive:false });
+    }
+    // Collapse / show
+    featuresCollapse?.addEventListener('click', () => applyOpen(false));
+    featuresHandle?.addEventListener('click', () => applyOpen(true));
+  }
+
   // Reset floating panels to initial positions
   function resetFloatingPanels(){
     try{
@@ -1371,11 +1424,12 @@
     coordToggle.setAttribute('aria-expanded', String(!collapsed));
   });
 
-  // Initialize panels + map after DOM is ready
+  // Initialize panels + sidebar + map after DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { initFloatingPanels(); initMap(); }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { initFloatingPanels(); try{ initSidebar(); }catch{}; initMap(); }, { once: true });
   } else {
     initFloatingPanels();
+    try{ initSidebar(); }catch{}
     initMap();
   }
 

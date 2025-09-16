@@ -109,14 +109,16 @@
         <!-- Crosshair overlay -->
         <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
         <!-- Location inputs panel removed -->
-        <!-- Floating drawings list -->
-        <div id="drawingsFloat" class="drawings-float">
-          <div class="serial-float-header drawings-header">
-            <span>Features</span>
-            <button id="drawingsToggle" class="btn-icon" title="Collapse/expand drawings" aria-expanded="true">▾</button>
+        <!-- Sidebar: Features -->
+        <aside id="featuresSidebar" class="features-sidebar" aria-label="Features panel">
+          <div class="features-header">
+            <span class="features-title">Features</span>
+            <button id="featuresCollapse" class="btn-icon" title="Hide sidebar" aria-label="Hide sidebar">⟨</button>
           </div>
-          <div id="drawingsList" class="drawings-list" aria-live="polite"></div>
-        </div>
+          <div id="drawingsList" class="features-list" aria-live="polite"></div>
+          <div id="featuresResizer" class="features-resizer" title="Drag to resize" aria-hidden="true"></div>
+        </aside>
+        <div id="featuresHandle" class="features-handle" hidden title="Show Features"></div>
         <!-- Floating serial monitor -->
         <div id="serialFloat" class="serial-float" hidden>
           <div class="serial-float-header">

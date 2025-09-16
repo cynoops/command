@@ -70,6 +70,7 @@
   --header-h: 66px;
   --footer-h: 40px;
   --toolbar-h: 44px;
+  --sidebar-w: 320px; /* default open width */
   --radius: 12px;
   --shadow: 0 8px 24px rgba(0,0,0,.25);
 }
@@ -231,7 +232,7 @@ body{
 }
 .map-container{
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: var(--sidebar-w, 0px);
   width: 100%;
   height: 100%;
 }
@@ -295,25 +296,25 @@ body{
 .coord-place{ font-size: 12px; color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Floating drawings panel */
-.drawings-float{
-  position: absolute; left: 10px; top: 60px;
-  width: 320px; max-height: 48vh;
-  display: flex; flex-direction: column;
+/* Sidebar: Features */
+.features-sidebar{
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--sidebar-w, 0px);
+  min-width: 0;
+  max-width: 400px;
   background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border-right: 1px solid var(--line);
   box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
   overflow: hidden;
-  z-index: 11;
+  z-index: 12;
 }
-.drawings-header{
-  padding: 6px 8px; font-size: 12px; font-weight: 700;
-  border-bottom: 1px solid var(--line);
-  cursor: move;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.drawings-list{ overflow: auto; }
-.drawings-float.collapsed .drawings-list{ display: none; }
+.features-header{ display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 700; }
+.features-title{ font-size: 13px; }
+.features-list{ overflow: auto; padding: 4px 0; }
+.features-resizer{ position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; background: transparent; }
+.features-handle{ position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: color-mix(in oklab, var(--bg-elev) 70%, #000 30%); border-right: 1px solid var(--line); z-index: 13; cursor: pointer; opacity: .6; }
+.features-handle:hover{ opacity: 1; }
 .drawing-row{
   display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 0; align-items: center;
   padding: 8px;
