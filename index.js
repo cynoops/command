@@ -53,6 +53,7 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
+  try { if (process.platform === 'darwin') app.setName('Command'); } catch {}
   createWindow();
   // Register IPC using modular handlers
   registerFileIPC({ ipcMain, dialog, fsp }, state);

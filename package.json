@@ -3,7 +3,7 @@
   "version": "0.0.1-alpha",
   "main": "index.js",
   "build": {
-    "productName": "Command - CYNOOPS",
+    "productName": "Command",
     "appId": "com.cynoops.command",
     "files": [
       "dist/**",
