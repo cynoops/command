@@ -1,9 +1,27 @@
 'use strict';
 
-function setupMenu({ Menu, dialog, fsp }, state) {
-  const mainWindowRef = () => state.mainWindow;
+const { app } = require('electron');
+
+function setupMenu({ Menu }, state) {
   const template = [
-    { role: 'quit' },
+    {
+      label: 'Command',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        {
+          label: 'Quit Command',
+          accelerator: 'CmdOrCtrl+Q',
+          click: () => {
+            if (state && typeof state.requestQuit === 'function') {
+              state.requestQuit();
+            } else {
+              app.quit();
+            }
+          }
+        }
+      ]
+    },
     {
       label: 'Edit',
       submenu: [

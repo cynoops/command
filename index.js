@@ -66,7 +66,7 @@ app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) creat
 
 // --- Menu setup ---
 function setupMenu() {
-  try { setupAppMenu({ Menu, dialog, fsp }, state); }
+  try { setupAppMenu({ Menu }, state); }
   catch (e) { console.error('Menu setup failed', e); }
 }
 
@@ -74,6 +74,15 @@ function setupMenu() {
 let _allowClose = false;
 let _quitRequested = false;
 app.on('before-quit', () => { _quitRequested = true; });
+
+state.requestQuit = () => {
+  _quitRequested = true;
+  if (state.mainWindow) {
+    try { state.mainWindow.close(); } catch {}
+  } else {
+    try { app.quit(); } catch {}
+  }
+};
 
 app.on('browser-window-created', (_e, win) => {
   win.on('close', (evt) => {
@@ -94,6 +103,8 @@ ipcMain.on('app:confirm-close-result', (_e, payload) => {
       // Ensure full app exit (especially on macOS where window-all-closed doesn't quit)
       try { app.quit(); } catch {}
     }
+  } else {
+    _quitRequested = false;
   }
 });
 
