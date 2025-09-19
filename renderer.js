@@ -132,12 +132,29 @@
   let aiTarget = null;
   const toastContainer = q('#toastContainer');
 
+  const toastIcons = {
+    success: './assets/icons/regular/check-circle.svg',
+    error: './assets/icons/regular/x-circle.svg',
+  };
+
   const showToast = (message, variant = 'success', duration = 1500) => {
     if (!toastContainer) return;
     const toast = document.createElement('div');
     const type = variant === 'error' ? 'toast--error' : 'toast--success';
     toast.className = `toast ${type}`;
-    toast.textContent = message;
+    const iconSrc = toastIcons[variant] || toastIcons.success;
+    if (iconSrc) {
+      const icon = document.createElement('img');
+      icon.className = 'toast-icon';
+      icon.src = iconSrc;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.draggable = false;
+      toast.appendChild(icon);
+    }
+    const textNode = document.createElement('span');
+    textNode.textContent = message;
+    toast.appendChild(textNode);
     toastContainer.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('show'));
     setTimeout(() => {
