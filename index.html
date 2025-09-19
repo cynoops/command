@@ -24,33 +24,60 @@
         <label class="tab" for="tab-map" role="tab" aria-controls="view-map" aria-selected="true">MAP</label>
         <label class="tab" for="tab-settings" role="tab" aria-controls="view-settings" aria-selected="false">Settings</label>
       </nav>
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">🗺️</span>
-        <h1 class="brand-name">Command - CYNOOPS</h1>
+
+      <div class="app-toolbar" role="toolbar" aria-label="Map tools">
+        <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
+        </button>
+        <div class="tool-divider" aria-hidden="true"></div>
+        <!-- View controls -->
+        <button id="toolZoomIn" class="tool-btn" title="Zoom in">
+          <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolZoomOut" class="tool-btn" title="Zoom out">
+          <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch">
+          <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
+        </button>
+        <div class="tool-divider" aria-hidden="true"></div>
+        <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
+        </button>
+        <!-- POI button sits next to Line -->
+        <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false">
+          <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
+        </button>
+        <div class="tool-spacer"></div>
       </div>
 
-      <!-- Right-side actions -->
       <div class="actions">
         <button id="serialConnectBtn" class="serial-btn" title="Connect to serial port" aria-label="Connect to serial port">
-          <!-- Simple inline icon -->
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 7h10v4h-2v2h2v4H7v-4h2v-2H7V7zm4 4h2v2h-2v-2z" />
-          </svg>
-          <span class="serial-label">Connects</span>
+          <img class="icon" src="./assets/icons/regular/usb.svg" alt="" aria-hidden="true" />
+          <span class="serial-label">Connect</span>
           <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
         </button>
         <button id="serialMonitorBtn" class="serial-btn" title="Open serial monitor" aria-label="Open serial monitor" hidden>
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16v10H4z" fill="none" stroke="currentColor" stroke-width="2"/>
-            <path d="M6 9h3l2 2 2-4 2 2h3" fill="none" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 19h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
+          <img class="icon" src="./assets/icons/regular/monitor.svg" alt="" aria-hidden="true" />
           <span class="serial-label">Serial Monitor</span>
         </button>
         <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 10V4h6v2H6v4H4zm10-6h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 6h-6v-2h4v-4h2v6z" />
-          </svg>
+          <img class="icon" src="./assets/icons/regular/corners-out.svg" alt="" aria-hidden="true" />
           <span class="serial-label">Full Screen</span>
         </button>
       </div>
@@ -60,126 +87,167 @@
     <input id="tab-map" type="radio" name="main-tabs" class="tab-input" checked />
     <input id="tab-settings" type="radio" name="main-tabs" class="tab-input" />
 
-    <!-- Map Tools Toolbar (visible only on MAP) -->
-    <div class="app-toolbar" role="toolbar" aria-label="Map tools">
-      <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
-      </button>
-      <div class="tool-divider" aria-hidden="true"></div>
-      <!-- View controls -->
-      <button id="toolZoomIn" class="tool-btn" title="Zoom in">
-        <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolZoomOut" class="tool-btn" title="Zoom out">
-        <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch">
-        <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
-      </button>
-      <div class="tool-divider" aria-hidden="true"></div>
-      <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
-      </button>
-      <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
-      </button>
-      <!-- POI button sits next to Line -->
-      <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false">
-        <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
-      </button>
-      <div class="tool-spacer"></div>
-      <button id="resetLayoutToolbarBtn" class="tool-btn" title="Reset panel layout">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5V2L8 6l4 4V7c2.8 0 5 2.2 5 5 0 1.1-.4 2.1-1 2.9l1.5 1.3C18.4 15.1 19 13.6 19 12c0-3.9-3.1-7-7-7zm-5 5c0-1.1.4-2.1 1-2.9L6.5 5.8C5.6 6.9 5 8.4 5 10c0 3.9 3.1 7 7 7v3l4-4-4-4v3c-2.8 0-5-2.2-5-5z"/>
-        </svg>
-      </button>
-    </div>
 
-    
 
     <!-- Main content -->
     <main class="app-main">
       <!-- MAP VIEW -->
       <section id="view-map" class="view view-map" role="tabpanel" aria-labelledby="tab-map">
+        <div id="mapWelcome" class="map-welcome" hidden>
+          <div class="map-welcome-card" role="dialog" aria-labelledby="mapWelcomeTitle" aria-describedby="mapWelcomeDesc">
+            <h2 id="mapWelcomeTitle">Welcome to CynoOps Command</h2>
+            <p id="mapWelcomeDesc">To start exploring the map, add your Mapbox access token under <strong>Settings → API Keys</strong>. Once saved, the map will load automatically.</p>
+            <ul class="map-welcome-todo">
+              <li>Sign in at <a href="https://account.mapbox.com" target="_blank" rel="noopener">mapbox.com</a> and copy a public access token.</li>
+              <li>Open the Settings tab and paste the token into the Mapbox Access Token field.</li>
+              <li>Press <em>Save Settings</em> to initialize the map.</li>
+            </ul>
+            <div class="map-welcome-actions">
+              <button id="mapWelcomeSettings" class="btn btn-primary" type="button">Open Settings</button>
+            </div>
+          </div>
+        </div>
         <div id="map" class="map-container" aria-label="Interactive map">
           <!-- Crosshair overlay (placed inside container so it's always centered) -->
           <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
         </div>
         <!-- Location inputs panel removed -->
         <!-- Sidebar: Features -->
-        <aside id="featuresSidebar" class="features-sidebar" aria-label="Features panel">
+        <aside id="featuresSidebar" class="features-sidebar" aria-label="Features panel" hidden>
           <div class="features-header">
             <span class="features-title">Features</span>
             <button id="featuresCollapse" class="btn-icon" title="Hide sidebar" aria-label="Hide sidebar">⟨</button>
           </div>
           <div id="drawingsList" class="features-list" aria-live="polite"></div>
+          <div id="featuresActions" class="features-actions">
+            <button id="featuresSaveBtn" class="btn btn-primary" type="button" hidden>
+              <img src="./assets/icons/regular/file-text.svg" alt="" class="icon" aria-hidden="true" />
+              <span>Save</span>
+            </button>
+            <button id="featuresLoadBtn" class="btn btn-invert-icon" type="button">
+              <img src="./assets/icons/regular/folder-open.svg" alt="" class="icon" aria-hidden="true" />
+              <span>Load</span>
+            </button>
+            <button id="featuresClearBtn" class="btn btn-invert-icon" type="button">
+              <img src="./assets/icons/regular/broom.svg" alt="" class="icon" aria-hidden="true" />
+              <span>Clear</span>
+            </button>
+          </div>
           <div id="featuresResizer" class="features-resizer" title="Drag to resize" aria-hidden="true"></div>
         </aside>
-        <div id="featuresHandle" class="features-handle" hidden title="Show Features"></div>
+        <button id="featuresToggleBtn" class="sidebar-toggle sidebar-toggle-left" type="button" aria-controls="featuresSidebar" aria-expanded="false">
+          <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
+          <span class="sidebar-toggle-label">FEATURES</span>
+          <img src="./assets/icons/regular/caret-right.svg" alt="" class="icon" aria-hidden="true" />
+          <span class="visually-hidden">Show features panel</span>
+        </button>
+        <aside id="trackersSidebar" class="trackers-sidebar" aria-label="Trackers panel" hidden>
+          <div class="trackers-header">
+            <span class="trackers-title">Trackers</span>
+            <button id="trackersCollapse" class="btn-icon" title="Hide tracker sidebar" aria-label="Hide tracker sidebar">⟩</button>
+          </div>
+          <div id="trackersList" class="trackers-list" aria-live="polite">
+            <div id="trackersEmpty" class="trackers-empty">
+              <div>No trackers connected yet.</div>
+              <button id="trackersConnectBtn" class="btn btn-primary trackers-connect" type="button">
+                <img src="./assets/icons/regular/usb.svg" alt="" class="icon" aria-hidden="true" />
+                <span>Connect</span>
+              </button>
+            </div>
+            <div id="trackersWaiting" class="trackers-waiting" hidden>
+              <span class="trackers-spinner" aria-hidden="true"></span>
+              <span>Waiting for trackers…</span>
+            </div>
+            <div id="trackersItems" class="trackers-items"></div>
+          </div>
+        </aside>
+        <button id="trackersToggleBtn" class="sidebar-toggle sidebar-toggle-right" type="button" aria-controls="trackersSidebar" aria-expanded="false">
+          <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
+          <span class="sidebar-toggle-label">TRACKERS</span>
+          <img src="./assets/icons/regular/caret-left.svg" alt="" class="icon" aria-hidden="true" />
+          <span class="visually-hidden">Show trackers panel</span>
+        </button>
         <!-- Serial monitor moved to modal -->
         <!-- You’ll initialize the map in your preload/renderer JS and update footer stats by ID -->
       </section>
 
       <!-- SETTINGS VIEW -->
       <section id="view-settings" class="view view-settings" role="tabpanel" aria-labelledby="tab-settings">
-        <div class="panel">
+        <div class="panel settings-panel">
           <h2>Settings</h2>
-          <div class="form-grid">
-            <label class="field">
-              <span class="label">Map Style URL</span>
-              <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
-            </label>
-            <label class="field">
-              <span class="label">Access Token</span>
-              <input id="settingAccessToken" type="password" placeholder="pk.•••" />
-            </label>
-            <label class="field">
-              <span class="label">Google Maps API Key</span>
-              <input id="settingGoogleKey" type="password" placeholder="AIza•••" />
-            </label>
-            <label class="field">
-              <span class="label">OpenAI API Key</span>
-              <input id="settingOpenAIKey" type="password" placeholder="sk-•••" />
-            </label>
-            <label class="field">
-              <span class="label">Home Address</span>
-              <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
-            </label>
-            <label class="field">
-              <span class="label">Start Position (lng, lat)</span>
-              <input id="settingStartPos" type="text" placeholder="6.13, 49.61" />
-            </label>
-            <label class="field">
-              <span class="label">Start Zoom</span>
-              <input id="settingStartZoom" type="number" min="0" max="22" step="0.1" value="12" />
-            </label>
-            <label class="field">
-              <span class="label">Serial Baud Rate</span>
-              <input id="settingBaud" type="number" step="1" placeholder="115200" />
-            </label>
-            <label class="field">
-              <span class="label">Auto-reconnect Serial</span>
-              <select id="settingAutoReconnect">
-                <option value="off">Off</option>
-                <option value="on" selected>On</option>
-              </select>
-            </label>
-          </div>
-          <div class="settings-actions" style="margin-top:12px;">
-            <button id="resetLayoutBtn" class="btn">Reset Panel Layout</button>
-          </div>
+          <form id="settingsForm" class="settings-form">
+            <div class="settings-group">
+              <h3>API Keys</h3>
+              <div class="settings-fields">
+                <label class="field">
+                  <span class="label label-with-help">Mapbox Access Token
+                    <button type="button" class="label-help" aria-label="Where to find your Mapbox access token" data-tooltip="Sign in at mapbox.com, open your account dashboard, and copy a public access token.">info</button>
+                  </span>
+                  <input id="settingAccessToken" type="password" autocomplete="off" placeholder="pk.•••" />
+                </label>
+                <label class="field">
+                  <span class="label label-with-help">Google Maps API Key
+                    <button type="button" class="label-help" aria-label="How to get a Google Maps API key" data-tooltip="Use the Google Cloud Console to create a project, enable Maps JavaScript & Places APIs, then create an API key under Credentials.">info</button>
+                  </span>
+                  <input id="settingGoogleKey" type="password" autocomplete="off" placeholder="AIza•••" />
+                </label>
+                <label class="field">
+                  <span class="label label-with-help">OpenAI API Key
+                    <button type="button" class="label-help" aria-label="How to get an OpenAI API key" data-tooltip="Go to platform.openai.com/account/api-keys, create a new secret key, and paste it here.">info</button>
+                  </span>
+                  <input id="settingOpenAIKey" type="password" autocomplete="off" placeholder="sk-•••" />
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <h3>Map Settings</h3>
+              <div class="settings-fields">
+                <label class="field">
+                  <span class="label">Map Style URL</span>
+                  <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
+                </label>
+                <label class="field">
+                  <span class="label">Home Address</span>
+                  <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
+                </label>
+                <label class="field">
+                  <span class="label">Start Latitude</span>
+                  <input id="settingStartLat" type="number" step="0.000001" min="-90" max="90" placeholder="49.610000" value="49.610000" />
+                </label>
+                <label class="field">
+                  <span class="label">Start Longitude</span>
+                  <input id="settingStartLng" type="number" step="0.000001" min="-180" max="180" placeholder="6.130000" value="6.130000" />
+                </label>
+                <label class="field">
+                  <span class="label">Start Zoom</span>
+                  <input id="settingStartZoom" type="number" min="0" max="22" step="0.1" value="12" />
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <h3>Serial Connections</h3>
+              <div class="settings-fields">
+                <label class="field">
+                  <span class="label">Serial Baud Rate</span>
+                  <input id="settingBaud" type="number" step="1" placeholder="115200" />
+                </label>
+                <label class="field">
+                  <span class="label">Auto-reconnect Serial</span>
+                  <select id="settingAutoReconnect">
+                    <option value="off">Off</option>
+                    <option value="on">On</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-actions">
+              <span class="settings-status" aria-live="polite"></span>
+              <button id="settingsSaveBtn" class="btn btn-primary" type="submit" disabled>Save Settings</button>
+            </div>
+          </form>
         </div>
       </section>
     </main>
@@ -196,6 +264,7 @@
         <span id="footerAddress" class="v">—</span>
       </div>
     </footer>
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
   </div>
 
   <!-- Connect Modal -->
@@ -246,23 +315,30 @@
     <div class="modal-backdrop" data-action="close"></div>
     <div class="modal-panel">
       <div class="modal-header">
-        <h3 id="gotoTitle">Go To Coordinates</h3>
+        <h3 id="gotoTitle">Go to coordinates</h3>
         <button id="gotoClose" class="btn-icon" title="Close">×</button>
       </div>
       <div class="modal-body">
-        <div class="form-grid">
-          <label class="field">
-            <span class="label">Longitude</span>
-            <input id="gotoLng" type="number" step="0.000001" min="-180" max="180" placeholder="e.g., 6.1300" />
-          </label>
+        <div class="goto-fields">
           <label class="field">
             <span class="label">Latitude</span>
             <input id="gotoLat" type="number" step="0.000001" min="-90" max="90" placeholder="e.g., 49.6100" />
           </label>
+          <label class="field">
+            <span class="label">Longitude</span>
+            <input id="gotoLng" type="number" step="0.000001" min="-180" max="180" placeholder="e.g., 6.1300" />
+          </label>
         </div>
-        <label class="field" style="margin-top:8px; display:flex; align-items:center; gap:8px;">
-          <input id="gotoAddPoi" type="checkbox" />
-          <span class="label">Add POI at this location</span>
+        <div class="switch-field">
+          <span id="gotoAddPoiLabel" class="label">Add POI at this location</span>
+          <label class="switch">
+            <input id="gotoAddPoi" type="checkbox" role="switch" aria-labelledby="gotoAddPoiLabel" aria-checked="false" />
+            <span class="switch-track"><span class="switch-handle"></span></span>
+          </label>
+        </div>
+        <label id="gotoPoiNameField" class="field" hidden>
+          <span class="label">POI name</span>
+          <input id="gotoPoiName" type="text" placeholder="Optional name" />
         </label>
         <div class="modal-row">
           <div class="spacer"></div>
@@ -323,6 +399,7 @@
           <div class="muted">Connected:</div>
           <div id="serialConnPath" class="v">—</div>
           <div class="spacer"></div>
+          <button id="serialMonitorClear" class="btn" type="button">Clear</button>
           <button id="serialDisconnectBtn" class="btn">Disconnect</button>
         </div>
         <pre id="serialMonitorBody" class="serial-float-body" aria-live="polite" style="height:40vh; border:1px solid var(--line); border-radius:8px; background: var(--bg);"></pre>

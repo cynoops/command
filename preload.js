@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, clipboard } = require("electron");
 
 contextBridge.exposeInMainWorld("serial", {
   listPorts: () => ipcRenderer.invoke("serial:listPorts"),
@@ -49,7 +49,9 @@ contextBridge.exposeInMainWorld("file", {
     return () => ipcRenderer.off('file:saved', listener);
   },
   saveAs: (data, defaultPath) => ipcRenderer.invoke('file:save-as', { data, defaultPath }),
+  openFeatureCollection: (defaultPath) => ipcRenderer.invoke('file:open-dialog', { defaultPath }),
   askSaveDiscardCancel: (message, detail) => ipcRenderer.invoke('file:ask-sdc', { message, detail }),
+  askMergeReplace: (message, detail) => ipcRenderer.invoke('file:ask-merge-replace', { message, detail }),
   onNew: (cb) => {
     const listener = () => cb();
     ipcRenderer.on('file:new', listener);
@@ -65,4 +67,28 @@ contextBridge.exposeInMainWorld("file", {
 // AI bridge
 contextBridge.exposeInMainWorld("ai", {
   transformDrawing: (feature, prompt, apiKey) => ipcRenderer.invoke('ai:transform-drawing', { feature, prompt, apiKey })
+});
+
+contextBridge.exposeInMainWorld("clipboard", {
+  writeText: (text) => {
+    try {
+      clipboard.writeText(String(text ?? ''));
+      return true;
+    } catch (err) {
+      console.error('clipboard.writeText failed', err);
+      return false;
+    }
+  }
+});
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  writeClipboard: (text) => {
+    try {
+      clipboard.writeText(String(text ?? ''));
+      return true;
+    } catch (err) {
+      console.error('electronAPI.writeClipboard failed', err);
+      return false;
+    }
+  }
 });

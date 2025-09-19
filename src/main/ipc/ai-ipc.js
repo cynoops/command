@@ -35,10 +35,8 @@ function registerAIIPC({ ipcMain }, state) {
         ],
       });
       const text = completion?.choices?.[0]?.message?.content || '';
-      console.log('AI response:', text);
 
       let jsonStr = text.trim();
-      console.log(jsonStr);
       const firstBrace = jsonStr.indexOf('{');
       const lastBrace = jsonStr.lastIndexOf('}');
       if (firstBrace > 0 || lastBrace >= 0) jsonStr = jsonStr.slice(Math.max(0, firstBrace), lastBrace + 1);

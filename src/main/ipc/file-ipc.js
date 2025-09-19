@@ -55,6 +55,29 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
     }
   });
 
+  ipcMain.handle('file:open-dialog', async (_e, { defaultPath } = {}) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow) return { ok: false, canceled: true };
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Open Drawings',
+        defaultPath: defaultPath || state.currentFilePath || undefined,
+        properties: ['openFile'],
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+      const filePath = filePaths[0];
+      const raw = await fsp.readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      state.currentFilePath = filePath;
+      try { mainWindow.webContents.send('file:current-file', { path: state.currentFilePath }); } catch {}
+      return { ok: true, canceled: false, filePath, data };
+    } catch (e) {
+      dialog.showErrorBox('Open Failed', String(e));
+      return { ok: false, error: String(e) };
+    }
+  });
+
   // Ask Save / Discard / Cancel
   ipcMain.handle('file:ask-sdc', async (_e, { message, detail } = {}) => {
     const mainWindow = state.mainWindow;
@@ -71,7 +94,22 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
     const map = { 0: 'save', 1: 'discard', 2: 'cancel' };
     return { choice: map[response] || 'cancel' };
   });
+
+  ipcMain.handle('file:ask-merge-replace', async (_e, { message, detail } = {}) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow) return { choice: 'cancel' };
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Merge', 'Replace All', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      message: message || 'Existing features detected.',
+      detail: detail || 'Choose MERGE to keep current features and append the selections, or REPLACE ALL to discard current features before loading.'
+    });
+    const map = { 0: 'merge', 1: 'replace', 2: 'cancel' };
+    return { choice: map[response] || 'cancel' };
+  });
 }
 
 module.exports = { registerFileIPC };
-

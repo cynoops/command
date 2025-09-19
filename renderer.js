@@ -1,6 +1,13 @@
 (() => {
   const q = (sel) => document.querySelector(sel);
   const ce = (tag, cls) => { const el = document.createElement(tag); if (cls) el.className = cls; return el; };
+  const DEFAULT_HOME_CENTER = [6.3729914, 49.5658574];
+  const DEFAULT_MAP_START = [6.13, 49.61];
+  const DEFAULT_STYLE_URL = 'mapbox://styles/mapbox/streets-v12';
+  const DEFAULT_START_ZOOM = 12;
+  const DEFAULT_SERIAL_BAUD = '115200';
+  const DEFAULT_AUTO_RECONNECT = 'on';
+  const TRACKERS_PANEL_WIDTH = 320;
 
   // Map stats UI
   const statZoom = q('#statZoom');
@@ -10,6 +17,7 @@
   const statLayer = q('#statLayer');
 
   const serialConnectBtn = q('#serialConnectBtn');
+  const serialConnectLabel = serialConnectBtn?.querySelector('.serial-label');
   const serialStatusDot = q('#serialStatusDot');
   const statSerial = q('#statSerial');
   const statRxRate = q('#statRxRate');
@@ -19,6 +27,8 @@
   const tabSettingsInput = q('#tab-settings');
   const tabMapLabel = document.querySelector('label[for="tab-map"]');
   const tabSettingsLabel = document.querySelector('label[for="tab-settings"]');
+  const mapWelcome = q('#mapWelcome');
+  const mapWelcomeSettings = q('#mapWelcomeSettings');
 
   const connectModal = q('#connectModal');
   const portsContainer = q('#portsContainer');
@@ -37,6 +47,7 @@
   const serialMonitorBody = q('#serialMonitorBody');
   const serialConnPath = q('#serialConnPath');
   const serialDisconnectBtn = q('#serialDisconnectBtn');
+  const serialMonitorClearBtn = q('#serialMonitorClear');
   const inputLng = q('#inputLng');
   const inputLat = q('#inputLat');
   const toolRect = q('#toolRect');
@@ -47,6 +58,10 @@
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
+  const featuresActions = q('#featuresActions');
+  const featuresSaveBtn = q('#featuresSaveBtn');
+  const featuresLoadBtn = q('#featuresLoadBtn');
+  const featuresClearBtn = q('#featuresClearBtn');
   const coordFloat = q('.coord-float');
   const drawingsFloat = q('#drawingsFloat');
   const drawingsToggle = q('#drawingsToggle');
@@ -54,9 +69,27 @@
   const coordPin = q('#coordPin');
   const toolPin = q('#toolPin');
   const settingHomeAddress = q('#settingHomeAddress');
+  const settingAccessToken = q('#settingAccessToken');
+  const settingGoogleKey = q('#settingGoogleKey');
+  const settingOpenAIKey = q('#settingOpenAIKey');
+  const settingStyleUrl = q('#settingStyleUrl');
+  const settingStartLng = q('#settingStartLng');
+  const settingStartLat = q('#settingStartLat');
+  const settingStartZoom = q('#settingStartZoom');
+  const settingBaud = q('#settingBaud');
+  const settingAutoReconnect = q('#settingAutoReconnect');
+  const settingsForm = q('#settingsForm');
+  const settingsSaveBtn = q('#settingsSaveBtn');
+  const settingsStatus = q('.settings-status');
+  const defaultAccessToken = settingAccessToken?.defaultValue || '';
+  const defaultGoogleKey = settingGoogleKey?.defaultValue || '';
+  const defaultOpenAIKey = settingOpenAIKey?.defaultValue || '';
+  const defaultStyleUrl = settingStyleUrl?.defaultValue || DEFAULT_STYLE_URL;
+  const defaultHomeAddress = settingHomeAddress?.defaultValue || '';
+  const defaultStartLng = Number(settingStartLng?.defaultValue || DEFAULT_MAP_START[0]);
+  const defaultStartLat = Number(settingStartLat?.defaultValue || DEFAULT_MAP_START[1]);
+  const defaultStartZoom = Number(settingStartZoom?.defaultValue || DEFAULT_START_ZOOM);
   const coordToggle = q('#coordToggle');
-  const resetLayoutBtn = q('#resetLayoutBtn');
-  const resetLayoutToolbarBtn = q('#resetLayoutToolbarBtn');
   const searchModal = q('#searchModal');
   const searchClose = q('#searchClose');
   const searchQuery = q('#searchQuery');
@@ -68,11 +101,21 @@
   const gotoLat = q('#gotoLat');
   const gotoAddPoi = q('#gotoAddPoi');
   const gotoSubmit = q('#gotoSubmit');
+  const gotoPoiNameField = q('#gotoPoiNameField');
+  const gotoPoiName = q('#gotoPoiName');
   // Sidebar elements
   const featuresSidebar = q('#featuresSidebar');
   const featuresResizer = q('#featuresResizer');
   const featuresCollapse = q('#featuresCollapse');
-  const featuresHandle = q('#featuresHandle');
+  const featuresToggleBtn = q('#featuresToggleBtn');
+  const trackersSidebar = q('#trackersSidebar');
+  const trackersToggleBtn = q('#trackersToggleBtn');
+  const trackersCollapse = q('#trackersCollapse');
+  const trackersConnectBtn = q('#trackersConnectBtn');
+  const trackersList = q('#trackersList');
+  const trackersItems = q('#trackersItems');
+  const trackersEmpty = q('#trackersEmpty');
+  const trackersWaiting = q('#trackersWaiting');
   // Color picker modal
   const colorModal = q('#colorModal');
   const colorClose = q('#colorClose');
@@ -87,19 +130,938 @@
   const aiError = q('#aiError');
   const aiSpinner = q('#aiSpinner');
   let aiTarget = null;
+  const toastContainer = q('#toastContainer');
+
+  const showToast = (message, duration = 1500) => {
+    if (!toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => {
+        toast.remove();
+      }, 200);
+    }, duration);
+  };
+
+  const writeToClipboard = async (text) => {
+    let lastError = null;
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        lastError = err;
+        console.error('navigator.clipboard.writeText failed', err);
+      }
+    }
+    if (window.clipboard?.writeText) {
+      try {
+        const res = window.clipboard.writeText(text);
+        return res !== false;
+      } catch (err) {
+        lastError = err;
+        console.error('window.clipboard.writeText failed', err);
+      }
+    }
+    if (window.electronAPI?.writeClipboard) {
+      try {
+        const res = window.electronAPI.writeClipboard(text);
+        return res !== false;
+      } catch (err) {
+        lastError = err;
+        console.error('electronAPI.writeClipboard failed', err);
+      }
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = String(text ?? '');
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (success) return true;
+    } catch (err) {
+      lastError = err;
+      console.error('execCommand copy failed', err);
+    }
+    if (lastError) throw lastError;
+    return false;
+  };
 
   // Helper to get current Mapbox instance
   const getMap = () => (window)._map;
+  const readMapboxToken = () => (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
+  const readGoogleKey = () => (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+  const readOpenAIKey = () => (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
+
+  let googleServicesEnabled = false;
+  let aiEnabled = false;
+  let serialConnected = false;
+  let serialConnecting = false;
+  let trackerDataSeen = false;
+
+  const refreshAiButtonsVisibility = () => {
+    const buttons = document.querySelectorAll('.drawing-ai');
+    buttons.forEach((btn) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.disabled = !aiEnabled;
+      btn.hidden = !aiEnabled;
+    });
+  };
+
+  const applyServiceAvailability = () => {
+    const hasMapbox = !!readMapboxToken();
+    googleServicesEnabled = !!readGoogleKey();
+    aiEnabled = !!readOpenAIKey();
+
+    if (mapWelcome) mapWelcome.hidden = hasMapbox;
+
+    if (toolSearch) {
+      toolSearch.disabled = !googleServicesEnabled;
+      toolSearch.setAttribute('aria-disabled', String(!googleServicesEnabled));
+      toolSearch.classList.toggle('is-disabled', !googleServicesEnabled);
+      toolSearch.title = googleServicesEnabled ? 'Search address' : 'Search disabled (Google Maps API key required)';
+    }
+    if (searchQuery) searchQuery.disabled = !googleServicesEnabled;
+    if (searchResults) {
+      if (!googleServicesEnabled) {
+        searchResults.innerHTML = '<div class="muted">Search is unavailable. Add a Google Maps API key in Settings.</div>';
+        searchResults.dataset.state = 'disabled';
+      } else if (searchResults.dataset.state === 'disabled') {
+        searchResults.innerHTML = '<div class="muted">Type at least 3 characters…</div>';
+        delete searchResults.dataset.state;
+      }
+    }
+    if (!googleServicesEnabled) {
+      if (searchModal) searchModal.hidden = true;
+      if (coordPlace) coordPlace.textContent = '—';
+      if (footerAddress) footerAddress.textContent = '—';
+    }
+
+    refreshAiButtonsVisibility();
+    updateTrackersPanelState();
+  };
+
+  const scheduleMapResize = (delay = 0) => {
+    try {
+      const map = getMap();
+      if (!map) return;
+      const run = () => {
+        try { map.resize(); } catch {}
+      };
+      if (delay > 0) setTimeout(run, delay);
+      else requestAnimationFrame(run);
+    } catch {}
+  };
 
   let selectedPath = null;
   let rxCount = 0;
   let lastTick = Date.now();
   let isDirty = false;
   const setDirty = (v=true) => { isDirty = !!v; (window)._dirty = isDirty; };
+  let settingsDirty = false;
+  let suppressSettingsEvents = false;
+  let settingsStatusTimer = null;
+  const setSerialMonitorVisible = (visible) => {
+    if (!serialMonitorBtn) return;
+    const show = !!visible;
+    serialMonitorBtn.hidden = !show;
+    serialMonitorBtn.classList.toggle('is-hidden', !show);
+  };
+
+  const trackerStore = new Map();
+  const trackerBlinkQueue = new Set();
+  const trackerPositionsStore = new Map();
+  (window)._trackerPositions = trackerPositionsStore;
+  (window)._trackerStore = trackerStore;
+  (window).getTrackerData = () => Array.from(trackerStore.values());
+  let trackerSourceReady = false;
+  let trackerPathSourceReady = false;
+
+  function updateTrackersPanelState() {
+    if (trackersConnectBtn) {
+      const disabled = serialConnected || serialConnecting;
+      trackersConnectBtn.disabled = disabled;
+      trackersConnectBtn.setAttribute('aria-disabled', String(disabled));
+    }
+    const waitingEl = trackersWaiting || q('#trackersWaiting');
+    const shouldWait = serialConnected && !trackerDataSeen && trackerStore.size === 0;
+    if (waitingEl) waitingEl.hidden = !shouldWait;
+    const emptyEl = trackersEmpty || q('#trackersEmpty');
+    if (emptyEl) emptyEl.style.display = shouldWait ? 'none' : (trackerStore.size === 0 ? 'flex' : 'none');
+    const listEl = trackersItems || q('#trackersItems');
+    if (listEl) {
+      if (trackerStore.size > 0) listEl.classList.add('is-visible');
+      else listEl.classList.remove('is-visible');
+    }
+  }
+
+  const trackerColorPalette = ['#ff5722', '#03a9f4', '#8bc34a', '#ffc107', '#9c27b0', '#4caf50', '#00bcd4', '#ff9800'];
+  let trackerColorIndex = 0;
+  const nextTrackerColor = () => {
+    const color = trackerColorPalette[trackerColorIndex % trackerColorPalette.length];
+    trackerColorIndex += 1;
+    return color;
+  };
+
+  let editingTrackerId = null;
+  let editingTrackerDraft = '';
+  let isRenderingTrackers = false;
+  const focusTrackerNameField = (el) => {
+    try {
+      el.focus();
+      const sel = window.getSelection();
+      if (!sel) return;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch {}
+  };
+
+  const toRadians = (deg) => (deg * Math.PI) / 180;
+  const haversineMeters = (a, b) => {
+    if (!a || !b) return 0;
+    const lat1 = toRadians(Number(a.latitude));
+    const lat2 = toRadians(Number(b.latitude));
+    const dLat = lat2 - lat1;
+    const dLon = toRadians(Number(b.longitude) - Number(a.longitude));
+    if (!Number.isFinite(lat1) || !Number.isFinite(lat2) || !Number.isFinite(dLat) || !Number.isFinite(dLon)) return 0;
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLon = Math.sin(dLon / 2);
+    const inner = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+    const clampedInner = Math.min(1, Math.max(0, inner));
+    const earthRadiusMeters = 6371000;
+    return 2 * earthRadiusMeters * Math.asin(Math.sqrt(clampedInner));
+  };
+
+  const ensureTrackerHistoryEntry = (trackerId) => {
+    let record = trackerPositionsStore.get(trackerId);
+    if (!record) {
+      record = { positions: [], segments: [] };
+      trackerPositionsStore.set(trackerId, record);
+    }
+    return record;
+  };
+
+  const appendTrackerSegment = (trackerId, from, to, distance, color, fromTimestamp, toTimestamp) => {
+    const startTs = Number.isFinite(fromTimestamp) ? fromTimestamp : Date.now();
+    const endTs = Number.isFinite(toTimestamp) ? toTimestamp : Date.now();
+    const entry = ensureTrackerHistoryEntry(trackerId);
+    if (entry.positions.length === 0 && Number.isFinite(from?.longitude) && Number.isFinite(from?.latitude)) {
+      entry.positions.push({ longitude: from.longitude, latitude: from.latitude, timestamp: startTs });
+    }
+    const lastPos = entry.positions[entry.positions.length - 1];
+    if (!lastPos || lastPos.longitude !== to.longitude || lastPos.latitude !== to.latitude) {
+      entry.positions.push({ longitude: to.longitude, latitude: to.latitude, timestamp: endTs });
+    }
+    entry.segments.push({
+      from: { longitude: from.longitude, latitude: from.latitude },
+      to: { longitude: to.longitude, latitude: to.latitude },
+      distance,
+      color,
+      timestamp: endTs
+    });
+  };
+
+  const triggerTrackerRowBlink = (row) => {
+    if (!row) return;
+    row.classList.add('is-updated');
+    setTimeout(() => {
+      if (!row.isConnected) return;
+      row.classList.remove('is-updated');
+    }, 1100);
+  };
+
+  const renderTrackersList = () => {
+    const listEl = trackersItems || q('#trackersItems');
+    if (!listEl) { updateTrackersPanelState(); return; }
+    const trackers = Array.from(trackerStore.values()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    isRenderingTrackers = true;
+    try {
+      listEl.innerHTML = '';
+      if (!trackers.length) {
+        listEl.classList.remove('is-visible');
+      } else {
+        listEl.classList.add('is-visible');
+      }
+
+      trackers.forEach((tracker) => {
+        const row = document.createElement('div');
+        row.className = 'tracker-row';
+        row.dataset.trackerId = tracker.id;
+        if (tracker.visible === false) row.classList.add('hidden');
+
+        const displayName = (tracker.name && tracker.name.trim()) || tracker.id;
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'tracker-name';
+        nameEl.contentEditable = 'true';
+        nameEl.textContent = tracker.id === editingTrackerId && editingTrackerDraft ? editingTrackerDraft : displayName;
+        nameEl.setAttribute('role', 'textbox');
+        nameEl.setAttribute('aria-label', `Tracker ${tracker.id} name`);
+        const commitName = () => {
+          const value = (nameEl.textContent || '').trim();
+          const name = value && value !== tracker.id ? value : null;
+          if (name !== (tracker.name || null)) {
+            updateTrackerEntry(tracker.id, { name });
+          }
+        };
+        nameEl.addEventListener('focus', () => {
+          editingTrackerId = tracker.id;
+          editingTrackerDraft = nameEl.textContent || '';
+        });
+        nameEl.addEventListener('input', () => {
+          if (tracker.id === editingTrackerId) {
+            editingTrackerDraft = nameEl.textContent || '';
+          }
+        });
+        nameEl.addEventListener('blur', () => {
+          if (isRenderingTrackers) return;
+          commitName();
+          if (editingTrackerId === tracker.id) {
+            editingTrackerId = null;
+            editingTrackerDraft = '';
+          }
+        });
+        nameEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            nameEl.blur();
+          }
+        });
+
+        const meta = document.createElement('div');
+        meta.className = 'tracker-meta';
+        const idSpan = document.createElement('span');
+      idSpan.textContent = `ID ${tracker.id}`;
+      meta.appendChild(idSpan);
+      if (Number.isFinite(tracker.battery)) {
+        const bat = document.createElement('span');
+        bat.textContent = `${Math.round(tracker.battery)}%`;
+        meta.appendChild(bat);
+      }
+      if (Number.isFinite(tracker.hops)) {
+        const hops = document.createElement('span');
+        hops.textContent = `hops ${tracker.hops}`;
+        meta.appendChild(hops);
+      }
+      if (meta.childElementCount <= 1) meta.style.opacity = '0.7';
+
+      const actions = document.createElement('div');
+      actions.className = 'tracker-actions';
+
+      const colorBtn = document.createElement('button');
+      colorBtn.type = 'button';
+      colorBtn.className = 'tracker-action tracker-color';
+      colorBtn.title = 'Change tracker color';
+      const chip = document.createElement('span');
+      chip.className = 'tracker-color-chip';
+      chip.style.backgroundColor = tracker.color || '#ff5722';
+      colorBtn.appendChild(chip);
+      colorBtn.addEventListener('click', () => {
+        const picker = (window).openColorModal;
+        const current = tracker.color || '#ff5722';
+        if (typeof picker === 'function') {
+          picker(current, (hex) => updateTrackerEntry(tracker.id, { color: hex }));
+        } else {
+          const hex = prompt('Tracker color (hex)', current);
+          if (hex) updateTrackerEntry(tracker.id, { color: hex });
+        }
+      });
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'tracker-action tracker-toggle';
+      toggleBtn.title = tracker.visible === false ? 'Show tracker' : 'Hide tracker';
+      if (tracker.visible === false) toggleBtn.classList.add('is-off');
+      toggleBtn.setAttribute('aria-pressed', String(tracker.visible !== false));
+      const toggleIcon = document.createElement('img');
+      toggleIcon.src = tracker.visible === false ? './assets/icons/regular/eye-slash.svg' : './assets/icons/regular/eye.svg';
+      toggleIcon.alt = '';
+      toggleIcon.setAttribute('aria-hidden', 'true');
+      toggleBtn.appendChild(toggleIcon);
+      toggleBtn.addEventListener('click', () => {
+        const visible = tracker.visible === false;
+        updateTrackerEntry(tracker.id, { visible });
+      });
+
+      actions.appendChild(colorBtn);
+
+      const hasValidPosition = Number.isFinite(tracker.longitude) && Number.isFinite(tracker.latitude);
+      if (hasValidPosition && !(tracker.longitude === 0 && tracker.latitude === 0)) {
+        const focusBtn = document.createElement('button');
+        focusBtn.type = 'button';
+        focusBtn.className = 'tracker-action tracker-focus';
+        focusBtn.title = 'Center map on tracker';
+        focusBtn.setAttribute('aria-label', `Center map on tracker ${displayName}`);
+        const focusIcon = document.createElement('img');
+        focusIcon.src = './assets/icons/regular/crosshair.svg';
+        focusIcon.alt = '';
+        focusIcon.setAttribute('aria-hidden', 'true');
+        focusBtn.appendChild(focusIcon);
+        focusBtn.addEventListener('click', () => {
+          try {
+            const latest = trackerStore.get(tracker.id) || tracker;
+            const lng = Number(latest.longitude);
+            const lat = Number(latest.latitude);
+            if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+            if (lng === 0 && lat === 0) return;
+            const map = getMap();
+            if (!map) return;
+            const currentZoom = map.getZoom();
+            map.flyTo({
+              center: [lng, lat],
+              zoom: Number.isFinite(currentZoom) ? Math.max(12, currentZoom) : 12,
+              duration: 600
+            });
+          } catch (err) {
+            console.error('tracker focus failed', err);
+          }
+        });
+        actions.appendChild(focusBtn);
+      }
+
+      actions.appendChild(toggleBtn);
+
+        row.appendChild(nameEl);
+        row.appendChild(actions);
+        row.appendChild(meta);
+        listEl.appendChild(row);
+
+        if (trackerBlinkQueue.has(tracker.id)) {
+          trackerBlinkQueue.delete(tracker.id);
+          requestAnimationFrame(() => triggerTrackerRowBlink(row));
+        }
+
+        if (tracker.id === editingTrackerId) {
+          requestAnimationFrame(() => focusTrackerNameField(nameEl));
+        }
+      });
+    } finally {
+      isRenderingTrackers = false;
+      updateTrackersPanelState();
+    }
+  };
+
+  const updateTrackerEntry = (id, updates) => {
+    const current = trackerStore.get(id);
+    if (!current) return;
+    const next = { ...current, ...updates };
+    trackerStore.set(id, next);
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'color') && updates.color && trackerPositionsStore.has(id)) {
+      const entry = trackerPositionsStore.get(id);
+      if (entry && Array.isArray(entry.segments)) {
+        entry.segments.forEach((segment) => { if (segment) segment.color = updates.color; });
+      }
+    }
+    updateTrackerSource();
+    updateTrackerPathSource();
+    renderTrackersList();
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+  };
+
+  const TRACKER_ID_PATTERN = /^CO-(?:\d{12}|ROOT)$/; // allow regular trackers (12 digits) and special CO-ROOT beacon
+
+  const parseTrackerLine = (raw) => {
+    if (!raw && raw !== 0) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    const parts = text.split(':');
+    if (parts.length < 6) return null;
+    const [trackerIdRaw, firstCoordRaw, secondCoordRaw, altRaw, batteryRaw, hopsRaw] = parts;
+    const trackerId = trackerIdRaw.trim();
+    if (!trackerId) return null;
+    if (!TRACKER_ID_PATTERN.test(trackerId)) return null;
+    const candidateA = {
+      longitude: Number(firstCoordRaw),
+      latitude: Number(secondCoordRaw)
+    };
+    const candidateB = {
+      longitude: Number(secondCoordRaw),
+      latitude: Number(firstCoordRaw)
+    };
+    const isValid = (c) => Number.isFinite(c.longitude) && c.longitude >= -180 && c.longitude <= 180 && Number.isFinite(c.latitude) && c.latitude >= -90 && c.latitude <= 90;
+    let coord = null;
+    const prev = trackerStore.get(trackerId);
+    const reference = prev ? { longitude: prev.longitude, latitude: prev.latitude } : { longitude: defaultStartLng, latitude: defaultStartLat };
+    const distance = (c) => Math.abs((c.longitude ?? 0) - reference.longitude) + Math.abs((c.latitude ?? 0) - reference.latitude);
+
+    if (isValid(candidateA) && isValid(candidateB)) {
+      coord = distance(candidateA) <= distance(candidateB) ? candidateA : candidateB;
+    } else if (isValid(candidateA)) {
+      coord = candidateA;
+    } else if (isValid(candidateB)) {
+      coord = candidateB;
+    }
+
+    if (!coord) return null;
+
+    const altitude = Number(altRaw);
+    const battery = Number(batteryRaw);
+    const hops = Number.parseInt(hopsRaw, 10);
+    return {
+      id: trackerId,
+      longitude: coord.longitude,
+      latitude: coord.latitude,
+      altitude: Number.isFinite(altitude) ? altitude : null,
+      battery: Number.isFinite(battery) ? battery : null,
+      hops: Number.isFinite(hops) ? hops : null,
+      raw: text
+    };
+  };
+
+  const getTrackerFeatureCollection = () => {
+    const features = [];
+    trackerStore.forEach((tracker) => {
+      if (!tracker || tracker.visible === false) return;
+      if (!Number.isFinite(tracker.longitude) || !Number.isFinite(tracker.latitude)) return;
+      const displayName = (tracker.name && tracker.name.trim()) || tracker.id;
+      features.push({
+        type: 'Feature',
+        properties: {
+          id: tracker.id,
+          label: displayName,
+          text: displayName,
+          name: displayName,
+          color: tracker.color || '#ff5722',
+          battery: tracker.battery,
+          altitude: tracker.altitude,
+          hops: tracker.hops,
+          updatedAt: tracker.updatedAt
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [tracker.longitude, tracker.latitude]
+        }
+      });
+    });
+    return { type: 'FeatureCollection', features };
+  };
+
+  const getTrackerPathFeatureCollection = () => {
+    const features = [];
+    trackerPositionsStore.forEach((entry, trackerId) => {
+      if (!entry || !Array.isArray(entry.segments)) return;
+      entry.segments.forEach((segment, index) => {
+        if (!segment || !segment.from || !segment.to) return;
+        const { from, to } = segment;
+        if (!Number.isFinite(from.longitude) || !Number.isFinite(from.latitude) || !Number.isFinite(to.longitude) || !Number.isFinite(to.latitude)) return;
+        features.push({
+          type: 'Feature',
+          properties: {
+            trackerId,
+            segmentIndex: index,
+            distance: segment.distance,
+            timestamp: segment.timestamp,
+            color: segment.color
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [from.longitude, from.latitude],
+              [to.longitude, to.latitude]
+            ]
+          }
+        });
+      });
+    });
+    return { type: 'FeatureCollection', features };
+  };
+
+  const ensureTrackerLayer = (map) => {
+    if (!map) return;
+    try {
+      if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return;
+    } catch {}
+
+    let pointsReady = true;
+    try {
+      if (!map.getSource('trackers')) {
+        map.addSource('trackers', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+      }
+      if (!map.getLayer('tracker-dots')) {
+        map.addLayer({
+          id: 'tracker-dots',
+          type: 'circle',
+          source: 'trackers',
+          paint: {
+            'circle-radius': 5.75,
+            'circle-color': ['coalesce', ['get', 'color'], '#ff5722'],
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#ffffff'
+          }
+        });
+      }
+      if (!map.getLayer('tracker-labels')) {
+        map.addLayer({
+          id: 'tracker-labels',
+          type: 'symbol',
+          source: 'trackers',
+          layout: {
+            'text-field': ['coalesce', ['get', 'label'], ['get', 'id']],
+            'text-offset': [0, 1.35],
+            'text-anchor': 'top',
+            'text-padding': 2,
+            'text-size': 14,
+            'text-allow-overlap': true
+          },
+          paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': '#000000',
+            'text-halo-width': 4.5,
+            'text-halo-blur': 0.2
+          }
+        });
+      }
+    } catch (err) {
+      pointsReady = false;
+      console.error('ensureTrackerLayer failed', err);
+    }
+    trackerSourceReady = pointsReady && !!map.getSource('trackers') && !!map.getLayer('tracker-dots') && !!map.getLayer('tracker-labels');
+
+    let pathsReady = true;
+    try {
+      if (!map.getSource('tracker-paths')) {
+        map.addSource('tracker-paths', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+      }
+      if (!map.getLayer('tracker-paths')) {
+        const beforeId = map.getLayer('tracker-dots') ? 'tracker-dots' : undefined;
+        const layerConfig = {
+          id: 'tracker-paths',
+          type: 'line',
+          source: 'tracker-paths',
+          paint: {
+            'line-color': ['coalesce', ['get', 'color'], '#ff5722'],
+            'line-width': 2.2,
+            'line-opacity': 0.85,
+            'line-cap': 'round',
+            'line-join': 'round'
+          }
+        };
+        if (beforeId) map.addLayer(layerConfig, beforeId);
+        else map.addLayer(layerConfig);
+      }
+    } catch (err) {
+      pathsReady = false;
+      console.error('ensureTrackerPathLayer failed', err);
+    }
+    trackerPathSourceReady = pathsReady && !!map.getSource('tracker-paths') && !!map.getLayer('tracker-paths');
+  };
+
+  const updateTrackerSource = () => {
+    const map = getMap();
+    if (!map) return;
+    if (!trackerSourceReady) {
+      ensureTrackerLayer(map);
+      if (!trackerSourceReady) return;
+    }
+    try {
+      const src = map.getSource('trackers');
+      if (src && src.setData) src.setData(getTrackerFeatureCollection());
+    } catch (e) {
+      console.error('updateTrackerSource failed', e);
+    }
+  };
+
+  const updateTrackerPathSource = () => {
+    const map = getMap();
+    if (!map) return;
+    if (!trackerPathSourceReady) {
+      ensureTrackerLayer(map);
+      if (!trackerPathSourceReady) return;
+    }
+    try {
+      const src = map.getSource('tracker-paths');
+      if (src && src.setData) src.setData(getTrackerPathFeatureCollection());
+    } catch (e) {
+      console.error('updateTrackerPathSource failed', e);
+    }
+  };
+
+  const processTrackerLine = (raw) => {
+    const data = parseTrackerLine(raw);
+    if (!data) return;
+    const prev = trackerStore.get(data.id);
+    let color = prev?.color;
+    if (!color) color = nextTrackerColor();
+    const hasPrevPosition = prev && Number.isFinite(prev.longitude) && Number.isFinite(prev.latitude);
+    const hasNextPosition = Number.isFinite(data.longitude) && Number.isFinite(data.latitude);
+    let shouldAppendSegment = false;
+    let movementDistance = 0;
+    if (hasPrevPosition && hasNextPosition) {
+      movementDistance = haversineMeters({ longitude: prev.longitude, latitude: prev.latitude }, { longitude: data.longitude, latitude: data.latitude });
+      if (movementDistance > 3) {
+        shouldAppendSegment = true;
+      }
+    }
+    const timestamp = Date.now();
+    const merged = {
+      id: data.id,
+      longitude: data.longitude,
+      latitude: data.latitude,
+      altitude: data.altitude,
+      battery: data.battery,
+      hops: data.hops,
+      updatedAt: timestamp,
+      raw: data.raw,
+      name: prev?.name || null,
+      color,
+      visible: prev?.visible === false ? false : true,
+    };
+    trackerStore.set(data.id, merged);
+    trackerDataSeen = true;
+    if (shouldAppendSegment) {
+      appendTrackerSegment(
+        data.id,
+        { longitude: prev.longitude, latitude: prev.latitude },
+        { longitude: data.longitude, latitude: data.latitude },
+        movementDistance,
+        color,
+        prev?.updatedAt,
+        timestamp
+      );
+      updateTrackerPathSource();
+    }
+    trackerBlinkQueue.add(data.id);
+    updateTrackerSource();
+    renderTrackersList();
+    updateTrackersPanelState();
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+  };
+
+  const syncGotoPoiControls = (shouldFocus=false) => {
+    const enabled = !!gotoAddPoi?.checked;
+    if (gotoAddPoi) gotoAddPoi.setAttribute('aria-checked', String(enabled));
+    if (gotoPoiNameField) gotoPoiNameField.hidden = !enabled;
+    if (enabled && shouldFocus && gotoPoiName) setTimeout(() => gotoPoiName.focus(), 0);
+  };
+  
+  const updateSettingsSaveState = () => {
+    if (settingsSaveBtn) settingsSaveBtn.disabled = !settingsDirty;
+  };
+  
+  const setSettingsStatus = (text='', dismissMs=0) => {
+    if (!settingsStatus) return;
+    if (settingsStatusTimer) { clearTimeout(settingsStatusTimer); settingsStatusTimer = null; }
+    settingsStatus.textContent = text;
+    if (text && dismissMs > 0) {
+      settingsStatusTimer = setTimeout(() => {
+        settingsStatus.textContent = '';
+        settingsStatusTimer = null;
+      }, dismissMs);
+    }
+  };
+  const markSettingsDirty = () => {
+    if (suppressSettingsEvents) return;
+    settingsDirty = true;
+    updateSettingsSaveState();
+    setSettingsStatus('Unsaved changes');
+  };
+  const parseStartInputs = () => {
+    const lat = Number(settingStartLat?.value);
+    const lng = Number(settingStartLng?.value);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return [lng, lat];
+  };
+  const loadSettingsForm = () => {
+    suppressSettingsEvents = true;
+    try {
+      const storedAccessToken = localStorage.getItem('map.accessToken');
+      if (settingAccessToken) settingAccessToken.value = storedAccessToken !== null ? storedAccessToken : defaultAccessToken;
+
+      const storedGoogleKey = localStorage.getItem('map.googleKey');
+      if (settingGoogleKey) settingGoogleKey.value = storedGoogleKey !== null ? storedGoogleKey : defaultGoogleKey;
+
+      const storedOpenAIKey = localStorage.getItem('openai.key');
+      if (settingOpenAIKey) settingOpenAIKey.value = storedOpenAIKey !== null ? storedOpenAIKey : defaultOpenAIKey;
+
+      const storedStyleUrl = localStorage.getItem('map.styleUrl');
+      if (settingStyleUrl) settingStyleUrl.value = storedStyleUrl !== null ? storedStyleUrl : defaultStyleUrl;
+
+      const storedHome = localStorage.getItem('map.homeAddress');
+      if (settingHomeAddress) settingHomeAddress.value = storedHome !== null ? storedHome : defaultHomeAddress;
+
+      const storedStartPosRaw = localStorage.getItem('map.startPos');
+      const startPos = parseStartPos(storedStartPosRaw || `${defaultStartLng}, ${defaultStartLat}`);
+      if (settingStartLng) settingStartLng.value = Number(startPos[0]).toFixed(6);
+      if (settingStartLat) settingStartLat.value = Number(startPos[1]).toFixed(6);
+
+      const storedZoomRaw = localStorage.getItem('map.startZoom');
+      const zoom = Number.isFinite(Number(storedZoomRaw)) ? Number(storedZoomRaw) : defaultStartZoom;
+      if (settingStartZoom) settingStartZoom.value = String(zoom);
+
+      const storedBaud = localStorage.getItem('serial.baud');
+      if (settingBaud) settingBaud.value = storedBaud !== null ? storedBaud : DEFAULT_SERIAL_BAUD;
+      if (connectBaud) connectBaud.value = settingBaud?.value || DEFAULT_SERIAL_BAUD;
+
+      const storedAuto = localStorage.getItem('serial.autoReconnect');
+      if (settingAutoReconnect) settingAutoReconnect.value = storedAuto || DEFAULT_AUTO_RECONNECT;
+    } catch (e) {
+      console.error('Failed loading settings', e);
+    } finally {
+      suppressSettingsEvents = false;
+      settingsDirty = false;
+      updateSettingsSaveState();
+      setSettingsStatus('');
+    }
+  };
+  const gatherSettingsFromForm = () => {
+    const accessToken = (settingAccessToken?.value || '').trim();
+    const googleKey = (settingGoogleKey?.value || '').trim();
+    const openaiKey = (settingOpenAIKey?.value || '').trim();
+    let styleUrl = (settingStyleUrl?.value || '').trim();
+    if (!styleUrl) styleUrl = DEFAULT_STYLE_URL;
+    const homeAddress = (settingHomeAddress?.value || '').trim();
+    const coords = parseStartInputs();
+    if (!coords) {
+      const lat = Number(settingStartLat?.value);
+      const lng = Number(settingStartLng?.value);
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+        alert('Please enter a valid start latitude.');
+        settingStartLat?.focus();
+      } else {
+        alert('Please enter a valid start longitude.');
+        settingStartLng?.focus();
+      }
+      return null;
+    }
+    let startZoom = Number(settingStartZoom?.value);
+    if (!Number.isFinite(startZoom)) startZoom = DEFAULT_START_ZOOM;
+    if (startZoom < 0 || startZoom > 22) {
+      alert('Start zoom must be between 0 and 22.');
+      settingStartZoom?.focus();
+      return null;
+    }
+    let baudValue = (settingBaud?.value || '').trim();
+    if (!baudValue) baudValue = DEFAULT_SERIAL_BAUD;
+    const baudNumber = Number(baudValue);
+    if (!Number.isFinite(baudNumber) || baudNumber <= 0) {
+      alert('Please enter a valid positive baud rate.');
+      settingBaud?.focus();
+      return null;
+    }
+    const baud = String(Math.round(baudNumber));
+    const autoReconnect = (settingAutoReconnect?.value === 'off') ? 'off' : 'on';
+
+    return {
+      accessToken,
+      googleKey,
+      openaiKey,
+      styleUrl,
+      homeAddress,
+      startPos: coords,
+      startZoom,
+      baud,
+      autoReconnect,
+    };
+  };
+  const applySettings = () => {
+    const values = gatherSettingsFromForm();
+    if (!values) return;
+
+    const prevAccessToken = localStorage.getItem('map.accessToken') || '';
+    const prevStyleUrl = localStorage.getItem('map.styleUrl') || '';
+    const prevStartPos = parseStartPos(localStorage.getItem('map.startPos'));
+    const prevStartZoom = Number(localStorage.getItem('map.startZoom') || DEFAULT_START_ZOOM);
+
+    let saveErrored = false;
+    try {
+      localStorage.setItem('map.accessToken', values.accessToken);
+      localStorage.setItem('map.googleKey', values.googleKey);
+      localStorage.setItem('openai.key', values.openaiKey);
+      localStorage.setItem('map.styleUrl', values.styleUrl);
+      localStorage.setItem('map.homeAddress', values.homeAddress);
+      localStorage.setItem('map.startPos', `${values.startPos[0].toFixed(6)}, ${values.startPos[1].toFixed(6)}`);
+      localStorage.setItem('map.startZoom', String(values.startZoom));
+      localStorage.setItem('serial.baud', values.baud);
+      localStorage.setItem('serial.autoReconnect', values.autoReconnect);
+    } catch (e) {
+      saveErrored = true;
+      console.error('Failed saving settings', e);
+    }
+
+    if (saveErrored) {
+      setSettingsStatus('Failed to save settings', 4000);
+      return;
+    }
+
+    if (connectBaud && values.baud) connectBaud.value = values.baud;
+
+    try {
+      if (values.accessToken && (window).mapboxgl) {
+        (window).mapboxgl.accessToken = values.accessToken;
+      }
+    } catch (e) { console.error('Failed applying access token', e); }
+
+    applyServiceAvailability();
+
+    const map = (window)._map;
+    if (!map) {
+      if (values.accessToken) {
+        try { initMap(); } catch (e) { console.error('Map init after save failed', e); }
+      }
+    } else {
+      try {
+        if (values.styleUrl && values.styleUrl !== prevStyleUrl) {
+          (window)._lastStyleUrl = values.styleUrl;
+          map.setStyle(values.styleUrl);
+        }
+      } catch (e) { console.error('Failed applying style', e); }
+      try {
+        const changedCenter = Math.abs(values.startPos[0] - prevStartPos[0]) > 1e-9 || Math.abs(values.startPos[1] - prevStartPos[1]) > 1e-9;
+        if (changedCenter) {
+          map.jumpTo({ center: values.startPos, zoom: values.startZoom });
+        } else if (values.startZoom !== prevStartZoom) {
+          map.setZoom(values.startZoom);
+        }
+      } catch (e) { console.error('Failed applying start position', e); }
+    }
+
+    loadSettingsForm();
+    applyServiceAvailability();
+    setSettingsStatus('Settings saved', 2500);
+  };
+
+  loadSettingsForm();
+  applyServiceAvailability();
+  if (settingsForm) {
+    settingsForm.addEventListener('input', (e) => {
+      if (e && e.target === settingsSaveBtn) return;
+      markSettingsDirty();
+    });
+    settingsForm.addEventListener('change', (e) => {
+      if (e && e.target === settingsSaveBtn) return;
+      markSettingsDirty();
+    });
+    settingsForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      applySettings();
+    });
+  }
   // Per-drawing edit state
   (window)._editTarget = (window)._editTarget || null;
   let currentFilePath = null;
-  window.file?.onCurrentFile?.((p) => { currentFilePath = p; });
+  let startupHomeApplied = false;
+  window.file?.onCurrentFile?.((p) => {
+    currentFilePath = p;
+    if (!p) maybeFlyHomeOnStartup();
+  });
 
   function dateYYYYMMDD() {
     const d = new Date();
@@ -123,11 +1085,85 @@
   // ---------- Mapbox GL init ----------
   function parseStartPos(input) {
     try {
-      if (!input) return [6.13, 49.61];
+      if (!input && input !== 0) return DEFAULT_MAP_START.slice();
+      if (Array.isArray(input) && input.length === 2) {
+        const lng = Number(input[0]);
+        const lat = Number(input[1]);
+        if (Number.isFinite(lng) && Number.isFinite(lat) && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90) {
+          return [lng, lat];
+        }
+        return DEFAULT_MAP_START.slice();
+      }
       const parts = String(input).split(',').map(s => Number(s.trim()));
-      if (parts.length === 2 && parts.every(n => Number.isFinite(n))) return [parts[0], parts[1]];
-      return [6.13, 49.61];
-    } catch { return [6.13, 49.61]; }
+      if (parts.length === 2 && parts.every(n => Number.isFinite(n))) {
+        const [lng, lat] = parts;
+        if (lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90) return [lng, lat];
+      }
+      return DEFAULT_MAP_START.slice();
+    } catch { return DEFAULT_MAP_START.slice(); }
+  }
+
+  async function geocodeAddress(address, key) {
+    if (!address || !key) return null;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Geocode request failed: ${resp.status}`);
+    const data = await resp.json();
+    if (data.status !== 'OK' || !data.results?.length) return null;
+    const loc = data.results[0]?.geometry?.location;
+    if (!loc) return null;
+    const lng = Number(loc.lng);
+    const lat = Number(loc.lat);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    return [lng, lat];
+  }
+
+  async function maybeFlyHomeOnStartup() {
+    if (startupHomeApplied || currentFilePath) return;
+    const map = (window)._map;
+    if (!map) return;
+
+    const ensureZoom = () => {
+      const z = Number(map.getZoom());
+      return Number.isFinite(z) ? Math.max(12, z) : 12;
+    };
+    const jumpToDefault = () => {
+      try { map.jumpTo({ center: DEFAULT_HOME_CENTER, zoom: ensureZoom() }); }
+      catch (e) { console.error('Failed to move to default home location', e); }
+    };
+    const markDone = () => { startupHomeApplied = true; };
+
+    const home = (localStorage.getItem('map.homeAddress') || defaultHomeAddress || '').trim();
+    if (!home) {
+      jumpToDefault();
+      markDone();
+      return;
+    }
+
+    const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+    if (!key) {
+      console.warn('Google Maps API key missing; using default home location.');
+      jumpToDefault();
+      markDone();
+      return;
+    }
+
+    let coords = null;
+    try {
+      coords = await geocodeAddress(home, key);
+    } catch (e) {
+      console.error('Home address lookup failed', e);
+    }
+
+    if (currentFilePath) { markDone(); return; }
+
+    if (coords) {
+      map.jumpTo({ center: coords, zoom: ensureZoom() });
+    } else {
+      console.warn('Could not resolve home address; using default home location.');
+      jumpToDefault();
+    }
+    markDone();
   }
 
   function initMap() {
@@ -143,21 +1179,19 @@
     } catch {}
 
     // Gather settings with fallbacks
-    const styleInput = q('#settingStyleUrl');
-    const tokenInput = q('#settingAccessToken');
-    const googleKeyInput = q('#settingGoogleKey');
-    const startPosInput = q('#settingStartPos');
-    const startZoomInput = q('#settingStartZoom');
-
-    const accessToken = (localStorage.getItem('map.accessToken') || tokenInput?.value || '').trim();
-    const styleUrl = (localStorage.getItem('map.styleUrl') || styleInput?.value || 'mapbox://styles/mapbox/streets-v12').trim();
-    const startPos = parseStartPos(localStorage.getItem('map.startPos') || startPosInput?.value || '6.13, 49.61');
-    const startZoom = Number(localStorage.getItem('map.startZoom') || startZoomInput?.value || 12);
+    const accessToken = (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
+    const styleUrl = (localStorage.getItem('map.styleUrl') || defaultStyleUrl || DEFAULT_STYLE_URL).trim();
+    const startPos = parseStartPos(localStorage.getItem('map.startPos') || `${defaultStartLng}, ${defaultStartLat}`);
+    const startZoomRaw = localStorage.getItem('map.startZoom');
+    const startZoom = Number.isFinite(Number(startZoomRaw)) ? Number(startZoomRaw) : (Number.isFinite(defaultStartZoom) ? defaultStartZoom : DEFAULT_START_ZOOM);
 
     if (!accessToken) {
       console.warn('No Mapbox access token set. Skipping map init.');
+      if (mapWelcome) mapWelcome.hidden = false;
       return;
     }
+
+    if (mapWelcome) mapWelcome.hidden = true;
 
     (window).mapboxgl.accessToken = accessToken;
     const map = new (window).mapboxgl.Map({
@@ -168,14 +1202,20 @@
       attributionControl: true,
     });
     (window)._map = map; // for debugging
+    (window)._lastStyleUrl = styleUrl;
     try { (window)._bindEditInteractions && (window)._bindEditInteractions(); } catch {}
+    try { ensureTrackerLayer(map); } catch (e) { console.error('tracker layer init failed', e); }
 
     const fmt = (n, d=2) => (Number.isFinite(n) ? n.toFixed(d) : '—');
+    let lastCenter = null;
+    let lastAddress = '';
+
     function updateStats() {
       try {
         const c = map.getCenter();
+        lastCenter = { lat: c.lat, lng: c.lng };
         statZoom && (statZoom.textContent = fmt(map.getZoom(), 2));
-        statCenter && (statCenter.textContent = `${fmt(c.lng, 5)}, ${fmt(c.lat, 5)}`);
+        statCenter && (statCenter.textContent = `${fmt(c.lat, 5)}, ${fmt(c.lng, 5)}`);
         statBearing && (statBearing.textContent = fmt(map.getBearing(), 1));
         statPitch && (statPitch.textContent = fmt(map.getPitch(), 1));
         const s = map.getStyle();
@@ -195,7 +1235,23 @@
     };
     // Pin toggle state
     let mapPinned = false;
-    map.on('load', () => { syncInputsFromMap(); updatePlaceFromCenter(); });
+    map.on('load', () => {
+      syncInputsFromMap();
+      updatePlaceFromCenter();
+      maybeFlyHomeOnStartup();
+      trackerSourceReady = false;
+      trackerPathSourceReady = false;
+      ensureTrackerLayer(map);
+      updateTrackerSource();
+      updateTrackerPathSource();
+    });
+    map.on('style.load', () => {
+      trackerSourceReady = false;
+      trackerPathSourceReady = false;
+      ensureTrackerLayer(map);
+      updateTrackerSource();
+      updateTrackerPathSource();
+    });
     map.on('moveend', () => { syncInputsFromMap(); if (!mapPinned) updatePlaceFromCenter(); });
 
     const setPinned = (v) => {
@@ -222,7 +1278,14 @@
         // If footer address element is missing and no coord place, skip
         if (!coordPlace && !footerAddress) return;
         const c = map.getCenter();
-        const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
+        lastCenter = { lat: c.lat, lng: c.lng };
+        if (!googleServicesEnabled) {
+          if (coordPlace) coordPlace.textContent = '—';
+          if (footerAddress) footerAddress.textContent = '—';
+          lastAddress = '';
+          return;
+        }
+        const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
         if (!key) {
           if (coordPlace) coordPlace.textContent = '—';
           if (footerAddress) footerAddress.textContent = '—';
@@ -234,12 +1297,14 @@
         if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) {
           if (coordPlace) coordPlace.textContent = '—';
           if (footerAddress) footerAddress.textContent = '—';
+          lastAddress = '';
           return;
         }
         const res = data.results[0];
         const addr = res.formatted_address || res.formattedAddress || '—';
         if (coordPlace) coordPlace.textContent = addr;
         if (footerAddress) footerAddress.textContent = addr;
+        lastAddress = addr;
         try{
           const comps = res.address_components || [];
           const country = comps.find(c => (c.types||[]).includes('country'));
@@ -268,16 +1333,28 @@
         map.addSource('edit-mid', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
       }
       if (!map.getLayer('draw-fill')) {
-        map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 } });
+        map.addLayer({
+          id: 'draw-fill',
+          type: 'fill',
+          source: 'draw',
+          filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true]],
+          paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 }
+        });
       }
       if (!map.getLayer('draw-line')) {
-        map.addLayer({ id: 'draw-line', type: 'line', source: 'draw', paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 } });
+        map.addLayer({
+          id: 'draw-line',
+          type: 'line',
+          source: 'draw',
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true]],
+          paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 }
+        });
       }
       // Base point as colored circle for robust visibility
       if (!map.getLayer('draw-point-circle')) {
         map.addLayer({
           id: 'draw-point-circle', type: 'circle', source: 'draw',
-          filter: ['==', ['geometry-type'], 'Point'],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true]],
           paint: {
             'circle-color': ['coalesce', ['get','color'], '#2196F3'],
             'circle-radius': 9,
@@ -290,7 +1367,7 @@
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
-          filter: ['==', ['geometry-type'], 'Point'],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true]],
           layout: {
             'text-field': [
               'case',
@@ -324,13 +1401,13 @@
         map.addLayer({ id: 'draw-draft-line', type: 'line', source: 'draw-draft', paint: { 'line-color': '#64b5f6', 'line-width': 2, 'line-dasharray': [2,2] } });
       }
       if (!map.getLayer('draw-hl-fill')) {
-        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['==', ['get','id'], '__none__'], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.35 } });
+        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.35 } });
       }
       if (!map.getLayer('draw-hl-line')) {
-        map.addLayer({ id: 'draw-hl-line', type: 'line', source: 'draw', filter: ['==', ['get','id'], '__none__'], paint: { 'line-color': '#FFC107', 'line-width': 4 } });
+        map.addLayer({ id: 'draw-hl-line', type: 'line', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'line-color': '#FFC107', 'line-width': 4 } });
       }
       if (!map.getLayer('draw-hl-point')) {
-        map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['==', ['get','id'], '__none__'], paint: { 'circle-color': '#FFC107', 'circle-radius': 8, 'circle-opacity': 0.5 } });
+        map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'circle-color': '#FFC107', 'circle-radius': 9.2, 'circle-opacity': 0.5 } });
       }
       if (!map.getLayer('edit-verts')) {
         map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 7 }, layout: { visibility: 'none' } });
@@ -357,6 +1434,33 @@
     };
     // Expose refreshers so edit interaction code can call them
     (window)._refreshDraw = refreshDraw;
+
+    const applyTrackerVisibilityToDrawings = () => {
+      try {
+        if (!drawStore || !Array.isArray(drawStore.features)) return;
+        const hiddenIds = new Set();
+        trackerStore.forEach((tracker) => {
+          if (tracker && tracker.visible === false) hiddenIds.add(String(tracker.id));
+        });
+        let changed = false;
+        drawStore.features.forEach((feature) => {
+          if (!feature || !feature.properties) return;
+          const trackerId = feature.properties.trackerId || feature.properties.trackerID || feature.properties.tracker_id;
+          if (!trackerId) return;
+          const shouldHide = hiddenIds.has(String(trackerId));
+          if (!!feature.properties._trackerHidden !== shouldHide) {
+            feature.properties._trackerHidden = shouldHide;
+            changed = true;
+          }
+        });
+        if (changed) refreshDraw();
+      } catch (err) {
+        console.error('applyTrackerVisibilityToDrawings failed', err);
+      }
+    };
+    (window).applyTrackerVisibilityToDrawings = applyTrackerVisibilityToDrawings;
+    try { applyTrackerVisibilityToDrawings(); } catch {}
+
     const refreshEditVerts = () => {
       try{
         const verts = [];
@@ -434,6 +1538,7 @@
           return f;
         }) : [];
         refreshDraw();
+        try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
       } catch(e){ console.error('loadDrawings failed', e); }
     };
 
@@ -640,6 +1745,7 @@
       } catch {}
       colorModal.hidden = false;
     }
+    (window).openColorModal = openColorModal;
     function closeColorModal(){ if (colorModal) colorModal.hidden = true; colorState.onPick = null; colorState.current = null; }
     colorClose?.addEventListener('click', () => closeColorModal());
     colorModal?.addEventListener('click', (e) => {
@@ -698,6 +1804,10 @@
       updateEditBtnState();
       const aiBtn = document.createElement('button');
       aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions'); aiBtn.textContent = 'AI';
+      if (!aiEnabled) {
+        aiBtn.disabled = true;
+        aiBtn.hidden = true;
+      }
       const g = f.geometry;
       let label = f.properties.kind || g.type;
       let sizeText = '';
@@ -783,21 +1893,228 @@
         setDirty(true); refreshDraw();
       };
       editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
-      aiBtn.addEventListener('click', (e) => { e.stopPropagation(); openAiModal(f); });
+      aiBtn.addEventListener('click', (e) => {
+        if (!aiEnabled) return;
+        e.stopPropagation();
+        openAiModal(f);
+      });
       return row;
     };
+    const updateFeaturesActionsState = (hasFeaturesParam) => {
+      const hasFeatures = (typeof hasFeaturesParam === 'boolean') ? hasFeaturesParam : (Array.isArray(drawStore.features) && drawStore.features.length > 0);
+      if (featuresSaveBtn) {
+        const disabled = !hasFeatures;
+        featuresSaveBtn.hidden = disabled;
+        featuresSaveBtn.disabled = disabled;
+        featuresSaveBtn.classList.toggle('is-disabled', disabled);
+        if (disabled) featuresSaveBtn.setAttribute('aria-disabled', 'true');
+        else featuresSaveBtn.removeAttribute('aria-disabled');
+      }
+      if (featuresClearBtn) {
+        const disabled = !hasFeatures;
+        featuresClearBtn.hidden = disabled;
+        featuresClearBtn.disabled = disabled;
+        featuresClearBtn.classList.toggle('is-disabled', disabled);
+        if (disabled) featuresClearBtn.setAttribute('aria-disabled', 'true');
+        else featuresClearBtn.removeAttribute('aria-disabled');
+      }
+      if (featuresActions) {
+        featuresActions.classList.toggle('features-actions--empty', !hasFeatures);
+      }
+    };
+    const computeFeatureBounds = (input) => {
+      const list = Array.isArray(input) ? input : (input && Array.isArray(input.features) ? input.features : []);
+      if (!list.length) return null;
+      let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+      const extend = (lng, lat) => {
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      };
+      const walk = (geom) => {
+        if (!geom) return;
+        const type = geom.type;
+        const coords = geom.coordinates;
+        if (type === 'Point') {
+          extend(coords[0], coords[1]);
+        } else if (type === 'MultiPoint' || type === 'LineString') {
+          coords.forEach((pt) => extend(pt[0], pt[1]));
+        } else if (type === 'Polygon' || type === 'MultiLineString') {
+          coords.forEach((ring) => ring.forEach((pt) => extend(pt[0], pt[1])));
+        } else if (type === 'MultiPolygon') {
+          coords.forEach((poly) => poly.forEach((ring) => ring.forEach((pt) => extend(pt[0], pt[1]))));
+        } else if (type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
+          geom.geometries.forEach(walk);
+        }
+      };
+      list.forEach((feature) => {
+        try { walk(feature?.geometry); } catch {}
+      });
+      if (!Number.isFinite(minLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLng) || !Number.isFinite(maxLat)) return null;
+      return { minLng, minLat, maxLng, maxLat };
+    };
+
+    const focusMapOnBounds = (bounds) => {
+      try {
+        if (!bounds) return;
+        const map = getMap();
+        if (!map) return;
+        const { minLng, minLat, maxLng, maxLat } = bounds;
+        if (![minLng, minLat, maxLng, maxLat].every((v) => Number.isFinite(v))) return;
+        const sw = [minLng, minLat];
+        const ne = [maxLng, maxLat];
+        const spanLng = maxLng - minLng;
+        const spanLat = maxLat - minLat;
+        if (Math.abs(spanLng) < 0.0005 && Math.abs(spanLat) < 0.0005) {
+          const centerLng = (minLng + maxLng) / 2;
+          const centerLat = (minLat + maxLat) / 2;
+          const currentZoom = map.getZoom();
+          map.flyTo({
+            center: [centerLng, centerLat],
+            zoom: Number.isFinite(currentZoom) ? Math.max(12, currentZoom) : 12,
+            duration: 600
+          });
+        } else {
+          map.fitBounds([sw, ne], { padding: 60, duration: 800, maxZoom: 16 });
+        }
+      } catch (err) {
+        console.error('focusMapOnBounds failed', err);
+      }
+    };
+
+    const handleFeaturesSave = async () => {
+      if (!featuresSaveBtn || featuresSaveBtn.disabled) return;
+      if (!window.file || typeof window.file.saveAs !== 'function') {
+        console.warn('File save bridge is not available.');
+        return;
+      }
+      if (!Array.isArray(drawStore.features) || drawStore.features.length === 0) return;
+      try {
+        const data = (window).draw?.toJSON?.() || { type: 'FeatureCollection', features: [] };
+        const defaultPath = currentFilePath || getSuggestedFilename();
+        const result = await window.file.saveAs(data, defaultPath);
+        if (result && result.ok) setDirty(false);
+      } catch (err) {
+        console.error('Saving features failed', err);
+      }
+    };
+
+    const normalizeImportedFeature = (feature, existingIds) => {
+      if (!feature || feature.type !== 'Feature' || !feature.geometry) return null;
+      let clone;
+      try {
+        clone = JSON.parse(JSON.stringify(feature));
+      } catch (err) {
+        console.error('Failed cloning feature', err);
+        return null;
+      }
+      clone.properties = { ...(clone.properties || {}) };
+      const geomType = clone.geometry?.type;
+      if (!clone.properties.kind) {
+        if (geomType === 'Polygon') clone.properties.kind = 'polygon';
+        else if (geomType === 'LineString') clone.properties.kind = 'line';
+        else if (geomType === 'Point') clone.properties.kind = 'poi';
+      }
+      if (!clone.properties.color) clone.properties.color = nextColor();
+      if (!clone.properties.id || existingIds.has(clone.properties.id)) {
+        let candidate;
+        do {
+          candidate = newId();
+        } while (existingIds.has(candidate));
+        clone.properties.id = candidate;
+      }
+      existingIds.add(clone.properties.id);
+      return clone;
+    };
+
+    const handleFeaturesLoad = async () => {
+      if (!window.file || typeof window.file.openFeatureCollection !== 'function') {
+        console.warn('File open bridge is not available.');
+        return;
+      }
+      try {
+        const result = await window.file.openFeatureCollection(currentFilePath || undefined);
+        if (!result || result.canceled) return;
+        if (!result.ok) {
+          if (result.error) alert(`Unable to open file: ${result.error}`);
+          return;
+        }
+        const payload = result.data;
+        if (!payload || payload.type !== 'FeatureCollection') {
+          alert('The selected file does not contain a valid FeatureCollection.');
+          return;
+        }
+        const incoming = Array.isArray(payload.features) ? payload.features.filter(f => f && f.type === 'Feature' && f.geometry) : [];
+        if (incoming.length === 0) {
+          alert('The selected file does not contain any features to load.');
+          return;
+        }
+        const hasExisting = Array.isArray(drawStore.features) && drawStore.features.length > 0;
+        let mode = 'replace';
+        if (hasExisting) {
+          let choice = null;
+          if (window.file && typeof window.file.askMergeReplace === 'function') {
+            choice = await window.file.askMergeReplace('Load features', 'MERGE keeps current features and adds items from the file. REPLACE ALL discards current features.');
+          }
+          if (!choice) {
+            const merge = confirm('Features already exist. Click OK to MERGE, or Cancel to REPLACE ALL.');
+            choice = { choice: merge ? 'merge' : 'replace' };
+          }
+          if (!choice || choice.choice === 'cancel') return;
+          mode = choice.choice;
+        }
+        if (mode === 'replace') {
+          drawStore.features = [];
+        }
+        const existingIds = new Set((drawStore.features || []).map(f => f?.properties?.id).filter(Boolean));
+        const normalized = incoming.map((feature) => normalizeImportedFeature(feature, existingIds)).filter(Boolean);
+        if (!normalized.length) {
+          alert('No valid features could be imported from the selected file.');
+          return;
+        }
+        normalized.forEach((f) => drawStore.features.push(f));
+        refreshDraw();
+        setDirty(true);
+        if (result.filePath) currentFilePath = result.filePath;
+        try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+        const bounds = computeFeatureBounds(normalized);
+        focusMapOnBounds(bounds);
+      } catch (err) {
+        console.error('Loading features failed', err);
+        alert('Could not load features. Check the console for details.');
+      }
+    };
+
+    const handleFeaturesClear = () => {
+      if (!Array.isArray(drawStore.features) || drawStore.features.length === 0) return;
+      const ok = confirm('Clear all features? This cannot be undone.');
+      if (!ok) return;
+      drawStore.features = [];
+      refreshDraw();
+      setDirty(true);
+    };
+
     const updateDrawingsPanel = () => {
       if (!drawingsList) return;
       drawingsList.innerHTML = '';
-      if (!drawStore.features || drawStore.features.length === 0) {
+      const hasFeatures = Array.isArray(drawStore.features) && drawStore.features.length > 0;
+      if (!hasFeatures) {
         const empty = document.createElement('div');
         empty.className = 'features-empty';
         empty.textContent = 'No features yet. Start drawing on the map.';
         drawingsList.appendChild(empty);
+        updateFeaturesActionsState(false);
         return;
       }
       drawStore.features.forEach(f => drawingsList.appendChild(renderRow(f)));
+      updateFeaturesActionsState(true);
     };
+    featuresSaveBtn?.addEventListener('click', handleFeaturesSave);
+    featuresLoadBtn?.addEventListener('click', handleFeaturesLoad);
+    featuresClearBtn?.addEventListener('click', handleFeaturesClear);
+    updateFeaturesActionsState();
     updateDrawingsPanel();
     setDirty(false);
 
@@ -816,7 +2133,7 @@
     }
     async function describeLocation(p){
       try{
-        const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
+        const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
         if (!key || !p) return '';
         const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(p.lat+','+p.lng)}&key=${encodeURIComponent(key)}`;
         const resp = await fetch(url); const data = await resp.json();
@@ -922,6 +2239,7 @@
       return out;
     }
     async function openAiModal(feature){
+      if (!aiEnabled) return;
       aiTarget = feature;
       aiError.textContent = '';
       if (aiInput) aiInput.value = '';
@@ -942,12 +2260,16 @@
     aiModal?.addEventListener('click', (e) => { const t = e.target; if (t && t.dataset && t.dataset.action === 'close') closeAiModal(); });
     aiSubmit?.addEventListener('click', async () => {
       try{
+        if (!aiEnabled) {
+          aiError.textContent = 'Add an OpenAI API key in Settings to use AI features.';
+          return;
+        }
         if (!aiTarget) return;
         const prompt = (aiInput?.value || '').trim();
         aiError.textContent = '';
         aiSubmit.disabled = true; aiSubmit.textContent = 'Submitting…'; if (aiSpinner) aiSpinner.style.display='inline-block'; if (aiInput) aiInput.disabled = true;
         // API key from settings/localStorage
-        const openaiKey = (localStorage.getItem('openai.key') || q('#settingOpenAIKey')?.value || '').trim();
+        const openaiKey = (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
         const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt, openaiKey);
         if (!result || !result.ok) { aiError.textContent = result?.error || 'AI request failed'; return; }
         // Constrain features to original geometry region
@@ -979,60 +2301,42 @@
       clear: () => { drawStore.features = []; refreshDraw(); }
     };
 
-    // Persist settings when changed in UI
-    tokenInput?.addEventListener('change', () => {
-      console.log(tokenInput.value);
-      const t = tokenInput.value.trim();
-      localStorage.setItem('map.accessToken', t);
-      (window).mapboxgl.accessToken = t;
-    });
-    googleKeyInput?.addEventListener('change', () => {
-      const k = googleKeyInput.value.trim();
-      localStorage.setItem('map.googleKey', k);
-    });
-    // Persist home address
-    if (settingHomeAddress) {
-      const savedHome = localStorage.getItem('map.homeAddress');
-      if (savedHome && !settingHomeAddress.value) settingHomeAddress.value = savedHome;
-      settingHomeAddress.addEventListener('change', () => {
-        localStorage.setItem('map.homeAddress', settingHomeAddress.value.trim());
-      });
-    }
-    // Persist OpenAI API key
-    const settingOpenAIKey = q('#settingOpenAIKey');
-    if (settingOpenAIKey) {
-      const saved = localStorage.getItem('openai.key');
-      if (saved && !settingOpenAIKey.value) settingOpenAIKey.value = saved;
-      settingOpenAIKey.addEventListener('change', () => { localStorage.setItem('openai.key', settingOpenAIKey.value.trim()); });
-    }
-    const applyStyle = () => {
-      try {
-        const v = (styleInput?.value || '').trim();
-        if (!v) return;
-        const prev = (window)._lastStyleUrl || '';
-        if (v === prev) return;
-        localStorage.setItem('map.styleUrl', v);
-        (window)._lastStyleUrl = v;
-        map.setStyle(v);
-      } catch (e) { console.error('setStyle failed', e); }
-    };
-    styleInput?.addEventListener('change', applyStyle);
-    styleInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyStyle(); } });
-    startPosInput?.addEventListener('change', () => {
-      const p = parseStartPos(startPosInput.value);
-      localStorage.setItem('map.startPos', p.join(', '));
-      try { map.setCenter(p); } catch {}
-    });
-    startZoomInput?.addEventListener('change', () => {
-      const z = Number(startZoomInput.value);
-      localStorage.setItem('map.startZoom', String(z));
-      try { map.setZoom(z); } catch {}
-    });
   }
 
   function setStatus(state, path) {
     if (serialStatusDot) serialStatusDot.dataset.state = state;
     if (statSerial) statSerial.textContent = state === 'connected' ? (path || 'connected') : state;
+    if (serialConnectBtn) {
+      if (state === 'connected') {
+        serialConnectBtn.disabled = true;
+        serialConnectBtn.setAttribute('aria-disabled', 'true');
+        if (serialConnectLabel) serialConnectLabel.textContent = 'Connected';
+      } else if (state === 'connecting') {
+        serialConnectBtn.disabled = true;
+        serialConnectBtn.setAttribute('aria-disabled', 'true');
+        if (serialConnectLabel) serialConnectLabel.textContent = 'Connecting…';
+      } else {
+        serialConnectBtn.disabled = false;
+        serialConnectBtn.removeAttribute('aria-disabled');
+        if (serialConnectLabel) serialConnectLabel.textContent = 'Connect';
+      }
+    }
+
+    if (state === 'connected') {
+      serialConnected = true;
+      serialConnecting = false;
+      trackerDataSeen = trackerStore.size > 0;
+    } else if (state === 'connecting') {
+      serialConnected = false;
+      serialConnecting = true;
+      trackerDataSeen = false;
+    } else {
+      serialConnected = false;
+      serialConnecting = false;
+      trackerDataSeen = trackerStore.size > 0;
+    }
+
+    updateTrackersPanelState();
   }
 
   async function refreshPortsList() {
@@ -1068,12 +2372,12 @@
     }
   }
 
-  function openModal() {
+  function openConnectModal() {
     connectModal.hidden = false;
     connectModal.querySelector('.modal-panel').focus?.();
     refreshPortsList();
   }
-  function closeModal() { connectModal.hidden = true; }
+  function closeConnectModal() { connectModal.hidden = true; }
 
   async function connectSelected() {
     if (!selectedPath) return;
@@ -1081,15 +2385,15 @@
     connectBtnAction.disabled = true;
     try {
       const baud = Number(connectBaud.value || 115200);
-      if (serialMonitorBtn) serialMonitorBtn.hidden = true; // ensure hidden until confirmed connected
+      setSerialMonitorVisible(false); // ensure hidden until confirmed connected
       await window.serial.open(selectedPath, baud);
       setStatus('connected', selectedPath);
-      if (serialMonitorBtn) serialMonitorBtn.hidden = false;
+      setSerialMonitorVisible(true);
       if (serialConnPath) serialConnPath.textContent = selectedPath;
-      closeModal();
+      closeConnectModal();
     } catch (e) {
       setStatus('disconnected');
-      if (serialMonitorBtn) serialMonitorBtn.hidden = true;
+      setSerialMonitorVisible(false);
       alert(`Failed to open ${selectedPath}: ${String(e)}`);
     } finally {
       connectBtnAction.disabled = false;
@@ -1108,17 +2412,17 @@
   }, 250);
 
   // Wire buttons
-  serialConnectBtn?.addEventListener('click', openModal);
-  connectClose?.addEventListener('click', closeModal);
+  serialConnectBtn?.addEventListener('click', openConnectModal);
+  connectClose?.addEventListener('click', closeConnectModal);
   connectModal?.addEventListener('click', (e) => {
     const target = e.target;
-    if (target && target.dataset && target.dataset.action === 'close') closeModal();
+    if (target && target.dataset && target.dataset.action === 'close') closeConnectModal();
   });
   refreshPorts?.addEventListener('click', refreshPortsList);
   connectBtnAction?.addEventListener('click', connectSelected);
 
   // Ensure the serial monitor button starts hidden
-  try { if (serialMonitorBtn) serialMonitorBtn.hidden = true; } catch {}
+  try { setSerialMonitorVisible(false); } catch {}
 
   // deprecated: old floating monitor toggle (removed)
 
@@ -1131,10 +2435,29 @@
     const isMap = !!tabMapInput?.checked;
     if (tabMapLabel) { tabMapLabel.classList.toggle('active', isMap); tabMapLabel.setAttribute('aria-selected', String(isMap)); }
     if (tabSettingsLabel) { tabSettingsLabel.classList.toggle('active', !isMap); tabSettingsLabel.setAttribute('aria-selected', String(!isMap)); }
-    // Adjust toolbar height var so layout collapses when hidden
+    document.body.classList.toggle('map-active', isMap);
     document.body.style.setProperty('--toolbar-h', isMap ? '44px' : '0px');
+    if (isMap) {
+      scheduleMapResize();
+      try { window.dispatchEvent(new Event('resize')); } catch {}
+    }
   }
-  tabMapInput?.addEventListener('change', updateTabUI);
+  mapWelcomeSettings?.addEventListener('click', () => {
+    if (tabSettingsInput) tabSettingsInput.checked = true;
+    if (tabMapInput) tabMapInput.checked = false;
+    updateTabUI();
+    try {
+      if (tabSettingsLabel && typeof tabSettingsLabel.focus === 'function') tabSettingsLabel.focus();
+    } catch {}
+  });
+  tabMapInput?.addEventListener('change', () => {
+    if (tabMapInput?.checked && settingsDirty) {
+      alert('You have unsaved settings. Please save before returning to the map.');
+      if (tabMapInput) tabMapInput.checked = false;
+      if (tabSettingsInput) tabSettingsInput.checked = true;
+    }
+    updateTabUI();
+  });
   tabSettingsInput?.addEventListener('change', updateTabUI);
   updateTabUI();
 
@@ -1327,7 +2650,8 @@
   function initSidebar(){
     const root = document.documentElement;
     const minW = 280, maxW = 400;
-    
+    let sidebarOpen = false;
+
     let resizeTimer = null;
     const scheduleResize = (delay=260) => {
       try { if (resizeTimer) clearTimeout(resizeTimer); } catch {}
@@ -1338,7 +2662,9 @@
       return Number.isFinite(saved) ? Math.min(maxW, Math.max(minW, saved)) : 320;
     };
     const applyOpen = (open) => {
-      if (open) {
+      const show = !!open;
+      sidebarOpen = show;
+      if (show) {
         const w = readW();
         root.style.setProperty('--sidebar-w', w + 'px');
         if (featuresSidebar) {
@@ -1348,13 +2674,10 @@
           requestAnimationFrame(() => featuresSidebar.classList.add('anim-enter-active'));
           setTimeout(() => featuresSidebar && featuresSidebar.classList.remove('anim-enter','anim-enter-active'), 220);
         }
-        if (featuresHandle) { featuresHandle.hidden = true; featuresHandle.setAttribute('data-open','1'); }
         try { localStorage.setItem('ui.sidebar.open', '1'); } catch {}
-        scheduleResize();
       } else {
         root.style.setProperty('--sidebar-w', '0px');
         if (featuresSidebar) {
-          // animate out opacity while width transitions to 0
           featuresSidebar.classList.remove('anim-enter','anim-enter-active');
           featuresSidebar.classList.add('anim-exit');
           requestAnimationFrame(() => featuresSidebar.classList.add('anim-exit-active'));
@@ -1365,16 +2688,20 @@
           };
           featuresSidebar.addEventListener('transitionend', onEnd);
         }
-        if (featuresHandle) { featuresHandle.hidden = false; featuresHandle.setAttribute('data-open','0'); }
         try { localStorage.setItem('ui.sidebar.open', '0'); } catch {}
-        scheduleResize();
       }
+      if (featuresToggleBtn) {
+        featuresToggleBtn.hidden = show;
+        featuresToggleBtn.classList.toggle('is-open', show);
+        featuresToggleBtn.setAttribute('aria-expanded', String(show));
+        featuresToggleBtn.setAttribute('aria-label', show ? 'Hide features panel' : 'Show features panel');
+        featuresToggleBtn.title = show ? 'Hide features panel' : 'Show features panel';
+      }
+      scheduleResize();
     };
-    // initial state
-    const open = localStorage.getItem('ui.sidebar.open') !== '0';
-    applyOpen(open);
+    const initialOpen = localStorage.getItem('ui.sidebar.open') !== '0';
+    applyOpen(initialOpen);
 
-    // Resizer drag
     if (featuresResizer) {
       let startX=0, startW=readW(), dragging=false;
       const onMove = (e) => {
@@ -1385,17 +2712,105 @@
         root.style.setProperty('--sidebar-w', w + 'px');
         try { localStorage.setItem('ui.sidebar.w', String(w)); } catch {}
         e.preventDefault?.();
-        // debounce map resize while dragging
         scheduleResize(50);
       };
       const onUp = () => { if (!dragging) return; dragging=false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
-      const onDown = (e) => { if (featuresSidebar?.hidden) return; dragging=true; startX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX; startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || readW(); document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp); document.addEventListener('touchmove', onMove, { passive:false }); document.addEventListener('touchend', onUp); e.preventDefault?.(); };
+      const onDown = (e) => {
+        if (!sidebarOpen) return;
+        dragging=true;
+        startX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
+        startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || readW();
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive:false });
+        document.addEventListener('touchend', onUp);
+        e.preventDefault?.();
+      };
       featuresResizer.addEventListener('mousedown', onDown);
       featuresResizer.addEventListener('touchstart', onDown, { passive:false });
     }
-    // Collapse / show
-    featuresCollapse?.addEventListener('click', () => applyOpen(false));
-    featuresHandle?.addEventListener('click', () => applyOpen(true));
+
+    featuresCollapse?.addEventListener('click', () => {
+      applyOpen(false);
+      setTimeout(() => { try { featuresToggleBtn?.focus?.(); } catch {} }, 240);
+    });
+    featuresToggleBtn?.addEventListener('click', () => applyOpen(true));
+
+    try { document.body.classList.add('sidebar-ready'); } catch {}
+  }
+
+  function initTrackersSidebar(){
+    const sidebarEl = trackersSidebar || q('#trackersSidebar');
+    const toggleBtn = trackersToggleBtn || q('#trackersToggleBtn');
+    const collapseEl = trackersCollapse || q('#trackersCollapse');
+    const connectBtnEl = trackersConnectBtn || q('#trackersConnectBtn');
+    if (!sidebarEl && !toggleBtn) return;
+    const root = document.documentElement;
+
+    const setOpen = (open) => {
+      const show = !!open;
+      try { localStorage.setItem('ui.trackers.open', show ? '1' : '0'); } catch {}
+      root.style.setProperty('--trackers-sidebar-w', show ? `${TRACKERS_PANEL_WIDTH}px` : '0px');
+      if (sidebarEl) {
+        if (show) {
+          sidebarEl.hidden = false;
+          sidebarEl.classList.remove('anim-exit', 'anim-exit-active');
+          sidebarEl.classList.add('anim-enter');
+          requestAnimationFrame(() => sidebarEl.classList.add('anim-enter-active'));
+          setTimeout(() => {
+            sidebarEl.classList.remove('anim-enter', 'anim-enter-active');
+          }, 220);
+        } else {
+          sidebarEl.classList.remove('anim-enter', 'anim-enter-active');
+          sidebarEl.classList.add('anim-exit');
+          requestAnimationFrame(() => sidebarEl.classList.add('anim-exit-active'));
+          const cleanup = () => {
+            sidebarEl.removeEventListener('transitionend', cleanup);
+            if (root.style.getPropertyValue('--trackers-sidebar-w') !== '0px') return;
+            sidebarEl.hidden = true;
+            sidebarEl.classList.remove('anim-exit', 'anim-exit-active');
+          };
+          sidebarEl.addEventListener('transitionend', cleanup);
+          setTimeout(cleanup, 240);
+        }
+      }
+      if (toggleBtn) {
+        toggleBtn.hidden = show;
+        toggleBtn.classList.toggle('is-open', show);
+        toggleBtn.setAttribute('aria-expanded', String(show));
+        toggleBtn.setAttribute('aria-label', show ? 'Hide trackers panel' : 'Show trackers panel');
+        toggleBtn.title = show ? 'Hide trackers panel' : 'Show trackers panel';
+      }
+      if (collapseEl) {
+        collapseEl.setAttribute('aria-expanded', String(show));
+        collapseEl.title = show ? 'Hide tracker sidebar' : 'Show tracker sidebar';
+        collapseEl.setAttribute('aria-label', show ? 'Hide tracker sidebar' : 'Show tracker sidebar');
+      }
+    };
+
+    (window).openTrackersPanel = () => setOpen(true);
+    (window).closeTrackersPanel = () => setOpen(false);
+
+    const stored = localStorage.getItem('ui.trackers.open');
+    const shouldOpen = stored === '1';
+    setOpen(shouldOpen);
+
+    collapseEl?.addEventListener('click', () => {
+      setOpen(false);
+      setTimeout(() => { try { toggleBtn?.focus?.(); } catch {} }, 240);
+    });
+
+    toggleBtn?.addEventListener('click', () => setOpen(true));
+
+    connectBtnEl?.addEventListener('click', () => {
+      try { (window).openTrackersPanel && (window).openTrackersPanel(); } catch {}
+      openConnectModal();
+    });
+
+    renderTrackersList();
+    updateTrackersPanelState();
+
+    try { document.body.classList.add('sidebar-ready'); } catch {}
   }
 
   // Reset floating panels to initial positions
@@ -1436,26 +2851,6 @@
     }
   }
 
-  // If no token yet, bootstrap map init when user enters one
-  (function attachTokenBootstrap(){
-    const tokenInput = q('#settingAccessToken');
-    if (!tokenInput) return;
-    const onFirstToken = () => {
-      const t = tokenInput.value.trim();
-      if (!t) return;
-      try { localStorage.setItem('map.accessToken', t); } catch {}
-      try { if ((window).mapboxgl) (window).mapboxgl.accessToken = t; } catch {}
-      // If map already exists, just remove bootstrap listener
-      if ((window)._map) {
-        tokenInput.removeEventListener('change', onFirstToken);
-        return;
-      }
-      tokenInput.removeEventListener('change', onFirstToken);
-      try { initMap(); } catch (e) { console.error(e); }
-    };
-    tokenInput.addEventListener('change', onFirstToken);
-  })();
-
   // Drawings panel collapse toggle
   drawingsToggle?.addEventListener('click', () => {
     if (!drawingsFloat) return;
@@ -1470,22 +2865,27 @@
 
   // Initialize panels + sidebar + map after DOM is ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { initFloatingPanels(); try{ initSidebar(); }catch{}; initMap(); }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => {
+      initFloatingPanels();
+      try { initSidebar(); } catch {}
+      try { initTrackersSidebar(); } catch {}
+      initMap();
+    }, { once: true });
   } else {
     initFloatingPanels();
-    try{ initSidebar(); }catch{}
+    try { initSidebar(); } catch {}
+    try { initTrackersSidebar(); } catch {}
     initMap();
   }
 
   // Serial event listeners
   window.serial.onStatus((payload) => {
-    console.log({payload})
     // Hide monitor button by default; only show on connected
-    if (serialMonitorBtn) serialMonitorBtn.hidden = true;
+    setSerialMonitorVisible(false);
     if (!payload) return;
     if (payload.state === 'connected') {
       setStatus('connected', payload.path);
-      if (serialMonitorBtn) serialMonitorBtn.hidden = false;
+      setSerialMonitorVisible(true);
       if (serialConnPath) serialConnPath.textContent = payload.path || 'connected';
     } else if (payload.state === 'disconnected' || payload.state === 'connecting' || payload.state === 'error') {
       setStatus(payload.state === 'connecting' ? 'connecting' : 'disconnected');
@@ -1507,8 +2907,6 @@
   }
   inputLng?.addEventListener('change', centerFromInputs);
   inputLat?.addEventListener('change', centerFromInputs);
-  resetLayoutBtn?.addEventListener('click', (e) => { e.preventDefault(); resetFloatingPanels(); });
-  resetLayoutToolbarBtn?.addEventListener('click', (e) => { e.preventDefault(); resetFloatingPanels(); });
 
   // ---- File menu interactions ----
   // Save request from main -> send data back
@@ -1553,46 +2951,8 @@
         setDirty(false);
         // After loading, compute bounds and fit view
         try {
-          const b = (function computeBounds(fc){
-            if (!fc || !Array.isArray(fc.features)) return null;
-            let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-            const extend = (lng, lat) => {
-              if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-              if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
-              if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
-            };
-            const walk = (geom) => {
-              if (!geom) return;
-              const t = geom.type;
-              const c = geom.coordinates;
-              if (t === 'Point') {
-                extend(c[0], c[1]);
-              } else if (t === 'LineString' || t === 'MultiPoint') {
-                c.forEach(pt => extend(pt[0], pt[1]));
-              } else if (t === 'Polygon' || t === 'MultiLineString') {
-                c.forEach(ring => ring.forEach(pt => extend(pt[0], pt[1])));
-              } else if (t === 'MultiPolygon') {
-                c.forEach(poly => poly.forEach(ring => ring.forEach(pt => extend(pt[0], pt[1]))));
-              } else if (t === 'GeometryCollection' && Array.isArray(geom.geometries)) {
-                geom.geometries.forEach(g => walk(g));
-              }
-            };
-            fc.features.forEach(f => walk(f.geometry));
-            if (!Number.isFinite(minLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLng) || !Number.isFinite(maxLat)) return null;
-            return { minLng, minLat, maxLng, maxLat };
-          })(payload);
-          if (b) {
-            const sw = [b.minLng, b.minLat], ne = [b.maxLng, b.maxLat];
-            const spanLng = b.maxLng - b.minLng, spanLat = b.maxLat - b.minLat;
-            // If all features collapse to a near-point, just center and pick a reasonable zoom
-            if (Math.abs(spanLng) < 0.0005 && Math.abs(spanLat) < 0.0005) {
-              const centerLng = (b.minLng + b.maxLng) / 2;
-              const centerLat = (b.minLat + b.maxLat) / 2;
-              m.flyTo({ center: [centerLng, centerLat], zoom: Math.max(12, m.getZoom() || 12), duration: 600 });
-            } else {
-              m.fitBounds([sw, ne], { padding: 60, duration: 800, maxZoom: 16 });
-            }
-          }
+          const bounds = computeFeatureBounds(payload);
+          focusMapOnBounds(bounds);
         } catch (e) { console.error('fit to bounds failed', e); }
       } catch (e) { console.error('Open failed', e); }
     });
@@ -1649,16 +3009,18 @@
         }
         // Clear drawings
         (window).draw?.clear?.();
-        const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
-        const home = (localStorage.getItem('map.homeAddress') || q('#settingHomeAddress')?.value || '').trim();
+        const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+        const home = (localStorage.getItem('map.homeAddress') || defaultHomeAddress || '').trim();
         if (!home) { alert('Please set a Home Address in Settings.'); return; }
         if (!key) { alert('Please set Google Maps API key in Settings.'); return; }
-        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(home)}&key=${encodeURIComponent(key)}`;
-        const resp = await fetch(url);
-        const data = await resp.json();
-        if (data.status !== 'OK' || !data.results?.length) { alert('Could not find the home address.'); return; }
-        const loc = data.results[0].geometry.location; // { lat, lng }
-        m.flyTo({ center: [loc.lng, loc.lat], zoom: Math.max(12, m.getZoom() || 12), duration: 700 });
+        let coords = null;
+        try {
+          coords = await geocodeAddress(home, key);
+        } catch (e) {
+          console.error('Home address lookup failed', e);
+        }
+        if (!coords) { alert('Could not find the home address.'); return; }
+        m.flyTo({ center: coords, zoom: Math.max(12, m.getZoom() || 12), duration: 700 });
       } catch (e) { console.error('New file action failed', e); }
     });
   }
@@ -1713,7 +3075,7 @@
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
     function openSearchModal(){
-      if (!searchModal) return;
+      if (!searchModal || !googleServicesEnabled) return;
       searchModal.hidden = false;
       if (searchResults) searchResults.innerHTML = '';
       if (searchQuery) { searchQuery.value = ''; setTimeout(() => searchQuery.focus(), 0); }
@@ -1724,22 +3086,40 @@
     searchModal?.addEventListener('click', (e) => {
       const t = e.target; if (t && t.dataset && t.dataset.action === 'close') closeSearchModal();
     });
+    searchModal?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeSearchModal();
+        e.stopPropagation();
+      }
+    });
 
     // Go To coordinates modal
     function openGotoModal(){
       if (!gotoModal) return;
       try{
         const c = (window)._map?.getCenter();
-        if (gotoLng && c) gotoLng.value = Number(c.lng).toFixed(6);
         if (gotoLat && c) gotoLat.value = Number(c.lat).toFixed(6);
+        if (gotoLng && c) gotoLng.value = Number(c.lng).toFixed(6);
       }catch{}
+      syncGotoPoiControls();
       gotoModal.hidden = false;
-      setTimeout(() => gotoLng?.focus(), 0);
+      setTimeout(() => gotoLat?.focus(), 0);
     }
     function closeGotoModal(){ if (gotoModal) gotoModal.hidden = true; }
     toolGoTo?.addEventListener('click', openGotoModal);
     gotoClose?.addEventListener('click', closeGotoModal);
     gotoModal?.addEventListener('click', (e) => { const t=e.target; if (t && t.dataset && t.dataset.action==='close') closeGotoModal(); });
+    gotoModal?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeGotoModal();
+        e.stopPropagation();
+      }
+    });
+    gotoAddPoi?.addEventListener('change', () => {
+      const shouldFocus = !!gotoAddPoi.checked;
+      syncGotoPoiControls(shouldFocus);
+    });
+    syncGotoPoiControls();
     const performGoto = async () => {
       try{
         const lng = Number(gotoLng?.value);
@@ -1753,6 +3133,8 @@
           try {
             const ds = (window)._drawStore || drawStore;
             const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[lng, lat] } };
+            const name = (gotoPoiName?.value || '').trim();
+            if (name) poi.properties.name = name;
             const af = (typeof annotateFeature === 'function') ? annotateFeature : (f)=>f;
             ds.features.push(af(poi, 'poi'));
             setDirty(true);
@@ -1760,12 +3142,12 @@
           } catch (err) { console.error('Add POI failed', err); }
         }
         closeGotoModal();
-      }catch{}
+      } catch {}
     };
     gotoSubmit?.addEventListener('click', performGoto);
     // Allow Enter key to submit from either field
-    gotoLng?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
     gotoLat?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
+    gotoLng?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
 
     // Clicking the LAT/LONG in footer opens the same Go To dialog
     try {
@@ -1776,11 +3158,39 @@
       }
     } catch {}
 
+    if (footerAddress) {
+      footerAddress.style.cursor = 'pointer';
+      footerAddress.title = 'Click to copy address';
+      footerAddress.addEventListener('click', async () => {
+        try {
+          const addr = (footerAddress.textContent || '').trim() || lastAddress || '';
+          const lat = Number(lastCenter?.lat);
+          const lng = Number(lastCenter?.lng);
+          const latStr = Number.isFinite(lat) ? lat.toFixed(6) : '—';
+          const lngStr = Number.isFinite(lng) ? lng.toFixed(6) : '—';
+          const text = addr ? `${addr}, LAT ${latStr}, LONG ${lngStr}` : `LAT ${latStr}, LONG ${lngStr}`;
+          try {
+            const ok = await writeToClipboard(text);
+            if (!ok) throw new Error('clipboard unavailable');
+            footerAddress.classList.add('copied');
+            setTimeout(() => footerAddress.classList.remove('copied'), 1200);
+            showToast('Address copied to clipboard');
+          } catch (err) {
+            console.error('Copy address failed', err);
+            showToast('Copy failed');
+          }
+        } catch (err) {
+          console.error('Copy address wrapper failed', err);
+          showToast('Copy failed');
+        }
+      });
+    }
+
     // Live search with debounce
     let searchTimer = null;
     async function performSearch(qstr){
-      if (!searchResults) return;
-      const key = (localStorage.getItem('map.googleKey') || q('#settingGoogleKey')?.value || '').trim();
+      if (!googleServicesEnabled || !searchResults) return;
+      const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
       if (!key) { searchResults.innerHTML = '<div class="muted">Set Google API key in Settings.</div>'; return; }
       if (!qstr || qstr.trim().length < 3) { searchResults.innerHTML = '<div class="muted">Type at least 3 characters…</div>'; return; }
       searchResults.innerHTML = '<div class="muted">Searching…</div>';
@@ -1835,17 +3245,38 @@
     });
   })();
 
+  const closeAnyOpenModal = () => {
+    if (aiModal && aiModal.hidden === false) {
+      closeAiModal();
+      return true;
+    }
+    if (colorModal && colorModal.hidden === false) {
+      closeColorModal();
+      return true;
+    }
+    if (serialMonitorModal && serialMonitorModal.hidden === false) {
+      serialMonitorModal.hidden = true;
+      return true;
+    }
+    if (connectModal && connectModal.hidden === false) {
+      closeConnectModal();
+      return true;
+    }
+    if (searchModal && searchModal.hidden === false) {
+      closeSearchModal();
+      return true;
+    }
+    if (gotoModal && gotoModal.hidden === false) {
+      closeGotoModal();
+      return true;
+    }
+    return false;
+  };
+
   // Global ESC handler: close modals first; else exit active tool and cancel any drafts
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    // Close color modal if open
-    if (colorModal && colorModal.hidden === false) {
-      try { colorModal.hidden = true; } catch {}
-      e.preventDefault();
-      return;
-    }
-    if (gotoModal && gotoModal.hidden === false) {
-      try { gotoModal.hidden = true; } catch {}
+    if (closeAnyOpenModal()) {
       e.preventDefault();
       return;
     }
@@ -1860,9 +3291,7 @@
   });
 
   // --- Edit vertices interactions ---
-  console.log('Setting up edit interactions');
   (function initEditInteractions(){
-    console.log('Init edit interactions');
     let dragging = null; // { fid, idx }
     const getM = () => (window)._map;
     const toLngLatFromEvent = (ev) => {
@@ -1943,7 +3372,6 @@
       } catch {}
     };
     const onDown = (e) => {
-      console.log((window)._editTarget);
       if (!(window)._editTarget) return;
       const feat = e.features && e.features[0];
       if (!feat) return;
@@ -2014,22 +3442,22 @@
   })();
 
   window.serial.onData((line) => {
-    console.log({line})
     const outEl = serialMonitorBody || serialFloatBody;
-    if (!outEl) return;
-    rxCount += 1;
-    const atBottom = Math.abs(outEl.scrollHeight - outEl.scrollTop - outEl.clientHeight) < 8;
-    const text = typeof line === 'string' ? line : String(line);
-    outEl.append(document.createTextNode(text.replace(/\r?\n$/, '')));
-    outEl.append(document.createTextNode('\n'));
-    // Trim lines
-    const all = outEl.textContent || '';
-    const lines = all.split('\n');
-    if (lines.length > maxLines) {
-      const trimmed = lines.slice(lines.length - maxLines).join('\n');
-      outEl.textContent = trimmed;
+    if (outEl) {
+      rxCount += 1;
+      const atBottom = Math.abs(outEl.scrollHeight - outEl.scrollTop - outEl.clientHeight) < 8;
+      const text = typeof line === 'string' ? line : String(line);
+      outEl.append(document.createTextNode(text.replace(/\r?\n$/, '')));
+      outEl.append(document.createTextNode('\n'));
+      const all = outEl.textContent || '';
+      const lines = all.split('\n');
+      if (lines.length > maxLines) {
+        const trimmed = lines.slice(lines.length - maxLines).join('\n');
+        outEl.textContent = trimmed;
+      }
+      if (atBottom) outEl.scrollTop = outEl.scrollHeight;
     }
-    if (atBottom) outEl.scrollTop = outEl.scrollHeight;
+    try { processTrackerLine(line); } catch (err) { console.error('tracker parse failed', err); }
   });
 })();
 
@@ -2039,6 +3467,9 @@
   const modal = document.querySelector('#serialMonitorModal');
   const closeBtn = document.querySelector('#serialMonitorClose');
   const disconnectBtn = document.querySelector('#serialDisconnectBtn');
+  const clearBtn = document.querySelector('#serialMonitorClear');
+  const monitorBody = document.querySelector('#serialMonitorBody');
+  const floatBody = document.querySelector('#serialFloatBody');
   if (btn && modal) {
     btn.addEventListener('click', () => { modal.hidden = false; });
     closeBtn?.addEventListener('click', () => { modal.hidden = true; });
@@ -2048,6 +3479,14 @@
     disconnectBtn.addEventListener('click', async () => {
       try { await window.serial.close(); } catch {}
       try { modal.hidden = true; } catch {}
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      try {
+        if (monitorBody) monitorBody.textContent = '';
+        if (floatBody) floatBody.textContent = '';
+      } catch {}
     });
   }
 })();

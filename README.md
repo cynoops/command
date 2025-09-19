@@ -80,7 +80,7 @@ Example skeleton:
 
 ## Serial Monitor
 
-- Click “Connects” to list available serial ports.
+- Click “Connect” to list available serial ports.
 - Choose a port and baud, then Connect; incoming data lines stream into the Serial panel.
 - RX/s shows an approximate receive throughput.
 - Use the chevron to collapse/expand the panel; its position persists.
