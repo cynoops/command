@@ -8,7 +8,7 @@ function setupMenu({ Menu }, state) {
       label: 'Command',
       submenu: [
         {
-          label: 'About Command - CYNOOPS',
+          label: 'Command',
           click: () => {
             const options = {
               applicationName: 'Command - CYNOOPS',
