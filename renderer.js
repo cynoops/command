@@ -132,10 +132,11 @@
   let aiTarget = null;
   const toastContainer = q('#toastContainer');
 
-  const showToast = (message, duration = 1500) => {
+  const showToast = (message, variant = 'success', duration = 1500) => {
     if (!toastContainer) return;
     const toast = document.createElement('div');
-    toast.className = 'toast';
+    const type = variant === 'error' ? 'toast--error' : 'toast--success';
+    toast.className = `toast ${type}`;
     toast.textContent = message;
     toastContainer.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('show'));
@@ -2034,7 +2035,7 @@
         }
       } catch (err) {
         console.error('Saving features failed', err);
-        showToast('Save failed');
+        showToast('Save failed', 'error');
       }
     };
 
@@ -2127,7 +2128,7 @@
       } catch (err) {
         console.error('Loading features failed', err);
         alert('Could not load features. Check the console for details.');
-        showToast('Load failed');
+        showToast('Load failed', 'error');
       }
     };
 
@@ -2483,7 +2484,7 @@
       showToast(isFull ? 'Entered fullscreen' : 'Exited fullscreen');
     } catch (err) {
       console.error('Toggle fullscreen failed', err);
-      showToast('Fullscreen toggle failed');
+      showToast('Fullscreen toggle failed', 'error');
     }
   });
 
@@ -3238,11 +3239,11 @@
             showToast('Address copied to clipboard');
           } catch (err) {
             console.error('Copy address failed', err);
-            showToast('Copy failed');
+            showToast('Copy failed', 'error');
           }
         } catch (err) {
           console.error('Copy address wrapper failed', err);
-          showToast('Copy failed');
+          showToast('Copy failed', 'error');
         }
       });
     }
