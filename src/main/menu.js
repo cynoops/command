@@ -7,7 +7,20 @@ function setupMenu({ Menu }, state) {
     {
       label: 'Command',
       submenu: [
-        { role: 'about' },
+        {
+          label: 'About Command - CYNOOPS',
+          click: () => {
+            const options = {
+              applicationName: 'Command - CYNOOPS',
+              applicationVersion: app.getVersion?.() || '1.0.0',
+            };
+            try {
+              if (app.showAboutPanel) app.showAboutPanel(options);
+            } catch (err) {
+              console.error('showAboutPanel failed', err);
+            }
+          }
+        },
         { type: 'separator' },
         {
           label: 'Quit Command',
