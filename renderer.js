@@ -147,6 +147,31 @@
     }, duration);
   };
 
+  let suppressFeatureToasts = false;
+  let lastFeatureModifiedToast = 0;
+  const featureToastCooldown = 600;
+
+  const labelForKind = (kind = 'feature') => {
+    if (!kind) return 'Feature';
+    const lower = String(kind).toLowerCase();
+    if (lower === 'poi') return 'POI';
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  };
+
+  const notifyFeatureAdded = (kind = 'Feature') => {
+    if (suppressFeatureToasts) return;
+    const label = labelForKind(kind);
+    showToast(`${label} added`);
+  };
+
+  const notifyFeatureModified = (label = 'Feature updated') => {
+    if (suppressFeatureToasts) return;
+    const now = Date.now();
+    if (now - lastFeatureModifiedToast < featureToastCooldown) return;
+    lastFeatureModifiedToast = now;
+    showToast(label);
+  };
+
   const writeToClipboard = async (text) => {
     let lastError = null;
     if (navigator?.clipboard?.writeText) {
@@ -1589,6 +1614,7 @@
     const annotateFeature = (f, kind) => {
       f.properties = { ...(f.properties||{}), id: newId(), kind };
       if (!f.properties.color) f.properties.color = nextColor();
+      notifyFeatureAdded(kind || 'feature');
       return f;
     };
     const circleFrom = (center, edge, steps=64) => {
@@ -1788,6 +1814,7 @@
           applyColorToWrap();
           setDirty(true);
           refreshDraw();
+          notifyFeatureModified('Feature color updated');
         });
       });
 
@@ -1839,7 +1866,12 @@
         f.properties = f.properties || {};
         f.properties.name = (nameEl.textContent || '').trim();
       };
-      nameEl.addEventListener('blur', () => { commitName(); setDirty(true); refreshDraw(); });
+      nameEl.addEventListener('blur', () => {
+        commitName();
+        setDirty(true);
+        refreshDraw();
+        notifyFeatureModified('Feature renamed');
+      });
       nameEl.addEventListener('input', () => { commitName(); setDirty(true); refreshDrawMapOnly(); });
       nameEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
@@ -1891,6 +1923,7 @@
         updateEditBtnState();
         try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); m.setLayoutProperty('edit-mid','visibility','none'); refreshEditVerts(); } }catch{}
         setDirty(true); refreshDraw();
+        notifyFeatureModified();
       };
       editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
       aiBtn.addEventListener('click', (e) => {
@@ -1995,9 +2028,13 @@
         const data = (window).draw?.toJSON?.() || { type: 'FeatureCollection', features: [] };
         const defaultPath = currentFilePath || getSuggestedFilename();
         const result = await window.file.saveAs(data, defaultPath);
-        if (result && result.ok) setDirty(false);
+        if (result && result.ok) {
+          setDirty(false);
+          showToast('Features saved');
+        }
       } catch (err) {
         console.error('Saving features failed', err);
+        showToast('Save failed');
       }
     };
 
@@ -2074,16 +2111,23 @@
           alert('No valid features could be imported from the selected file.');
           return;
         }
-        normalized.forEach((f) => drawStore.features.push(f));
+        suppressFeatureToasts = true;
+        try {
+          normalized.forEach((f) => drawStore.features.push(f));
+        } finally {
+          suppressFeatureToasts = false;
+        }
         refreshDraw();
         setDirty(true);
         if (result.filePath) currentFilePath = result.filePath;
         try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
         const bounds = computeFeatureBounds(normalized);
         focusMapOnBounds(bounds);
+        showToast(mode === 'replace' ? 'Features replaced from file' : 'Features merged from file');
       } catch (err) {
         console.error('Loading features failed', err);
         alert('Could not load features. Check the console for details.');
+        showToast('Load failed');
       }
     };
 
@@ -2094,6 +2138,7 @@
       drawStore.features = [];
       refreshDraw();
       setDirty(true);
+      showToast('Features cleared');
     };
 
     const updateDrawingsPanel = () => {
@@ -2282,12 +2327,18 @@
         // Replace the target with new features only after validating we have some
         const idx = drawStore.features.findIndex(x => x.properties?.id === aiTarget.properties?.id);
         if (idx >= 0) drawStore.features.splice(idx, 1);
-        candidates.forEach(feat => {
-          drawStore.features.push(annotateFeature(feat, (feat.geometry?.type === 'Polygon') ? 'polygon' : (feat.geometry?.type === 'LineString') ? 'line' : 'poi'));
-        });
+        suppressFeatureToasts = true;
+        try {
+          candidates.forEach(feat => {
+            drawStore.features.push(annotateFeature(feat, (feat.geometry?.type === 'Polygon') ? 'polygon' : (feat.geometry?.type === 'LineString') ? 'line' : 'poi'));
+          });
+        } finally {
+          suppressFeatureToasts = false;
+        }
         setDirty(true);
         refreshDraw();
         closeAiModal();
+        notifyFeatureModified('Feature updated by AI');
       } catch(e){
         aiError.textContent = String(e);
       } finally {
@@ -2427,7 +2478,13 @@
   // deprecated: old floating monitor toggle (removed)
 
   fullscreenBtn?.addEventListener('click', async () => {
-    try { await window.app.toggleFullScreen(); } catch {}
+    try {
+      const isFull = await window.app.toggleFullScreen();
+      showToast(isFull ? 'Entered fullscreen' : 'Exited fullscreen');
+    } catch (err) {
+      console.error('Toggle fullscreen failed', err);
+      showToast('Fullscreen toggle failed');
+    }
   });
 
   // ---- Tabs UI state + toolbar height ----
@@ -2887,6 +2944,7 @@
       setStatus('connected', payload.path);
       setSerialMonitorVisible(true);
       if (serialConnPath) serialConnPath.textContent = payload.path || 'connected';
+      showToast(`Serial connected: ${payload.path || 'port'}`);
     } else if (payload.state === 'disconnected' || payload.state === 'connecting' || payload.state === 'error') {
       setStatus(payload.state === 'connecting' ? 'connecting' : 'disconnected');
       if (payload.state === 'error') console.error('Serial error:', payload.message);
@@ -2924,7 +2982,10 @@
     });
   }
   // Save completed (from main)
-  window.file && window.file.onSaved && window.file.onSaved(() => setDirty(false));
+  window.file && window.file.onSaved && window.file.onSaved(() => {
+    setDirty(false);
+    showToast('Features saved');
+  });
   // Open data from main -> prompt overwrite and load
   if (window.file && window.file.onOpenData) {
     window.file.onOpenData(async (payload) => {
