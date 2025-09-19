@@ -206,6 +206,8 @@
   let serialConnected = false;
   let serialConnecting = false;
   let trackerDataSeen = false;
+  let lastKnownCenter = null;
+  let lastKnownAddress = '';
 
   const refreshAiButtonsVisibility = () => {
     const buttons = document.querySelectorAll('.drawing-ai');
@@ -1207,13 +1209,11 @@
     try { ensureTrackerLayer(map); } catch (e) { console.error('tracker layer init failed', e); }
 
     const fmt = (n, d=2) => (Number.isFinite(n) ? n.toFixed(d) : '—');
-    let lastCenter = null;
-    let lastAddress = '';
 
     function updateStats() {
       try {
         const c = map.getCenter();
-        lastCenter = { lat: c.lat, lng: c.lng };
+        lastKnownCenter = { lat: c.lat, lng: c.lng };
         statZoom && (statZoom.textContent = fmt(map.getZoom(), 2));
         statCenter && (statCenter.textContent = `${fmt(c.lat, 5)}, ${fmt(c.lng, 5)}`);
         statBearing && (statBearing.textContent = fmt(map.getBearing(), 1));
@@ -1278,11 +1278,11 @@
         // If footer address element is missing and no coord place, skip
         if (!coordPlace && !footerAddress) return;
         const c = map.getCenter();
-        lastCenter = { lat: c.lat, lng: c.lng };
+        lastKnownCenter = { lat: c.lat, lng: c.lng };
         if (!googleServicesEnabled) {
           if (coordPlace) coordPlace.textContent = '—';
           if (footerAddress) footerAddress.textContent = '—';
-          lastAddress = '';
+          lastKnownAddress = '';
           return;
         }
         const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
@@ -1297,14 +1297,14 @@
         if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) {
           if (coordPlace) coordPlace.textContent = '—';
           if (footerAddress) footerAddress.textContent = '—';
-          lastAddress = '';
+          lastKnownAddress = '';
           return;
         }
         const res = data.results[0];
         const addr = res.formatted_address || res.formattedAddress || '—';
         if (coordPlace) coordPlace.textContent = addr;
         if (footerAddress) footerAddress.textContent = addr;
-        lastAddress = addr;
+        lastKnownAddress = addr;
         try{
           const comps = res.address_components || [];
           const country = comps.find(c => (c.types||[]).includes('country'));
@@ -3163,9 +3163,9 @@
       footerAddress.title = 'Click to copy address';
       footerAddress.addEventListener('click', async () => {
         try {
-          const addr = (footerAddress.textContent || '').trim() || lastAddress || '';
-          const lat = Number(lastCenter?.lat);
-          const lng = Number(lastCenter?.lng);
+          const addr = (footerAddress.textContent || '').trim() || lastKnownAddress || '';
+          const lat = Number(lastKnownCenter?.lat);
+          const lng = Number(lastKnownCenter?.lng);
           const latStr = Number.isFinite(lat) ? lat.toFixed(6) : '—';
           const lngStr = Number.isFinite(lng) ? lng.toFixed(6) : '—';
           const text = addr ? `${addr}, LAT ${latStr}, LONG ${lngStr}` : `LAT ${latStr}, LONG ${lngStr}`;
