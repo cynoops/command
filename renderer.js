@@ -56,6 +56,7 @@
   const toolPoly = q('#toolPoly');
   const toolCircle = q('#toolCircle');
   const toolLine = q('#toolLine');
+  const toolArrow = q('#toolArrow');
   const toolPOI = q('#toolPOI');
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
@@ -1284,7 +1285,7 @@
           paint: {
             'line-color': ['coalesce', ['get', 'color'], '#ff5722'],
             'line-width': 2.2,
-            'line-opacity': 0.85,
+            'line-opacity': 0.72,
             'line-cap': 'round',
             'line-join': 'round'
           }
@@ -1873,7 +1874,7 @@
           type: 'fill',
           source: 'draw',
           filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true]],
-          paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.2 }
+          paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.17 }
         });
       }
       if (!map.getLayer('draw-line')) {
@@ -1930,13 +1931,13 @@
         });
       }
       if (!map.getLayer('draw-draft-fill')) {
-        map.addLayer({ id: 'draw-draft-fill', type: 'fill', source: 'draw-draft', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#2196F3', 'fill-opacity': 0.12 } });
+        map.addLayer({ id: 'draw-draft-fill', type: 'fill', source: 'draw-draft', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#2196F3', 'fill-opacity': 0.10 } });
       }
       if (!map.getLayer('draw-draft-line')) {
         map.addLayer({ id: 'draw-draft-line', type: 'line', source: 'draw-draft', paint: { 'line-color': '#64b5f6', 'line-width': 2, 'line-dasharray': [2,2] } });
       }
       if (!map.getLayer('draw-hl-fill')) {
-        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.35 } });
+        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.30 } });
       }
       if (!map.getLayer('draw-hl-line')) {
         map.addLayer({ id: 'draw-hl-line', type: 'line', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'line-color': '#FFC107', 'line-width': 4 } });
@@ -2145,6 +2146,71 @@
 
     // Drag-to-draw for Rect/Circle
     let dragStart = null;
+    let arrowStart = null;
+    let arrowMoveHandler = null;
+
+    const arrowFeatureFrom = (startLngLat, endLngLat) => {
+      try {
+        if (!startLngLat || !endLngLat) return null;
+        const startLng = Number(startLngLat.lng);
+        const startLat = Number(startLngLat.lat);
+        const endLng = Number(endLngLat.lng);
+        const endLat = Number(endLngLat.lat);
+        if (![startLng, startLat, endLng, endLat].every(Number.isFinite)) return null;
+        const avgLat = (startLat + endLat) / 2;
+        const mPerDegLng = Math.max(1e-6, Math.cos(avgLat * Math.PI / 180) * metersPerDegLat);
+        const dx = (endLng - startLng) * mPerDegLng;
+        const dy = (endLat - startLat) * metersPerDegLat;
+        const len = Math.hypot(dx, dy);
+        if (!Number.isFinite(len) || len < 1) return null;
+        const shaftWidth = Math.min(Math.max(len * 0.12, 4), 30);
+        const minHead = Math.min(len * 0.5, 25);
+        const headLen = Math.min(Math.max(len * 0.3, minHead), len * 0.9);
+        const shaftEnd = Math.max(len - headLen, len * 0.25);
+        const headHalfWidth = Math.max(shaftWidth * 1.6, headLen * 0.6);
+        const ux = dx / len;
+        const uy = dy / len;
+        const vx = -uy;
+        const vy = ux;
+        const point = (dist, offset) => ({
+          x: ux * dist + vx * offset,
+          y: uy * dist + vy * offset
+        });
+        const tip = { x: dx, y: dy };
+        const ringMeters = [
+          point(0, shaftWidth / 2),
+          point(shaftEnd, shaftWidth / 2),
+          point(shaftEnd, headHalfWidth),
+          tip,
+          point(shaftEnd, -headHalfWidth),
+          point(shaftEnd, -shaftWidth / 2),
+          point(0, -shaftWidth / 2)
+        ];
+        const toLngLat = (pt) => [
+          startLng + pt.x / mPerDegLng,
+          startLat + pt.y / metersPerDegLat
+        ];
+        const ring = ringMeters.map(toLngLat);
+        ring.push(ring[0]);
+        return { type: 'Feature', properties: { lengthMeters: len }, geometry: { type: 'Polygon', coordinates: [ring] } };
+      } catch (err) {
+        console.error('arrowFeatureFrom failed', err);
+        return null;
+      }
+    };
+
+    const cleanupArrowInteraction = () => {
+      const hadActive = !!arrowStart || !!arrowMoveHandler;
+      if (arrowMoveHandler) {
+        try { map.off('mousemove', arrowMoveHandler); } catch {}
+        arrowMoveHandler = null;
+      }
+      arrowStart = null;
+      try { map.dragPan.enable(); } catch {}
+      try { map.getCanvas().style.cursor = ''; } catch {}
+      if (hadActive) setDraft(null);
+    };
+    (window)._cleanupArrowInteraction = cleanupArrowInteraction;
     const onMouseDown = (e) => {
       const tool = (window)._currentTool;
       if (tool !== 'rect' && tool !== 'circle') return;
@@ -2179,6 +2245,32 @@
     const onClick = (e) => {
       const tool = (window)._currentTool;
       if (!tool) return;
+      if (tool === 'arrow') {
+        if (!arrowStart) {
+          arrowStart = e.lngLat;
+          try { map.dragPan.disable(); } catch {}
+          try { map.getCanvas().style.cursor = 'crosshair'; } catch {}
+          if (arrowMoveHandler) {
+            try { map.off('mousemove', arrowMoveHandler); } catch {}
+            arrowMoveHandler = null;
+          }
+          arrowMoveHandler = (moveEvt) => {
+            const draft = arrowFeatureFrom(arrowStart, moveEvt.lngLat);
+            setDraft(draft);
+          };
+          map.on('mousemove', arrowMoveHandler);
+        } else {
+          const feature = arrowFeatureFrom(arrowStart, e.lngLat);
+          if (feature) {
+            drawStore.features.push(annotateFeature(feature, 'arrow'));
+            setDirty(true);
+            refreshDraw();
+          }
+          cleanupArrowInteraction();
+          window.setActiveTool?.(null);
+        }
+        return;
+      }
       if (tool === 'poi') {
         // Single POI type: store as a Point feature
         const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[e.lngLat.lng, e.lngLat.lat] } };
@@ -2229,6 +2321,7 @@
 
     // Expose an abort helper so global handlers (e.g., ESC) can cancel drawing
     (window).abortActiveTool = () => {
+      try { window._cleanupArrowInteraction?.(); } catch {}
       try { setDraft(null); } catch {}
       try { (window)._lineInProgress = false; } catch {}
       try { vertCoords = null; dragStart = null; } catch {}
@@ -2361,6 +2454,13 @@
       }
       typeEl.textContent = label;
       size.textContent = sizeText;
+      const isArrow = f.properties?.kind === 'arrow';
+      if (isArrow) {
+        editBtn.hidden = true;
+        editBtn.disabled = true;
+        const lenMeters = Number(f.properties?.lengthMeters);
+        if (Number.isFinite(lenMeters)) size.textContent = fmtLen(lenMeters);
+      }
       meta.appendChild(typeEl); meta.appendChild(size);
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
@@ -3656,8 +3756,12 @@
       }catch{ return null; }
     };
     const setActiveTool = (tool) => {
+      const previousTool = (window)._currentTool;
       (window)._currentTool = tool;
-      const all = [toolRect, toolPoly, toolCircle, toolLine, toolPOI];
+      if (previousTool === 'arrow' && tool !== 'arrow') {
+        window._cleanupArrowInteraction?.();
+      }
+      const all = [toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
@@ -3667,6 +3771,7 @@
         case 'poly': toolPoly?.classList.add('active'); toolPoly?.setAttribute('aria-pressed', String(true)); break;
         case 'circle': toolCircle?.classList.add('active'); toolCircle?.setAttribute('aria-pressed', String(true)); break;
         case 'line': toolLine?.classList.add('active'); toolLine?.setAttribute('aria-pressed', String(true)); break;
+        case 'arrow': toolArrow?.classList.add('active'); toolArrow?.setAttribute('aria-pressed', String(true)); break;
         case 'poi':
           toolPOI?.classList.add('active');
           toolPOI?.setAttribute('aria-pressed', String(true));
@@ -3688,6 +3793,16 @@
         setActiveTool(null);
       } else {
         setActiveTool('line');
+      }
+    });
+    toolArrow?.addEventListener('click', () => {
+      const isActive = (window)._currentTool === 'arrow';
+      if (isActive) {
+        window._cleanupArrowInteraction?.();
+        setActiveTool(null);
+      } else {
+        window._cleanupArrowInteraction?.();
+        setActiveTool('arrow');
       }
     });
     toolPOI?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poi' ? null : 'poi'));
