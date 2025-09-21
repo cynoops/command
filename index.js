@@ -16,9 +16,18 @@ let forceSaveAsMain = false;
 let currentPort = null;
 let currentParser = null;
 
+try {
+  app.name = 'Command';
+  app.setName?.('Command');
+  app.setAppUserModelId?.('com.cynoops.command');
+} catch (err) {
+  console.warn('Failed to prime app name', err);
+}
+
 const createWindow = () => {
   const win = new BrowserWindow({
     width: 1200, height: 700,
+    title: 'Command',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -53,7 +62,6 @@ const createWindow = () => {
 };
 
 app.whenReady().then(() => {
-  try { if (process.platform === 'darwin') app.setName('Command'); } catch {}
   createWindow();
   // Register IPC using modular handlers
   registerFileIPC({ ipcMain, dialog, fsp }, state);

@@ -8,6 +8,8 @@
   const DEFAULT_SERIAL_BAUD = '115200';
   const DEFAULT_AUTO_RECONNECT = 'on';
   const TRACKERS_PANEL_WIDTH = 320;
+  const TRACKERS_RECORD_ICON = './assets/icons/regular/record.svg';
+  const TRACKERS_PAUSE_ICON = './assets/icons/regular/pause.svg';
 
   // Map stats UI
   const statZoom = q('#statZoom');
@@ -59,6 +61,8 @@
   const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
   const featuresActions = q('#featuresActions');
+  const featuresActionsToggleBtn = q('#featuresActionsToggle');
+  const featuresActionsMenu = q('#featuresActionsMenu');
   const featuresSaveBtn = q('#featuresSaveBtn');
   const featuresLoadBtn = q('#featuresLoadBtn');
   const featuresClearBtn = q('#featuresClearBtn');
@@ -116,6 +120,16 @@
   const trackersItems = q('#trackersItems');
   const trackersEmpty = q('#trackersEmpty');
   const trackersWaiting = q('#trackersWaiting');
+  const trackersControls = q('#trackersControls');
+  const trackersMenuWrapper = q('#trackersMenuWrapper');
+  const trackersMenuToggle = q('#trackersMenuToggle');
+  const trackersMenu = q('#trackersMenu');
+  const trackersRecordBtn = q('#trackersRecordBtn');
+  const trackersSaveBtn = q('#trackersSaveBtn');
+  const trackersOpenBtn = q('#trackersOpenBtn');
+  const trackersRecordIcon = q('#trackersRecordIcon');
+  const trackersRecordText = q('#trackersRecordText');
+  const trackersRecordIndicator = q('#trackersRecordIndicator');
   // Color picker modal
   const colorModal = q('#colorModal');
   const colorClose = q('#colorClose');
@@ -314,6 +328,35 @@
   let settingsDirty = false;
   let suppressSettingsEvents = false;
   let settingsStatusTimer = null;
+  let featuresActionsMenuOpen = false;
+  const setFeaturesActionsMenu = (open) => {
+    const next = !!open;
+    featuresActionsMenuOpen = next;
+    if (featuresActionsMenu) featuresActionsMenu.hidden = !next;
+    if (featuresActionsToggleBtn) {
+      featuresActionsToggleBtn.setAttribute('aria-expanded', String(next));
+      featuresActionsToggleBtn.classList.toggle('is-active', next);
+    }
+    if (featuresActions) featuresActions.classList.toggle('features-actions--open', next);
+  };
+  const closeFeaturesActionsMenu = () => {
+    if (!featuresActionsMenuOpen) return;
+    setFeaturesActionsMenu(false);
+  };
+  const toggleFeaturesActionsMenu = () => setFeaturesActionsMenu(!featuresActionsMenuOpen);
+  let trackersMenuOpen = false;
+  const setTrackersMenu = (open) => {
+    const next = !!open;
+    trackersMenuOpen = next;
+    if (trackersMenu) trackersMenu.hidden = !next;
+    if (trackersMenuToggle) trackersMenuToggle.setAttribute('aria-expanded', String(next));
+    if (trackersMenuWrapper) trackersMenuWrapper.classList.toggle('is-open', next);
+  };
+  const closeTrackersMenu = () => {
+    if (!trackersMenuOpen) return;
+    setTrackersMenu(false);
+  };
+  const toggleTrackersMenu = () => setTrackersMenu(!trackersMenuOpen);
   const setSerialMonitorVisible = (visible) => {
     if (!serialMonitorBtn) return;
     const show = !!visible;
@@ -329,6 +372,453 @@
   (window).getTrackerData = () => Array.from(trackerStore.values());
   let trackerSourceReady = false;
   let trackerPathSourceReady = false;
+  const trackersRecordingState = {
+    active: false,
+    startedAt: null,
+    updatedAt: null,
+    entries: new Map(),
+    imported: false
+  };
+  let trackersRecordingHasData = false;
+  (window)._trackerRecording = trackersRecordingState;
+
+  function resetTrackersRecordingData() {
+    trackersRecordingState.entries.clear();
+    trackersRecordingState.startedAt = null;
+    trackersRecordingState.updatedAt = null;
+    trackersRecordingState.imported = false;
+    trackersRecordingHasData = false;
+  }
+
+  function refreshTrackersControlsState() {
+    const showControls = serialConnected || trackersRecordingHasData || trackersRecordingState.imported;
+    if (trackersControls) trackersControls.hidden = !showControls;
+    if (!showControls) closeTrackersMenu();
+    if (trackersRecordBtn) {
+      const canRecord = serialConnected && !serialConnecting;
+      const hasPausedData = trackersRecordingHasData && !trackersRecordingState.active;
+      trackersRecordBtn.disabled = !canRecord;
+      trackersRecordBtn.setAttribute('aria-disabled', String(!canRecord));
+      trackersRecordBtn.setAttribute('aria-pressed', String(trackersRecordingState.active));
+      trackersRecordBtn.classList.toggle('is-active', trackersRecordingState.active);
+      const textLabel = trackersRecordingState.active ? 'Pause' : hasPausedData ? 'Resume' : 'Record';
+      if (trackersRecordText) trackersRecordText.textContent = textLabel;
+      if (trackersRecordIcon) {
+        const nextIcon = trackersRecordingState.active ? TRACKERS_PAUSE_ICON : TRACKERS_RECORD_ICON;
+        if (trackersRecordIcon.getAttribute('src') !== nextIcon) trackersRecordIcon.setAttribute('src', nextIcon);
+      }
+      const label = trackersRecordingState.active ? 'Pause recording' : hasPausedData ? 'Resume recording' : 'Start recording';
+      trackersRecordBtn.title = label;
+      trackersRecordBtn.setAttribute('aria-label', label);
+    }
+    if (trackersRecordIndicator) trackersRecordIndicator.hidden = !trackersRecordingState.active;
+    if (trackersSaveBtn) {
+      const disabled = !trackersRecordingHasData;
+      trackersSaveBtn.disabled = disabled;
+      trackersSaveBtn.classList.toggle('is-disabled', disabled);
+      if (disabled) trackersSaveBtn.setAttribute('aria-disabled', 'true');
+      else trackersSaveBtn.removeAttribute('aria-disabled');
+    }
+    if (trackersMenuToggle) {
+      trackersMenuToggle.disabled = !showControls;
+      trackersMenuToggle.setAttribute('aria-disabled', String(!showControls));
+    }
+    if (trackersToggleBtn) trackersToggleBtn.classList.toggle('is-recording', trackersRecordingState.active);
+  }
+
+  function ensureRecordingEntry(tracker) {
+    if (!tracker || !tracker.id) return null;
+    let entry = trackersRecordingState.entries.get(tracker.id);
+    if (!entry) {
+      entry = { id: tracker.id, color: tracker.color || null, name: tracker.name || null, samples: [], segments: [] };
+      trackersRecordingState.entries.set(tracker.id, entry);
+    } else {
+      if (!entry.color && tracker.color) entry.color = tracker.color;
+      if (!entry.name && tracker.name) entry.name = tracker.name;
+    }
+    return entry;
+  }
+
+  function captureRecordingSample(merged, prev, movementDistance, shouldAppendSegment, timestamp) {
+    if (!trackersRecordingState.active) return;
+    const entry = ensureRecordingEntry(merged);
+    if (!entry) return;
+    const sample = {
+      timestamp,
+      longitude: Number.isFinite(merged.longitude) ? merged.longitude : null,
+      latitude: Number.isFinite(merged.latitude) ? merged.latitude : null,
+      altitude: Number.isFinite(merged.altitude) ? merged.altitude : null,
+      battery: Number.isFinite(merged.battery) ? merged.battery : null,
+      hops: Number.isFinite(merged.hops) ? merged.hops : null,
+      raw: merged.raw || null
+    };
+    entry.samples.push(sample);
+    if (shouldAppendSegment && prev && Number.isFinite(prev.longitude) && Number.isFinite(prev.latitude) && Number.isFinite(merged.longitude) && Number.isFinite(merged.latitude)) {
+      entry.segments.push({
+        from: { longitude: prev.longitude, latitude: prev.latitude },
+        to: { longitude: merged.longitude, latitude: merged.latitude },
+        distance: movementDistance,
+        timestamp,
+        color: merged.color || entry.color || null
+      });
+    }
+    trackersRecordingState.updatedAt = timestamp;
+    if (!trackersRecordingHasData) {
+      trackersRecordingHasData = true;
+      refreshTrackersControlsState();
+    }
+  }
+
+  function beginNewTrackersRecording() {
+    if (trackersRecordingState.active) return;
+    resetTrackersRecordingData();
+    trackersRecordingState.active = true;
+    trackersRecordingState.startedAt = Date.now();
+    refreshTrackersControlsState();
+    showToast('Recording started');
+  }
+
+  function pauseTrackersRecording() {
+    if (!trackersRecordingState.active) return;
+    trackersRecordingState.active = false;
+    refreshTrackersControlsState();
+    showToast('Recording paused');
+  }
+
+  function resumeTrackersRecording() {
+    if (trackersRecordingState.active) return;
+    trackersRecordingState.active = true;
+    if (!Number.isFinite(trackersRecordingState.startedAt)) trackersRecordingState.startedAt = Date.now();
+    refreshTrackersControlsState();
+    showToast('Recording resumed');
+  }
+
+  function handleTrackersRecordClick() {
+    if (trackersRecordingState.active) {
+      pauseTrackersRecording();
+      return;
+    }
+    if (!serialConnected || serialConnecting) {
+      showToast('Open a serial connection before recording', 'error');
+      return;
+    }
+    const hasExistingData = trackersRecordingHasData && trackersRecordingState.entries.size > 0;
+    if (hasExistingData) {
+      const resumeChoice = confirm('Resume the previous recording? Click OK to resume, or Cancel to restart from zero (previous data will be discarded).');
+      if (resumeChoice) {
+        resumeTrackersRecording();
+        return;
+      }
+      const restart = confirm('Start a new recording from zero? This will discard the previous recording.');
+      if (!restart) {
+        refreshTrackersControlsState();
+        return;
+      }
+      beginNewTrackersRecording();
+      return;
+    }
+    beginNewTrackersRecording();
+  }
+
+  function appendSuffixToFilename(base, suffix) {
+    const text = String(base || '');
+    const lastSlash = Math.max(text.lastIndexOf('/'), text.lastIndexOf('\\'));
+    const dir = lastSlash >= 0 ? text.slice(0, lastSlash + 1) : '';
+    const name = lastSlash >= 0 ? text.slice(lastSlash + 1) : text;
+    const dot = name.lastIndexOf('.');
+    if (dot > 0) {
+      return `${dir}${name.slice(0, dot)}${suffix}${name.slice(dot)}`;
+    }
+    return `${dir}${name}${suffix}`;
+  }
+
+  function getTrackersSuggestedPath() {
+    let base = currentFilePath || getSuggestedFilename();
+    if (!base) base = `trackers_${Date.now()}.json`;
+    let suggestion = appendSuffixToFilename(base, '_trackers');
+    if (!suggestion.toLowerCase().endsWith('.json')) suggestion += '.json';
+    return suggestion;
+  }
+
+  function cloneTrackerSample(sample) {
+    if (!sample || typeof sample !== 'object') return null;
+    const ts = Number(sample.timestamp);
+    const longitude = Number(sample.longitude);
+    const latitude = Number(sample.latitude);
+    const altitude = Number(sample.altitude);
+    const battery = Number(sample.battery);
+    const hops = Number(sample.hops);
+    return {
+      timestamp: Number.isFinite(ts) ? ts : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      altitude: Number.isFinite(altitude) ? altitude : null,
+      battery: Number.isFinite(battery) ? battery : null,
+      hops: Number.isFinite(hops) ? hops : null,
+      raw: typeof sample.raw === 'string' ? sample.raw : null
+    };
+  }
+
+  function cloneTrackerSegment(segment, fallbackColor) {
+    if (!segment || typeof segment !== 'object') return null;
+    const fromLng = Number(segment?.from?.longitude);
+    const fromLat = Number(segment?.from?.latitude);
+    const toLng = Number(segment?.to?.longitude);
+    const toLat = Number(segment?.to?.latitude);
+    if (!Number.isFinite(fromLng) || !Number.isFinite(fromLat) || !Number.isFinite(toLng) || !Number.isFinite(toLat)) return null;
+    const distance = Number(segment.distance);
+    const timestamp = Number(segment.timestamp);
+    const color = typeof segment.color === 'string' ? segment.color : (fallbackColor || null);
+    return {
+      from: { longitude: fromLng, latitude: fromLat },
+      to: { longitude: toLng, latitude: toLat },
+      distance: Number.isFinite(distance) ? distance : null,
+      timestamp: Number.isFinite(timestamp) ? timestamp : null,
+      color
+    };
+  }
+
+  function getTrackersRecordingPayload() {
+    const trackers = [];
+    trackersRecordingState.entries.forEach((entry, key) => {
+      if (!entry) return;
+      const id = entry.id || key;
+      if (!id) return;
+      const color = typeof entry.color === 'string' ? entry.color : null;
+      const samples = Array.isArray(entry.samples) ? entry.samples.map(cloneTrackerSample).filter(Boolean) : [];
+      const segments = Array.isArray(entry.segments) ? entry.segments.map((seg) => cloneTrackerSegment(seg, color)).filter(Boolean) : [];
+      if (!samples.length && !segments.length) return;
+      trackers.push({
+        id,
+        name: typeof entry.name === 'string' ? entry.name : null,
+        color,
+        samples,
+        segments
+      });
+    });
+    const now = Date.now();
+    const startedAt = Number.isFinite(trackersRecordingState.startedAt) ? trackersRecordingState.startedAt : null;
+    const updatedAt = Number.isFinite(trackersRecordingState.updatedAt) ? trackersRecordingState.updatedAt : null;
+    return {
+      type: 'TrackerRecording',
+      version: 1,
+      startedAt,
+      updatedAt,
+      exportedAt: now,
+      trackers
+    };
+  }
+
+  function normalizeTrackersRecordingPayload(data) {
+    if (!data || typeof data !== 'object') return null;
+    const trackersInput = Array.isArray(data.trackers) ? data.trackers : [];
+    const trackers = [];
+    let minTs = Infinity;
+    let maxTs = -Infinity;
+    trackersInput.forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+      const id = typeof item.id === 'string' ? item.id.trim() : '';
+      if (!id) return;
+      const name = typeof item.name === 'string' ? item.name : null;
+      const color = typeof item.color === 'string' ? item.color : null;
+      const samples = Array.isArray(item.samples) ? item.samples.map(cloneTrackerSample).filter(Boolean) : [];
+      const segments = Array.isArray(item.segments) ? item.segments.map((seg) => cloneTrackerSegment(seg, color)).filter(Boolean) : [];
+      samples.forEach((sample) => {
+        if (Number.isFinite(sample.timestamp)) {
+          if (sample.timestamp < minTs) minTs = sample.timestamp;
+          if (sample.timestamp > maxTs) maxTs = sample.timestamp;
+        }
+      });
+      segments.forEach((segment) => {
+        if (Number.isFinite(segment.timestamp)) {
+          if (segment.timestamp < minTs) minTs = segment.timestamp;
+          if (segment.timestamp > maxTs) maxTs = segment.timestamp;
+        }
+      });
+      if (!samples.length && !segments.length) return;
+      trackers.push({ id, name, color, samples, segments });
+    });
+    if (!trackers.length) return null;
+    const startedAt = Number.isFinite(Number(data.startedAt)) ? Number(data.startedAt) : (Number.isFinite(minTs) ? minTs : null);
+    const updatedAt = Number.isFinite(Number(data.updatedAt)) ? Number(data.updatedAt) : (Number.isFinite(maxTs) ? maxTs : startedAt);
+    return { trackers, startedAt, updatedAt };
+  }
+
+  function applyImportedTrackers(imported) {
+    if (!imported || !Array.isArray(imported.trackers) || imported.trackers.length === 0) return false;
+    resetTrackersRecordingData();
+    trackersRecordingState.active = false;
+    let overallMin = Infinity;
+    let overallMax = -Infinity;
+    imported.trackers.forEach((item) => {
+      const entry = {
+        id: item.id,
+        name: item.name || null,
+        color: item.color || null,
+        samples: Array.isArray(item.samples) ? item.samples.slice().sort((a, b) => (Number(a.timestamp || 0) - Number(b.timestamp || 0))) : [],
+        segments: Array.isArray(item.segments) ? item.segments.slice() : []
+      };
+      const existingTracker = trackerStore.get(item.id);
+      let resolvedColor = entry.color || existingTracker?.color || null;
+      if (!resolvedColor) resolvedColor = nextTrackerColor();
+      entry.color = resolvedColor;
+      trackersRecordingState.entries.set(item.id, {
+        id: entry.id,
+        name: entry.name,
+        color: resolvedColor,
+        samples: entry.samples.map(cloneTrackerSample).filter(Boolean),
+        segments: entry.segments.map((seg) => cloneTrackerSegment(seg, resolvedColor)).filter(Boolean)
+      });
+      const storedEntry = trackersRecordingState.entries.get(item.id);
+      if (!storedEntry) return;
+      const history = ensureTrackerHistoryEntry(item.id);
+      history.positions.length = 0;
+      history.segments.length = 0;
+      const pushPosition = (lng, lat, timestamp) => {
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        const last = history.positions[history.positions.length - 1];
+        if (last && last.longitude === lng && last.latitude === lat) return;
+        history.positions.push({
+          longitude: lng,
+          latitude: lat,
+          timestamp: Number.isFinite(timestamp) ? timestamp : null
+        });
+        if (Number.isFinite(timestamp)) {
+          if (timestamp < overallMin) overallMin = timestamp;
+          if (timestamp > overallMax) overallMax = timestamp;
+        }
+      };
+      storedEntry.samples.forEach((sample) => {
+        pushPosition(sample.longitude, sample.latitude, sample.timestamp);
+      });
+      if (history.positions.length === 0) {
+        storedEntry.segments.forEach((segment) => {
+          pushPosition(segment.from.longitude, segment.from.latitude, segment.timestamp);
+          pushPosition(segment.to.longitude, segment.to.latitude, segment.timestamp);
+        });
+      }
+      storedEntry.segments.forEach((segment) => {
+        history.segments.push({
+          from: { longitude: segment.from.longitude, latitude: segment.from.latitude },
+          to: { longitude: segment.to.longitude, latitude: segment.to.latitude },
+          distance: Number.isFinite(segment.distance) ? segment.distance : null,
+          timestamp: segment.timestamp,
+          color: segment.color || resolvedColor
+        });
+        if (Number.isFinite(segment.timestamp)) {
+          if (segment.timestamp < overallMin) overallMin = segment.timestamp;
+          if (segment.timestamp > overallMax) overallMax = segment.timestamp;
+        }
+      });
+      let lastSample = [...storedEntry.samples].reverse().find((sample) => Number.isFinite(sample.longitude) && Number.isFinite(sample.latitude));
+      if (!lastSample && storedEntry.segments.length > 0) {
+        const lastSegment = storedEntry.segments[storedEntry.segments.length - 1];
+        if (lastSegment && Number.isFinite(lastSegment.to.longitude) && Number.isFinite(lastSegment.to.latitude)) {
+          lastSample = {
+            longitude: lastSegment.to.longitude,
+            latitude: lastSegment.to.latitude,
+            altitude: null,
+            battery: null,
+            hops: null,
+            timestamp: Number.isFinite(lastSegment.timestamp) ? lastSegment.timestamp : null,
+            raw: null
+          };
+        }
+      }
+      if (lastSample) {
+        const merged = trackerStore.get(item.id) || { id: item.id };
+        trackerStore.set(item.id, {
+          id: item.id,
+          longitude: lastSample.longitude,
+          latitude: lastSample.latitude,
+          altitude: Number.isFinite(lastSample.altitude) ? lastSample.altitude : merged.altitude ?? null,
+          battery: Number.isFinite(lastSample.battery) ? lastSample.battery : merged.battery ?? null,
+          hops: Number.isFinite(lastSample.hops) ? lastSample.hops : merged.hops ?? null,
+          updatedAt: Number.isFinite(lastSample.timestamp) ? lastSample.timestamp : (merged.updatedAt || Date.now()),
+          raw: lastSample.raw || merged.raw || null,
+          name: entry.name || merged.name || null,
+          color: resolvedColor,
+          visible: merged.visible === false ? false : true
+        });
+      }
+    });
+    trackersRecordingHasData = trackersRecordingState.entries.size > 0;
+    trackersRecordingState.imported = true;
+    trackersRecordingState.startedAt = Number.isFinite(imported.startedAt) ? imported.startedAt : (Number.isFinite(overallMin) ? overallMin : Date.now());
+    trackersRecordingState.updatedAt = Number.isFinite(imported.updatedAt) ? imported.updatedAt : (Number.isFinite(overallMax) ? overallMax : trackersRecordingState.startedAt);
+    if (trackersRecordingState.startedAt && trackersRecordingState.updatedAt && trackersRecordingState.updatedAt < trackersRecordingState.startedAt) {
+      trackersRecordingState.updatedAt = trackersRecordingState.startedAt;
+    }
+    trackerDataSeen = true;
+    updateTrackerSource();
+    updateTrackerPathSource();
+    renderTrackersList();
+    updateTrackersPanelState();
+    refreshTrackersControlsState();
+    return true;
+  }
+
+  async function handleTrackersSave() {
+    closeTrackersMenu();
+    if (!trackersRecordingHasData) return;
+    if (!window.file || typeof window.file.saveTrackers !== 'function') {
+      alert('Saving tracker recordings is not available in this build.');
+      return;
+    }
+    const payload = getTrackersRecordingPayload();
+    if (!payload.trackers.length) {
+      alert('No tracker data is available to save yet.');
+      return;
+    }
+    try {
+      const defaultPath = getTrackersSuggestedPath();
+      const result = await window.file.saveTrackers(payload, defaultPath);
+      if (!result || !result.ok) {
+        if (!result || !result.canceled) showToast('Save failed', 'error');
+        return;
+      }
+      showToast('Trackers saved');
+    } catch (err) {
+      console.error('Saving trackers failed', err);
+      alert('Could not save trackers. Check the console for details.');
+      showToast('Save failed', 'error');
+    }
+  }
+
+  async function handleTrackersOpen() {
+    closeTrackersMenu();
+    if (!window.file || typeof window.file.openTrackers !== 'function') {
+      alert('Opening tracker recordings is not available in this build.');
+      return;
+    }
+    if (trackersRecordingHasData && trackersRecordingState.entries.size > 0) {
+      const proceed = confirm('Opening a recording will replace the current recorded data. Continue?');
+      if (!proceed) return;
+    }
+    try {
+      const defaultPath = getTrackersSuggestedPath();
+      const result = await window.file.openTrackers(defaultPath);
+      if (!result || !result.ok) {
+        if (!result || !result.canceled) showToast('Open failed', 'error');
+        return;
+      }
+      const normalized = normalizeTrackersRecordingPayload(result.data);
+      if (!normalized) {
+        alert('The selected file does not contain tracker tracks.');
+        return;
+      }
+      const applied = applyImportedTrackers(normalized);
+      if (!applied) {
+        alert('No tracker tracks could be loaded from the selected file.');
+        return;
+      }
+      showToast('Tracker tracks loaded');
+    } catch (err) {
+      console.error('Opening trackers failed', err);
+      alert('Could not open tracker tracks. Check the console for details.');
+      showToast('Open failed', 'error');
+    }
+  }
 
   function updateTrackersPanelState() {
     if (trackersConnectBtn) {
@@ -346,6 +836,7 @@
       if (trackerStore.size > 0) listEl.classList.add('is-visible');
       else listEl.classList.remove('is-visible');
     }
+    refreshTrackersControlsState();
   }
 
   const trackerColorPalette = ['#ff5722', '#03a9f4', '#8bc34a', '#ffc107', '#9c27b0', '#4caf50', '#00bcd4', '#ff9800'];
@@ -870,6 +1361,7 @@
     };
     trackerStore.set(data.id, merged);
     trackerDataSeen = true;
+    captureRecordingSample(merged, prev, movementDistance, shouldAppendSegment, timestamp);
     if (shouldAppendSegment) {
       appendTrackerSegment(
         data.id,
@@ -1955,7 +2447,6 @@
       const hasFeatures = (typeof hasFeaturesParam === 'boolean') ? hasFeaturesParam : (Array.isArray(drawStore.features) && drawStore.features.length > 0);
       if (featuresSaveBtn) {
         const disabled = !hasFeatures;
-        featuresSaveBtn.hidden = disabled;
         featuresSaveBtn.disabled = disabled;
         featuresSaveBtn.classList.toggle('is-disabled', disabled);
         if (disabled) featuresSaveBtn.setAttribute('aria-disabled', 'true');
@@ -1963,7 +2454,6 @@
       }
       if (featuresClearBtn) {
         const disabled = !hasFeatures;
-        featuresClearBtn.hidden = disabled;
         featuresClearBtn.disabled = disabled;
         featuresClearBtn.classList.toggle('is-disabled', disabled);
         if (disabled) featuresClearBtn.setAttribute('aria-disabled', 'true');
@@ -2036,6 +2526,7 @@
     };
 
     const handleFeaturesSave = async () => {
+      closeFeaturesActionsMenu();
       if (!featuresSaveBtn || featuresSaveBtn.disabled) return;
       if (!window.file || typeof window.file.saveAs !== 'function') {
         console.warn('File save bridge is not available.');
@@ -2085,6 +2576,7 @@
     };
 
     const handleFeaturesLoad = async () => {
+      closeFeaturesActionsMenu();
       if (!window.file || typeof window.file.openFeatureCollection !== 'function') {
         console.warn('File open bridge is not available.');
         return;
@@ -2150,6 +2642,7 @@
     };
 
     const handleFeaturesClear = () => {
+      closeFeaturesActionsMenu();
       if (!Array.isArray(drawStore.features) || drawStore.features.length === 0) return;
       const ok = confirm('Clear all features? This cannot be undone.');
       if (!ok) return;
@@ -2405,6 +2898,10 @@
       trackerDataSeen = trackerStore.size > 0;
     }
 
+    if (state !== 'connected' && trackersRecordingState.active) {
+      trackersRecordingState.active = false;
+    }
+
     updateTrackersPanelState();
   }
 
@@ -2481,6 +2978,41 @@
   }, 250);
 
   // Wire buttons
+  featuresActionsToggleBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFeaturesActionsMenu();
+  });
+  featuresActionsMenu?.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  trackersMenuToggle?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleTrackersMenu();
+  });
+  trackersMenu?.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (featuresActionsMenuOpen) {
+      const inMenu = featuresActionsMenu && target instanceof Node && featuresActionsMenu.contains(target);
+      const onToggle = featuresActionsToggleBtn && target instanceof Node && featuresActionsToggleBtn.contains(target);
+      if (!inMenu && !onToggle) closeFeaturesActionsMenu();
+    }
+    if (trackersMenuOpen) {
+      const inMenu = trackersMenu && target instanceof Node && trackersMenu.contains(target);
+      const onToggle = trackersMenuToggle && target instanceof Node && trackersMenuToggle.contains(target);
+      if (!inMenu && !onToggle) closeTrackersMenu();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeFeaturesActionsMenu();
+      closeTrackersMenu();
+    }
+  });
   serialConnectBtn?.addEventListener('click', openConnectModal);
   connectClose?.addEventListener('click', closeConnectModal);
   connectModal?.addEventListener('click', (e) => {
@@ -2489,6 +3021,12 @@
   });
   refreshPorts?.addEventListener('click', refreshPortsList);
   connectBtnAction?.addEventListener('click', connectSelected);
+
+  trackersRecordBtn?.addEventListener('click', handleTrackersRecordClick);
+  trackersSaveBtn?.addEventListener('click', handleTrackersSave);
+  trackersOpenBtn?.addEventListener('click', handleTrackersOpen);
+
+  refreshTrackersControlsState();
 
   // Ensure the serial monitor button starts hidden
   try { setSerialMonitorVisible(false); } catch {}
@@ -2739,6 +3277,7 @@
     const applyOpen = (open) => {
       const show = !!open;
       sidebarOpen = show;
+      closeFeaturesActionsMenu();
       if (show) {
         const w = readW();
         root.style.setProperty('--sidebar-w', w + 'px');
@@ -2825,6 +3364,7 @@
     const setOpen = (open) => {
       const show = !!open;
       try { localStorage.setItem('ui.trackers.open', show ? '1' : '0'); } catch {}
+      if (!show) closeTrackersMenu();
       root.style.setProperty('--trackers-sidebar-w', show ? `${TRACKERS_PANEL_WIDTH}px` : '0px');
       if (sidebarEl) {
         if (show) {
@@ -2884,6 +3424,7 @@
 
     renderTrackersList();
     updateTrackersPanelState();
+    refreshTrackersControlsState();
 
     try { document.body.classList.add('sidebar-ready'); } catch {}
   }

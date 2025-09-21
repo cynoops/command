@@ -49,7 +49,9 @@ contextBridge.exposeInMainWorld("file", {
     return () => ipcRenderer.off('file:saved', listener);
   },
   saveAs: (data, defaultPath) => ipcRenderer.invoke('file:save-as', { data, defaultPath }),
+  saveTrackers: (data, defaultPath) => ipcRenderer.invoke('file:save-trackers', { data, defaultPath }),
   openFeatureCollection: (defaultPath) => ipcRenderer.invoke('file:open-dialog', { defaultPath }),
+  openTrackers: (defaultPath) => ipcRenderer.invoke('file:open-trackers', { defaultPath }),
   askSaveDiscardCancel: (message, detail) => ipcRenderer.invoke('file:ask-sdc', { message, detail }),
   askMergeReplace: (message, detail) => ipcRenderer.invoke('file:ask-merge-replace', { message, detail }),
   onNew: (cb) => {

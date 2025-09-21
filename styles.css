@@ -397,10 +397,87 @@ body:not(.sidebar-ready) .trackers-sidebar{
 .features-sidebar.anim-exit-active{ opacity: 0; }
 .features-header{ display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 700; }
 .features-title{ font-size: 13px; }
-.features-actions{ display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--bg-elev); margin-top: auto; }
-.features-actions .btn{ flex: 1 1 auto; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.features-actions .btn .icon{ width: 14px; height: 14px; opacity: .85; }
-.features-actions .btn.btn-invert-icon .icon{ filter: invert(1); }
+.features-actions{
+  position: relative;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-elev);
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+.features-actions-trigger{
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--line) 70%, transparent 30%);
+  background: color-mix(in oklab, var(--bg) 90%, #000 10%);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.features-actions-trigger .icon{ width: 18px; height: 18px; filter: invert(1); }
+.features-actions-trigger:hover,
+.features-actions-trigger:focus-visible{
+  background: color-mix(in oklab, var(--bg-elev) 75%, var(--accent) 25%);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent 50%);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 40%, transparent 60%);
+}
+.features-actions.features-actions--empty .features-actions-trigger{
+  opacity: 0.7;
+}
+.features-actions.features-actions--open .features-actions-trigger{
+  background: color-mix(in oklab, var(--accent) 60%, var(--bg) 40%);
+  border-color: transparent;
+}
+.features-actions-menu{
+  position: absolute;
+  right: 10px;
+  bottom: 52px;
+  min-width: 180px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--line) 60%, transparent 40%);
+  background: color-mix(in oklab, var(--bg-elev) 92%, #000 8%);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.45);
+  z-index: 40;
+}
+.features-actions-menu[hidden]{ display: none; }
+.features-menu-btn{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.features-menu-btn .icon{ width: 16px; height: 16px; filter: invert(1); }
+.features-menu-btn:hover,
+.features-menu-btn:focus-visible{
+  background: color-mix(in oklab, var(--accent) 45%, transparent 55%);
+}
+.features-menu-btn[disabled],
+.features-menu-btn.is-disabled{
+  color: color-mix(in oklab, var(--muted) 80%, #000 20%);
+  cursor: not-allowed;
+}
+.features-menu-btn[disabled] .icon,
+.features-menu-btn.is-disabled .icon{
+  opacity: 0.55;
+}
 .features-list{ flex: 1 1 auto; overflow: auto; padding: 4px 0; }
 .features-empty{ color: var(--muted); padding: 12px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .features-resizer{ position: absolute; top: 0; right: 0; bottom: 0; width: 6px; cursor: ew-resize; background: transparent; }
@@ -423,6 +500,141 @@ body:not(.sidebar-ready) .trackers-sidebar{
 .trackers-sidebar.anim-exit{ opacity: 1; }
 .trackers-sidebar.anim-exit-active{ opacity: 0; }
 .trackers-header{ display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); font-weight: 700; }
+.trackers-header-actions{ display: flex; align-items: center; gap: 8px; }
+.trackers-record-indicator{
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--danger) 15%, transparent 85%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 0 rgba(244,67,54,0.6);
+  animation: trackerRecordGlow 1.4s ease-in-out infinite;
+}
+.trackers-record-indicator img{ width: 10px; height: 10px; filter: invert(1); }
+.trackers-record-indicator[hidden]{ display: none; }
+.trackers-controls{
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-elev);
+}
+.trackers-controls[hidden]{ display: none; }
+.trackers-controls .btn{
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  min-height: 34px;
+}
+.trackers-controls .btn .icon{ width: 16px; height: 16px; filter: invert(1); opacity: 0.9; }
+.trackers-controls .btn[disabled] .icon,
+.trackers-controls .btn.is-disabled .icon{ opacity: 0.55; }
+.trackers-menu-wrapper{
+  margin-left: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.trackers-menu-trigger{
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--line) 70%, transparent 30%);
+  background: color-mix(in oklab, var(--bg) 90%, #000 10%);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.trackers-menu-trigger .icon{ width: 18px; height: 18px; filter: invert(1); }
+.trackers-menu-trigger:hover,
+.trackers-menu-trigger:focus-visible{
+  background: color-mix(in oklab, var(--bg-elev) 75%, var(--accent) 25%);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent 50%);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 40%, transparent 60%);
+}
+.trackers-menu-trigger[disabled]{
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  pointer-events: none;
+}
+.trackers-menu-wrapper.is-open .trackers-menu-trigger{
+  background: color-mix(in oklab, var(--accent) 60%, var(--bg) 40%);
+  border-color: transparent;
+}
+.trackers-menu{
+  position: absolute;
+  right: 0;
+  bottom: 46px;
+  min-width: 170px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--line) 60%, transparent 40%);
+  background: color-mix(in oklab, var(--bg-elev) 92%, #000 8%);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.45);
+  z-index: 40;
+}
+.trackers-menu[hidden]{ display: none; }
+.trackers-menu-btn{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.trackers-menu-btn .icon{ width: 16px; height: 16px; filter: invert(1); }
+.trackers-menu-btn:hover,
+.trackers-menu-btn:focus-visible{
+  background: color-mix(in oklab, var(--accent) 45%, transparent 55%);
+}
+.trackers-menu-btn[disabled],
+.trackers-menu-btn.is-disabled{
+  color: color-mix(in oklab, var(--muted) 80%, #000 20%);
+  cursor: not-allowed;
+}
+.trackers-menu-btn[disabled] .icon,
+.trackers-menu-btn.is-disabled .icon{
+  opacity: 0.55;
+}
+.trackers-record-btn{
+  background: linear-gradient(180deg, var(--danger) 0%, color-mix(in oklab, var(--danger) 75%, #000 25%) 100%);
+  color: #ffffff;
+  border-color: transparent;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.trackers-record-btn:hover{
+  border-color: transparent;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--danger) 75%, #fff 25%);
+}
+.trackers-record-btn.is-active{
+  animation: trackerRecordPulse 1.6s ease-in-out infinite;
+}
+.trackers-record-btn[disabled]{
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 .trackers-title{ font-size: 13px; }
 .trackers-list{ flex: 1 1 auto; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .trackers-items{ display: none; width: 100%; flex-direction: column; gap: 8px; }
@@ -512,6 +724,16 @@ body:not(.sidebar-ready) .trackers-sidebar{
   border: 2px solid rgba(255,255,255,0.25);
   box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
 }
+@keyframes trackerRecordGlow{
+  0%{ box-shadow: 0 0 0 0 rgba(244,67,54,0.4); opacity: 0.85; }
+  50%{ box-shadow: 0 0 8px 4px rgba(244,67,54,0.6); opacity: 1; }
+  100%{ box-shadow: 0 0 0 0 rgba(244,67,54,0.35); opacity: 0.85; }
+}
+@keyframes trackerRecordPulse{
+  0%{ box-shadow: 0 0 0 0 rgba(244,67,54,0.6); }
+  70%{ box-shadow: 0 0 0 10px rgba(244,67,54,0); }
+  100%{ box-shadow: 0 0 0 0 rgba(244,67,54,0); }
+}
 @keyframes trackerRowBlink{
   0%{
     background: var(--tracker-row-bg);
@@ -547,12 +769,16 @@ body:not(.sidebar-ready) .trackers-sidebar{
   z-index: 30;
   transition: transform .18s ease, background .2s ease, box-shadow .2s ease;
 }
+.sidebar-toggle.is-recording{
+  box-shadow: 0 0 0 0 rgba(244,67,54,0.45);
+  animation: trackerRecordGlow 1.4s ease-in-out infinite;
+}
 .sidebar-toggle:hover{ background: color-mix(in oklab, var(--bg-elev) 70%, var(--accent) 30%); }
 .sidebar-toggle:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
 .sidebar-toggle-left{ left: 16px; }
 .sidebar-toggle-right{ right: 16px; }
 .sidebar-toggle .icon{ width: 16px; height: 16px; transition: transform .2s ease; filter: invert(1); }
-.sidebar-toggle.is-open .icon{ transform: rotate(180deg); }
+.sidebar-toggle.is-open .icon-chevron{ transform: rotate(180deg); }
 .sidebar-toggle[hidden]{ display: none; }
 .sidebar-toggle-label{
   font-size: 13px;

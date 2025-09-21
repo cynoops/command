@@ -120,31 +120,42 @@
           </div>
           <div id="drawingsList" class="features-list" aria-live="polite"></div>
           <div id="featuresActions" class="features-actions">
-            <button id="featuresSaveBtn" class="btn btn-primary" type="button" hidden>
-              <img src="./assets/icons/regular/file-text.svg" alt="" class="icon" aria-hidden="true" />
-              <span>Save</span>
+            <button id="featuresActionsToggle" class="features-actions-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+              <img src="./assets/icons/regular/dots-three-circle-vertical.svg" alt="" class="icon" aria-hidden="true" />
+              <span class="visually-hidden">Open features menu</span>
             </button>
-            <button id="featuresLoadBtn" class="btn btn-invert-icon" type="button">
-              <img src="./assets/icons/regular/folder-open.svg" alt="" class="icon" aria-hidden="true" />
-              <span>Load</span>
-            </button>
-            <button id="featuresClearBtn" class="btn btn-invert-icon" type="button">
-              <img src="./assets/icons/regular/broom.svg" alt="" class="icon" aria-hidden="true" />
-              <span>Clear</span>
-            </button>
+            <div id="featuresActionsMenu" class="features-actions-menu" role="menu" hidden>
+              <button id="featuresSaveBtn" class="features-menu-btn" type="button" role="menuitem">
+                <img src="./assets/icons/regular/file-text.svg" alt="" class="icon" aria-hidden="true" />
+                <span>Save</span>
+              </button>
+              <button id="featuresLoadBtn" class="features-menu-btn" type="button" role="menuitem">
+                <img src="./assets/icons/regular/folder-open.svg" alt="" class="icon" aria-hidden="true" />
+                <span>Load</span>
+              </button>
+              <button id="featuresClearBtn" class="features-menu-btn" type="button" role="menuitem">
+                <img src="./assets/icons/regular/broom.svg" alt="" class="icon" aria-hidden="true" />
+                <span>Clear</span>
+              </button>
+            </div>
           </div>
           <div id="featuresResizer" class="features-resizer" title="Drag to resize" aria-hidden="true"></div>
         </aside>
         <button id="featuresToggleBtn" class="sidebar-toggle sidebar-toggle-left" type="button" aria-controls="featuresSidebar" aria-expanded="false">
-          <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
+          <img src="./assets/icons/regular/caret-right.svg" alt="" class="icon icon-chevron" aria-hidden="true" />
           <span class="sidebar-toggle-label">FEATURES</span>
-          <img src="./assets/icons/regular/caret-right.svg" alt="" class="icon" aria-hidden="true" />
+          <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
           <span class="visually-hidden">Show features panel</span>
         </button>
         <aside id="trackersSidebar" class="trackers-sidebar" aria-label="Trackers panel" hidden>
           <div class="trackers-header">
             <span class="trackers-title">Trackers</span>
-            <button id="trackersCollapse" class="btn-icon" title="Hide tracker sidebar" aria-label="Hide tracker sidebar">⟩</button>
+            <div class="trackers-header-actions">
+              <span id="trackersRecordIndicator" class="trackers-record-indicator" hidden aria-hidden="true">
+                <img src="./assets/icons/regular/record.svg" alt="" class="icon" aria-hidden="true" />
+              </span>
+              <button id="trackersCollapse" class="btn-icon" title="Hide tracker sidebar" aria-label="Hide tracker sidebar">⟩</button>
+            </div>
           </div>
           <div id="trackersList" class="trackers-list" aria-live="polite">
             <div id="trackersEmpty" class="trackers-empty">
@@ -160,11 +171,33 @@
             </div>
             <div id="trackersItems" class="trackers-items"></div>
           </div>
+          <div id="trackersControls" class="trackers-controls" hidden>
+            <button id="trackersRecordBtn" class="btn trackers-record-btn" type="button">
+              <img id="trackersRecordIcon" src="./assets/icons/regular/record.svg" alt="" class="icon" aria-hidden="true" />
+              <span id="trackersRecordText">Record</span>
+            </button>
+            <div id="trackersMenuWrapper" class="trackers-menu-wrapper">
+              <button id="trackersMenuToggle" class="trackers-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <img src="./assets/icons/regular/dots-three-circle-vertical.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Open tracker menu</span>
+              </button>
+              <div id="trackersMenu" class="trackers-menu" role="menu" hidden>
+                <button id="trackersSaveBtn" class="trackers-menu-btn" type="button" role="menuitem" disabled>
+                  <img src="./assets/icons/regular/file-text.svg" alt="" class="icon" aria-hidden="true" />
+                  <span>Save</span>
+                </button>
+                <button id="trackersOpenBtn" class="trackers-menu-btn" type="button" role="menuitem">
+                  <img src="./assets/icons/regular/folder-open.svg" alt="" class="icon" aria-hidden="true" />
+                  <span>Open</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </aside>
         <button id="trackersToggleBtn" class="sidebar-toggle sidebar-toggle-right" type="button" aria-controls="trackersSidebar" aria-expanded="false">
-          <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
+          <img src="./assets/icons/regular/caret-left.svg" alt="" class="icon icon-chevron" aria-hidden="true" />
           <span class="sidebar-toggle-label">TRACKERS</span>
-          <img src="./assets/icons/regular/caret-left.svg" alt="" class="icon" aria-hidden="true" />
+          <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
           <span class="visually-hidden">Show trackers panel</span>
         </button>
         <!-- Serial monitor moved to modal -->

@@ -55,6 +55,25 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
     }
   });
 
+  ipcMain.handle('file:save-trackers', async (_e, { data, defaultPath } = {}) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow) return { ok: false, canceled: true };
+    try {
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Save Tracker Recording',
+        defaultPath: defaultPath || state.currentFilePath || undefined,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (canceled || !filePath) return { ok: false, canceled: true };
+      const text = JSON.stringify(data, null, 2);
+      await fsp.writeFile(filePath, text, 'utf8');
+      return { ok: true, canceled: false, filePath };
+    } catch (e) {
+      dialog.showErrorBox('Save Failed', String(e));
+      return { ok: false, error: String(e) };
+    }
+  });
+
   ipcMain.handle('file:open-dialog', async (_e, { defaultPath } = {}) => {
     const mainWindow = state.mainWindow;
     if (!mainWindow) return { ok: false, canceled: true };
@@ -71,6 +90,27 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
       const data = JSON.parse(raw);
       state.currentFilePath = filePath;
       try { mainWindow.webContents.send('file:current-file', { path: state.currentFilePath }); } catch {}
+      return { ok: true, canceled: false, filePath, data };
+    } catch (e) {
+      dialog.showErrorBox('Open Failed', String(e));
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  ipcMain.handle('file:open-trackers', async (_e, { defaultPath } = {}) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow) return { ok: false, canceled: true };
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Open Tracker Recording',
+        defaultPath: defaultPath || state.currentFilePath || undefined,
+        properties: ['openFile'],
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+      const filePath = filePaths[0];
+      const raw = await fsp.readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
       return { ok: true, canceled: false, filePath, data };
     } catch (e) {
       dialog.showErrorBox('Open Failed', String(e));
