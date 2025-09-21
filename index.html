@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com; worker-src 'self' blob:;"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com; worker-src 'self' blob:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Command - CYNOOPS</title>
@@ -113,6 +113,12 @@
         <div id="map" class="map-container" aria-label="Interactive map">
           <!-- Crosshair overlay (placed inside container so it's always centered) -->
           <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
+        </div>
+        <div id="mapUtilityToolbar" class="map-utility-toolbar" aria-label="Map utilities">
+          <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="cloud-sun" data-tooltip="Weather">
+            <img src="./assets/icons/regular/cloud-sun.svg" alt="" class="icon" aria-hidden="true" />
+            <span class="visually-hidden">Toggle weather overlay</span>
+          </button>
         </div>
         <!-- Location inputs panel removed -->
         <!-- Sidebar: Features -->

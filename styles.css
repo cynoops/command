@@ -337,6 +337,98 @@ body:not(.sidebar-ready) .trackers-sidebar{
 .map-crosshair::before{ width: 20px; height: 1px; box-shadow: none; }
 .map-crosshair::after { width: 1px; height: 20px; box-shadow: none; }
 
+.map-utility-toolbar{
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: color-mix(in oklab, rgba(12,18,28,0.85) 85%, rgba(0,0,0,0.35) 15%);
+  border: 1px solid color-mix(in oklab, var(--accent) 20%, transparent 80%);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.35);
+  z-index: 32;
+  pointer-events: auto;
+}
+.map-utility-toolbar .map-utility-btn{
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--line) 60%, transparent 40%);
+  background: color-mix(in oklab, var(--bg) 85%, rgba(0,0,0,0.25) 15%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.map-utility-toolbar .map-utility-btn .icon{
+  width: 18px;
+  height: 18px;
+  filter: invert(1);
+}
+.map-utility-toolbar .map-utility-btn:hover,
+.map-utility-toolbar .map-utility-btn:focus-visible{
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent 45%);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent 65%);
+}
+.map-utility-toolbar .map-utility-btn.is-active{
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #001225;
+  border-color: transparent;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.35);
+}
+.weather-marker{
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(8,12,18,0.85);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+.weather-marker__icon{
+  width: 18px;
+  height: 18px;
+  filter: invert(1);
+}
+.weather-marker__temp{
+  font-size: 12px;
+  font-weight: 600;
+}
+.map-utility-toolbar .map-utility-btn::after{
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, 8px);
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+}
+.map-utility-toolbar .map-utility-btn:hover::after,
+.map-utility-toolbar .map-utility-btn:focus-visible::after{
+  opacity: 1;
+  transform: translate(-50%, 4px);
+}
+
 /* Floating coordinate inputs */
 .coord-float{
   position: absolute; left: 10px; bottom: 50px;

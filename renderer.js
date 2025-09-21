@@ -58,6 +58,8 @@
   const toolLine = q('#toolLine');
   const toolArrow = q('#toolArrow');
   const toolPOI = q('#toolPOI');
+  const mapUtilityToolbar = q('#mapUtilityToolbar');
+  const mapUtilityButtons = mapUtilityToolbar ? Array.from(mapUtilityToolbar.querySelectorAll('.map-utility-btn')) : [];
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
@@ -151,6 +153,52 @@
     success: './assets/icons/regular/check-circle.svg',
     error: './assets/icons/regular/x-circle.svg',
   };
+  const weatherIconPaths = {
+    CLEAR_DAY: './assets/icons/regular/sun.svg',
+    CLEAR_NIGHT: './assets/icons/regular/moon-stars.svg',
+    MOSTLY_CLEAR_DAY: './assets/icons/regular/cloud-sun.svg',
+    MOSTLY_CLEAR_NIGHT: './assets/icons/regular/cloud-moon.svg',
+    PARTLY_CLOUDY_DAY: './assets/icons/regular/cloud-sun.svg',
+    PARTLY_CLOUDY_NIGHT: './assets/icons/regular/cloud-moon.svg',
+    OVERCAST: './assets/icons/regular/cloud.svg',
+    FOG: './assets/icons/regular/cloud-fog.svg',
+    LIGHT_RAIN: './assets/icons/regular/cloud-rain.svg',
+    MODERATE_RAIN: './assets/icons/regular/cloud-rain.svg',
+    HEAVY_RAIN: './assets/icons/regular/cloud-rain.svg',
+    RAIN_SLEET: './assets/icons/regular/rainbow-cloud.svg',
+    LIGHT_SLEET: './assets/icons/regular/rainbow-cloud.svg',
+    HEAVY_SLEET: './assets/icons/regular/rainbow-cloud.svg',
+    LIGHT_SNOW: './assets/icons/regular/cloud-snow.svg',
+    MODERATE_SNOW: './assets/icons/regular/cloud-snow.svg',
+    HEAVY_SNOW: './assets/icons/regular/cloud-snow.svg',
+    THUNDERSTORM: './assets/icons/regular/cloud-lightning.svg',
+    HAIL: './assets/icons/regular/cloud-warning.svg'
+  };
+  let weatherOverlayActive = false;
+  let weatherMarkers = [];
+  let weatherMoveHandler = null;
+  let weatherAbortController = null;
+  let weatherRefreshTimer = null;
+
+  mapUtilityButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = !btn.classList.contains('is-active');
+      btn.classList.toggle('is-active', next);
+      btn.setAttribute('aria-pressed', String(next));
+      const tool = btn.dataset.tool;
+      if (tool === 'cloud-sun') {
+        if (next) {
+          const ok = enableWeatherOverlay();
+          if (!ok) {
+            btn.classList.remove('is-active');
+            btn.setAttribute('aria-pressed', 'false');
+          }
+        } else {
+          disableWeatherOverlay();
+        }
+      }
+    });
+  });
 
   const showToast = (message, variant = 'success', duration = 1500) => {
     if (!toastContainer) return;
@@ -179,6 +227,252 @@
       }, 200);
     }, duration);
   };
+
+  function resolveWeatherIcon(code) {
+    if (!code) return weatherIconPaths.OVERCAST;
+    return weatherIconPaths[code] || weatherIconPaths.OVERCAST;
+  }
+
+  function weatherDescription(code) {
+    switch (code) {
+      case 'CLEAR_DAY':
+      case 'CLEAR_NIGHT':
+        return 'Clear';
+      case 'MOSTLY_CLEAR_DAY':
+      case 'MOSTLY_CLEAR_NIGHT':
+      case 'PARTLY_CLOUDY_DAY':
+      case 'PARTLY_CLOUDY_NIGHT':
+        return 'Partly cloudy';
+      case 'OVERCAST':
+        return 'Overcast';
+      case 'FOG':
+        return 'Fog';
+      case 'LIGHT_RAIN':
+      case 'MODERATE_RAIN':
+      case 'HEAVY_RAIN':
+        return 'Rain';
+      case 'RAIN_SLEET':
+      case 'LIGHT_SLEET':
+      case 'HEAVY_SLEET':
+        return 'Sleet';
+      case 'LIGHT_SNOW':
+      case 'MODERATE_SNOW':
+      case 'HEAVY_SNOW':
+        return 'Snow';
+      case 'THUNDERSTORM':
+        return 'Thunderstorm';
+      case 'HAIL':
+        return 'Hail';
+      default:
+        return 'Weather';
+    }
+  }
+
+  function removeWeatherMarkers() {
+    weatherMarkers.forEach((marker) => {
+      try { marker.remove(); } catch {}
+    });
+    weatherMarkers = [];
+  }
+
+  function renderWeatherMarkers(map, entries) {
+    removeWeatherMarkers();
+    if (typeof mapboxgl === 'undefined') {
+      console.warn('mapboxgl not available for weather overlay');
+      return;
+    }
+    entries.forEach((entry) => {
+      const el = document.createElement('div');
+      el.className = 'weather-marker';
+      el.style.pointerEvents = 'none';
+      const icon = document.createElement('img');
+      icon.className = 'weather-marker__icon';
+      icon.alt = '';
+      icon.src = resolveWeatherIcon(entry.code);
+      const temp = document.createElement('div');
+      temp.className = 'weather-marker__temp';
+      temp.textContent = `${Math.round(entry.temperature)}°C`;
+      el.appendChild(icon);
+      el.appendChild(temp);
+      el.title = `${weatherDescription(entry.code)} · ${Math.round(entry.temperature)}°C`;
+      try {
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
+        weatherMarkers.push(marker);
+      } catch (err) {
+        console.error('Weather marker failed', err);
+      }
+    });
+  }
+
+  async function fetchGoogleWeather(point, apiKey, signal) {
+    const params = new URLSearchParams({
+      key: apiKey,
+      'location.latitude': point.lat.toFixed(4),
+      'location.longitude': point.lng.toFixed(4)
+    });
+    const url = `https://weather.googleapis.com/v1/currentConditions:lookup?${params.toString()}`;
+    const resp = await fetch(url, {
+      signal,
+      headers: {
+        'X-Goog-FieldMask': 'currentConditions.temperature,currentConditions.conditionCode'
+      }
+    });
+    if (!resp.ok) {
+      throw new Error(`Google weather ${resp.status}`);
+    }
+    const data = await resp.json();
+    const conditions = data?.currentConditions;
+    if (!conditions) throw new Error('No current conditions');
+    let temperature = null;
+    let unitLabel = 'CELSIUS';
+    const tempField = conditions.temperature;
+    if (tempField !== undefined && tempField !== null) {
+      if (typeof tempField === 'number') {
+        temperature = tempField;
+      } else if (typeof tempField === 'object') {
+        if (tempField.value !== undefined) temperature = tempField.value;
+        if (tempField.unit) unitLabel = String(tempField.unit).toUpperCase();
+      }
+    }
+    if (!Number.isFinite(Number(temperature))) throw new Error('Invalid temperature');
+    if (unitLabel === 'FAHRENHEIT') {
+      temperature = (Number(temperature) - 32) * (5 / 9);
+    } else if (unitLabel === 'KELVIN' || unitLabel === 'KELVINS') {
+      temperature = Number(temperature) - 273.15;
+    }
+    const codeRaw = conditions.conditionCode;
+    const code = typeof codeRaw === 'string' ? codeRaw.toUpperCase() : '';
+    return { ...point, temperature: Number(temperature), code };
+  }
+
+  function computeWeatherSamplePoints(map) {
+    if (!map) return [];
+    const bounds = map.getBounds();
+    if (!bounds) return [];
+    const zoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
+    let grid = 1;
+    if (zoom >= 10) grid = 3;
+    else if (zoom >= 7) grid = 2;
+
+    if (grid === 1) {
+      const center = bounds.getCenter();
+      return [{ lng: center.lng, lat: center.lat }];
+    }
+
+    const north = bounds.getNorth();
+    const south = bounds.getSouth();
+    let west = bounds.getWest();
+    let east = bounds.getEast();
+    if (east < west) east += 360;
+    const lngStep = (east - west) / (grid + 1);
+    const latStep = (north - south) / (grid + 1);
+    const points = [];
+    for (let r = 1; r <= grid; r += 1) {
+      const lat = Math.max(-85, Math.min(85, south + latStep * r));
+      for (let c = 1; c <= grid; c += 1) {
+        let lng = west + lngStep * c;
+        if (lng > 180) lng -= 360;
+        if (lng < -180) lng += 360;
+        points.push({ lng, lat });
+      }
+    }
+    return points;
+  }
+
+  async function refreshWeatherOverlay() {
+    if (!weatherOverlayActive) return;
+    const map = getMap();
+    if (!map || (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())) return;
+    const points = computeWeatherSamplePoints(map);
+    if (!points.length) {
+      removeWeatherMarkers();
+      return;
+    }
+    if (weatherAbortController) {
+      try { weatherAbortController.abort(); } catch {}
+    }
+    const controller = new AbortController();
+    weatherAbortController = controller;
+    try {
+    const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+    if (!key) {
+      showToast('Weather needs Google Maps API key', 'error');
+      disableWeatherOverlay();
+      return;
+    }
+    const results = await Promise.all(points.map(async (pt) => {
+      try {
+        const entry = await fetchGoogleWeather(pt, key, controller.signal);
+        return entry;
+      } catch (err) {
+        if (controller.signal.aborted) return null;
+        console.error('Weather fetch failed', err);
+        return null;
+      }
+    }));
+      if (!weatherOverlayActive || weatherAbortController !== controller) return;
+      const entries = results.filter(Boolean);
+      if (!entries.length) {
+        removeWeatherMarkers();
+        return;
+      }
+      renderWeatherMarkers(map, entries);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      console.error('Weather overlay refresh failed', err);
+    }
+  }
+
+  function scheduleWeatherRefresh() {
+    if (!weatherOverlayActive) return;
+    if (weatherRefreshTimer) clearTimeout(weatherRefreshTimer);
+    weatherRefreshTimer = setTimeout(() => {
+      weatherRefreshTimer = null;
+      refreshWeatherOverlay();
+    }, 400);
+  }
+
+  function enableWeatherOverlay() {
+    if (!googleServicesEnabled) {
+      showToast('Weather needs Google Maps API access', 'error');
+      return false;
+    }
+    const map = getMap();
+    if (!map) {
+      showToast('Map not ready', 'error');
+      return false;
+    }
+    const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+    if (!key) {
+      showToast('Weather needs Google Maps API key', 'error');
+      return false;
+    }
+    weatherOverlayActive = true;
+    refreshWeatherOverlay();
+    if (!weatherMoveHandler) {
+      weatherMoveHandler = () => scheduleWeatherRefresh();
+      map.on('moveend', weatherMoveHandler);
+    }
+    return true;
+  }
+
+  function disableWeatherOverlay() {
+    const map = getMap();
+    weatherOverlayActive = false;
+    if (weatherRefreshTimer) {
+      clearTimeout(weatherRefreshTimer);
+      weatherRefreshTimer = null;
+    }
+    if (weatherAbortController) {
+      try { weatherAbortController.abort(); } catch {}
+      weatherAbortController = null;
+    }
+    if (weatherMoveHandler && map) {
+      try { map.off('moveend', weatherMoveHandler); } catch {}
+      weatherMoveHandler = null;
+    }
+    removeWeatherMarkers();
+  }
 
   let suppressFeatureToasts = false;
   let lastFeatureModifiedToast = 0;
@@ -1954,7 +2248,19 @@
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
-    map.on('style.load', () => { try { ensureDrawLayers(); refreshDraw(); (window)._bindEditInteractions && (window)._bindEditInteractions(); if ((window)._editTarget) { refreshEditVerts(); map.setLayoutProperty('edit-verts','visibility','visible'); map.setLayoutProperty('edit-mid','visibility','visible'); } } catch {} });
+    map.on('style.load', () => {
+      try {
+        ensureDrawLayers();
+        refreshDraw();
+        (window)._bindEditInteractions && (window)._bindEditInteractions();
+        if ((window)._editTarget) {
+          refreshEditVerts();
+          map.setLayoutProperty('edit-verts','visibility','visible');
+          map.setLayoutProperty('edit-mid','visibility','visible');
+        }
+        if (weatherOverlayActive) scheduleWeatherRefresh();
+      } catch {}
+    });
 
     const setDraft = (featureOrNull) => {
       const src = map.getSource('draw-draft');
