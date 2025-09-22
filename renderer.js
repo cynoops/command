@@ -312,10 +312,8 @@
     });
     const url = `https://weather.googleapis.com/v1/currentConditions:lookup?${params.toString()}`;
     const resp = await fetch(url, {
-      signal,
-      headers: {
-        'X-Goog-FieldMask': 'currentConditions.temperature,currentConditions.conditionCode'
-      }
+      method: 'GET',
+      signal
     });
     if (!resp.ok) {
       throw new Error(`Google weather ${resp.status}`);
