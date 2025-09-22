@@ -2280,7 +2280,8 @@
             'circle-color': ['coalesce', ['get','color'], '#2196F3'],
             'circle-radius': 9,
             'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 1
+            'circle-stroke-width': 1,
+            'circle-opacity': ['coalesce', ['get','pointOpacity'], 1]
           }
         });
       }
@@ -2288,7 +2289,7 @@
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','isLineEndpoint'], true]],
           layout: {
             'text-field': [
               'case',
@@ -2528,6 +2529,32 @@
       ensureFeaturesVisible();
       return f;
     };
+    const addLineEndpoints = (lineFeature, coords) => {
+      try {
+        if (!lineFeature || !Array.isArray(coords) || coords.length < 2) return;
+        const start = coords[0];
+        const end = coords[coords.length - 1];
+        if (!Array.isArray(start) || !Array.isArray(end)) return;
+        const color = lineFeature.properties?.color || '#64b5f6';
+        const lineId = lineFeature.properties?.id;
+        const makePoint = (coord, kind, opacity) => ({
+          type: 'Feature',
+          properties: {
+            id: newId(),
+            kind,
+            color,
+            pointOpacity: opacity,
+            relatedLineId: lineId,
+            isLineEndpoint: true
+          },
+          geometry: { type: 'Point', coordinates: [coord[0], coord[1]] }
+        });
+        drawStore.features.push(makePoint(start, 'line-start', 0.6));
+        drawStore.features.push(makePoint(end, 'line-end', 1));
+      } catch (err) {
+        console.error('addLineEndpoints failed', err);
+      }
+    };
     const circleFrom = (center, edge, steps=64) => {
       const latRad = center.lat * Math.PI/180;
       const mPerDegLng = Math.max(1e-6, Math.cos(latRad) * metersPerDegLat);
@@ -2707,7 +2734,10 @@
         const ring = [...vertCoords, vertCoords[0]];
         drawStore.features.push(annotateFeature({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates:[ring] } }, 'polygon'));
       } else if (tool === 'line' && vertCoords.length >= 2) {
-        drawStore.features.push(annotateFeature({ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates: vertCoords.slice() } }, 'line'));
+        const coords = vertCoords.slice();
+        const lineFeature = annotateFeature({ type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates: coords } }, 'line');
+        drawStore.features.push(lineFeature);
+        addLineEndpoints(lineFeature, coords);
       }
       setDirty(true);
       refreshDraw(); setDraft(null); vertCoords = null; (window)._lineInProgress = false;
@@ -2782,6 +2812,7 @@
     });
 
     const renderRow = (f) => {
+      if (f?.properties?.isLineEndpoint) return null;
       const row = document.createElement('div');
       row.className = 'drawing-row';
       row.dataset.id = f.properties.id;
@@ -2891,7 +2922,17 @@
         const ok = confirm('Delete this drawing?');
         if (!ok) return;
         const idx = drawStore.features.findIndex(x => x.properties?.id === f.properties.id);
-        if (idx >= 0) { drawStore.features.splice(idx, 1); setDirty(true); refreshDraw(); setHighlight(null); }
+        if (idx >= 0) {
+          const [removed] = drawStore.features.splice(idx, 1);
+          if (removed?.geometry?.type === 'LineString' && removed?.properties?.id) {
+            const relatedId = removed.properties.id;
+            drawStore.features = drawStore.features.filter((feat) => feat?.properties?.relatedLineId !== relatedId);
+          }
+          setDirty(true);
+          refreshDraw();
+          setHighlight(null);
+          updateDrawingsPanel();
+        }
       });
       // Toggle per-feature edit
       const flyToFeaturePolygon = (feat) => {
@@ -2944,7 +2985,8 @@
       return row;
     };
     const updateFeaturesActionsState = (hasFeaturesParam) => {
-      const hasFeatures = (typeof hasFeaturesParam === 'boolean') ? hasFeaturesParam : (Array.isArray(drawStore.features) && drawStore.features.length > 0);
+      const visibleFeatures = Array.isArray(drawStore.features) ? drawStore.features.filter(f => !f?.properties?.isLineEndpoint) : [];
+      const hasFeatures = (typeof hasFeaturesParam === 'boolean') ? hasFeaturesParam : visibleFeatures.length > 0;
       if (featuresSaveBtn) {
         const disabled = !hasFeatures;
         featuresSaveBtn.disabled = disabled;
@@ -3155,8 +3197,8 @@
     const updateDrawingsPanel = () => {
       if (!drawingsList) return;
       drawingsList.innerHTML = '';
-      const hasFeatures = Array.isArray(drawStore.features) && drawStore.features.length > 0;
-      if (!hasFeatures) {
+      const visibleFeatures = Array.isArray(drawStore.features) ? drawStore.features.filter(f => !f?.properties?.isLineEndpoint) : [];
+      if (!visibleFeatures.length) {
         const empty = document.createElement('div');
         empty.className = 'features-empty';
         empty.textContent = 'No features yet. Start drawing on the map.';
@@ -3164,8 +3206,11 @@
         updateFeaturesActionsState(false);
         return;
       }
-      drawStore.features.forEach(f => drawingsList.appendChild(renderRow(f)));
-      updateFeaturesActionsState(true);
+      visibleFeatures.forEach(f => {
+        const row = renderRow(f);
+        if (row) drawingsList.appendChild(row);
+      });
+      updateFeaturesActionsState(visibleFeatures.length > 0);
     };
     featuresSaveBtn?.addEventListener('click', handleFeaturesSave);
     featuresLoadBtn?.addEventListener('click', handleFeaturesLoad);
