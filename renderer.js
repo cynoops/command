@@ -295,6 +295,7 @@
       const el = document.createElement('div');
       el.className = 'weather-marker';
       el.style.pointerEvents = 'none';
+      el.style.opacity = '0.6';
       const icon = document.createElement('img');
       icon.className = 'weather-marker__icon';
       icon.alt = '';

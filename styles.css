@@ -401,7 +401,6 @@ body:not(.sidebar-ready) .trackers-sidebar{
 .weather-marker__icon{
   width: 18px;
   height: 18px;
-  filter: invert(1);
 }
 .weather-marker__temp{
   font-size: 12px;
