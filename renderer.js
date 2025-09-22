@@ -181,7 +181,7 @@
   let weatherRefreshTimer = null;
   let featuresLayersVisible = true;
   let trackersLayersVisible = true;
-  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-line', 'draw-point-circle', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
+  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
   const TRACKER_LAYER_IDS = ['tracker-dots', 'tracker-labels', 'tracker-paths'];
 
   mapUtilityButtons.forEach((btn) => {
@@ -2249,6 +2249,26 @@
           source: 'draw',
           filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true]],
           paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 }
+        });
+      }
+      if (!map.getLayer('draw-line-arrows')) {
+        map.addLayer({
+          id: 'draw-line-arrows',
+          type: 'symbol',
+          source: 'draw',
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true]],
+          layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 40,
+            'icon-image': 'triangle-15',
+            'icon-size': 0.9,
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true
+          },
+          paint: {
+            'icon-color': ['coalesce', ['get','color'], '#64b5f6'],
+            'icon-opacity': 0.9
+          }
         });
       }
       // Base point as colored circle for robust visibility
