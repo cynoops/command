@@ -359,8 +359,8 @@
     const lngSpan = Math.abs(east - west);
     const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
 
-    const radiusLat = latSpan > 0 ? Math.max(Math.min(latSpan * 0.35, latSpan / 2), 0.01) : 0.05;
-    const radiusLng = lngSpan > 0 ? Math.max(Math.min(lngSpan * 0.35, lngSpan / 2), 0.01) : 0.05;
+    const radiusLat = latSpan > 0 ? Math.max(Math.min(latSpan * 0.3, latSpan / 2), 0.01) : 0.05;
+    const radiusLng = lngSpan > 0 ? Math.max(Math.min(lngSpan * 0.25, lngSpan / 2.5), 0.01) : 0.05;
     const cosLat = Math.cos(center.lat * Math.PI / 180) || 1;
 
     const points = [];
