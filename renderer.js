@@ -4149,6 +4149,12 @@
         featuresLayersVisible = true;
         const map = getMap();
         applyFeaturesVisibility(map);
+        mapUtilityButtons.forEach((utilityBtn) => {
+          if (utilityBtn.dataset.tool === 'features') {
+            utilityBtn.classList.add('is-active');
+            utilityBtn.setAttribute('aria-pressed', 'true');
+          }
+        });
       }
     };
     // Expose for global key handlers
