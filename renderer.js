@@ -288,13 +288,14 @@
       const icon = document.createElement('img');
       icon.className = 'weather-marker__icon';
       icon.alt = '';
-      icon.src = resolveWeatherIcon(entry.code);
+      icon.src = entry.iconUri || resolveWeatherIcon(entry.code);
       const temp = document.createElement('div');
       temp.className = 'weather-marker__temp';
       temp.textContent = `${Math.round(entry.temperature)}°C`;
       el.appendChild(icon);
       el.appendChild(temp);
-      el.title = `${weatherDescription(entry.code)} · ${Math.round(entry.temperature)}°C`;
+      const label = entry.description || weatherDescription(entry.code);
+      el.title = `${label} · ${Math.round(entry.temperature)}°C`;
       try {
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
         weatherMarkers.push(marker);
@@ -319,7 +320,7 @@
       throw new Error(`Google weather ${resp.status}`);
     }
     const data = await resp.json();
-    const conditions = data?.currentConditions;
+    const conditions = data?.currentConditions || data || null;
     if (!conditions) throw new Error('No current conditions');
     let temperature = null;
     let unitLabel = 'CELSIUS';
@@ -328,7 +329,8 @@
       if (typeof tempField === 'number') {
         temperature = tempField;
       } else if (typeof tempField === 'object') {
-        if (tempField.value !== undefined) temperature = tempField.value;
+        if (tempField.degrees !== undefined) temperature = tempField.degrees;
+        else if (tempField.value !== undefined) temperature = tempField.value;
         if (tempField.unit) unitLabel = String(tempField.unit).toUpperCase();
       }
     }
@@ -338,9 +340,11 @@
     } else if (unitLabel === 'KELVIN' || unitLabel === 'KELVINS') {
       temperature = Number(temperature) - 273.15;
     }
-    const codeRaw = conditions.conditionCode;
+    const codeRaw = conditions.weatherCondition?.type || conditions.conditionCode;
     const code = typeof codeRaw === 'string' ? codeRaw.toUpperCase() : '';
-    return { ...point, temperature: Number(temperature), code };
+    const description = conditions.weatherCondition?.description?.text || weatherDescription(code);
+    const iconUri = conditions.weatherCondition?.iconBaseUri || null;
+    return { ...point, temperature: Number(temperature), code, description, iconUri };
   }
 
   function computeWeatherSamplePoints(map) {
