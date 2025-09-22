@@ -113,9 +113,17 @@
           <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
         </div>
         <div id="mapUtilityToolbar" class="map-utility-toolbar" aria-label="Map utilities">
+          <button class="map-utility-btn is-active" type="button" data-tool="features" aria-pressed="true" data-tooltip="Features">
+            <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
+            <span class="visually-hidden">Toggle features</span>
+          </button>
           <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="cloud-sun" data-tooltip="Weather">
             <img src="./assets/icons/regular/cloud-sun.svg" alt="" class="icon" aria-hidden="true" />
             <span class="visually-hidden">Toggle weather overlay</span>
+          </button>
+          <button class="map-utility-btn is-active" type="button" data-tool="trackers" aria-pressed="true" data-tooltip="Trackers">
+            <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
+            <span class="visually-hidden">Toggle trackers</span>
           </button>
         </div>
         <!-- Location inputs panel removed -->

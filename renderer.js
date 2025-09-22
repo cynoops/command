@@ -179,6 +179,10 @@
   let weatherMoveHandler = null;
   let weatherAbortController = null;
   let weatherRefreshTimer = null;
+  let featuresLayersVisible = true;
+  let trackersLayersVisible = true;
+  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-line', 'draw-point-circle', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
+  const TRACKER_LAYER_IDS = ['tracker-dots', 'tracker-labels', 'tracker-paths'];
 
   mapUtilityButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -186,16 +190,38 @@
       btn.classList.toggle('is-active', next);
       btn.setAttribute('aria-pressed', String(next));
       const tool = btn.dataset.tool;
-      if (tool === 'cloud-sun') {
-        if (next) {
-          const ok = enableWeatherOverlay();
-          if (!ok) {
-            btn.classList.remove('is-active');
-            btn.setAttribute('aria-pressed', 'false');
+      const map = getMap();
+      switch (tool) {
+        case 'cloud-sun':
+          if (next) {
+            const ok = enableWeatherOverlay();
+            if (!ok) {
+              btn.classList.remove('is-active');
+              btn.setAttribute('aria-pressed', 'false');
+            }
+          } else {
+            disableWeatherOverlay();
           }
-        } else {
-          disableWeatherOverlay();
-        }
+          break;
+        case 'features':
+          featuresLayersVisible = next;
+          applyFeaturesVisibility(map);
+          if (next) {
+            try { refreshDraw(); } catch (err) { console.error('refreshDraw failed after enabling features', err); }
+          }
+          break;
+        case 'trackers':
+          trackersLayersVisible = next;
+          applyTrackersVisibility(map);
+          if (next) {
+            try {
+              updateTrackerSource();
+              updateTrackerPathSource();
+            } catch (err) { console.error('updateTrackerSource failed after enabling trackers', err); }
+          }
+          break;
+        default:
+          break;
       }
     });
   });
@@ -303,6 +329,32 @@
         weatherMarkers.push(marker);
       } catch (err) {
         console.error('Weather marker failed', err);
+      }
+    });
+  }
+
+  function applyFeaturesVisibility(mapParam) {
+    const map = mapParam || getMap();
+    if (!map) return;
+    const visibility = featuresLayersVisible ? 'visible' : 'none';
+    FEATURE_LAYER_IDS.forEach((layerId) => {
+      try {
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
+      } catch (err) {
+        console.warn('applyFeaturesVisibility failed', layerId, err);
+      }
+    });
+  }
+
+  function applyTrackersVisibility(mapParam) {
+    const map = mapParam || getMap();
+    if (!map) return;
+    const visibility = trackersLayersVisible ? 'visible' : 'none';
+    TRACKER_LAYER_IDS.forEach((layerId) => {
+      try {
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
+      } catch (err) {
+        console.warn('applyTrackersVisibility failed', layerId, err);
       }
     });
   }
@@ -2078,6 +2130,8 @@
       ensureTrackerLayer(map);
       updateTrackerSource();
       updateTrackerPathSource();
+      applyFeaturesVisibility(map);
+      applyTrackersVisibility(map);
     });
     map.on('style.load', () => {
       trackerSourceReady = false;
@@ -2085,6 +2139,7 @@
       ensureTrackerLayer(map);
       updateTrackerSource();
       updateTrackerPathSource();
+      applyTrackersVisibility(map);
     });
     map.on('moveend', () => { syncInputsFromMap(); if (!mapPinned) updatePlaceFromCenter(); });
 
@@ -2262,6 +2317,8 @@
           map.setLayoutProperty('edit-verts','visibility','visible');
           map.setLayoutProperty('edit-mid','visibility','visible');
         }
+        applyFeaturesVisibility(map);
+        applyTrackersVisibility(map);
         if (weatherOverlayActive) scheduleWeatherRefresh();
       } catch {}
     });
