@@ -359,6 +359,18 @@
     });
   }
 
+  const ensureFeaturesVisible = () => {
+    featuresLayersVisible = true;
+    const map = getMap();
+    applyFeaturesVisibility(map);
+    mapUtilityButtons.forEach((btn) => {
+      if (btn.dataset.tool === 'features') {
+        btn.classList.add('is-active');
+        btn.setAttribute('aria-pressed', 'true');
+      }
+    });
+  };
+
   async function fetchGoogleWeather(point, apiKey, signal) {
     const params = new URLSearchParams({
       key: apiKey,
@@ -2493,6 +2505,7 @@
       f.properties = { ...(f.properties||{}), id: newId(), kind };
       if (!f.properties.color) f.properties.color = nextColor();
       notifyFeatureAdded(kind || 'feature');
+      ensureFeaturesVisible();
       return f;
     };
     const circleFrom = (center, edge, steps=64) => {
@@ -4145,17 +4158,7 @@
           break;
         default: break;
       }
-      if (tool && tool !== 'poi') {
-        featuresLayersVisible = true;
-        const map = getMap();
-        applyFeaturesVisibility(map);
-        mapUtilityButtons.forEach((utilityBtn) => {
-          if (utilityBtn.dataset.tool === 'features') {
-            utilityBtn.classList.add('is-active');
-            utilityBtn.setAttribute('aria-pressed', 'true');
-          }
-        });
-      }
+      if (tool && tool !== 'poi') ensureFeaturesVisible();
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
