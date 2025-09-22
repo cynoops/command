@@ -298,7 +298,8 @@
       const icon = document.createElement('img');
       icon.className = 'weather-marker__icon';
       icon.alt = '';
-      icon.src = entry.iconUri || resolveWeatherIcon(entry.code);
+      const iconSrc = entry.iconUri ? `${entry.iconUri}.png` : resolveWeatherIcon(entry.code);
+      icon.src = iconSrc;
       const temp = document.createElement('div');
       temp.className = 'weather-marker__temp';
       temp.textContent = `${Math.round(entry.temperature)}°C`;
