@@ -175,15 +175,10 @@
     HAIL: './assets/icons/regular/cloud-warning.svg'
   };
   let weatherOverlayActive = false;
-  const weatherMarkersMap = new Map();
-  const weatherFetchedKeys = new Set();
-  const weatherPendingKeys = new Set();
+  let weatherMarkers = [];
   let weatherMoveHandler = null;
   let weatherAbortController = null;
   let weatherRefreshTimer = null;
-  let lastWeatherZoom = null;
-  const weatherKeyPrecision = 3;
-  const markerKeyFor = (pt, zoom) => `${Number(zoom || 0).toFixed(1)}:${Number(pt.lat ?? pt.latitude ?? 0).toFixed(weatherKeyPrecision)},${Number(pt.lng ?? pt.longitude ?? pt.lon ?? 0).toFixed(weatherKeyPrecision)}`;
 
   mapUtilityButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -273,25 +268,20 @@
     }
   }
 
-  function clearWeatherMarkers(clearFetched = true) {
-    weatherMarkersMap.forEach(({ marker }) => {
+  function removeWeatherMarkers() {
+    weatherMarkers.forEach((marker) => {
       try { marker.remove(); } catch {}
     });
-    weatherMarkersMap.clear();
-    if (clearFetched) {
-      weatherFetchedKeys.clear();
-      weatherPendingKeys.clear();
-    }
+    weatherMarkers = [];
   }
 
   function renderWeatherMarkers(map, entries) {
+    removeWeatherMarkers();
     if (typeof mapboxgl === 'undefined') {
       console.warn('mapboxgl not available for weather overlay');
       return;
     }
     entries.forEach((entry) => {
-      const key = markerKeyFor(entry, lastWeatherZoom ?? map.getZoom() ?? 0);
-      if (weatherMarkersMap.has(key)) return;
       const el = document.createElement('div');
       el.className = 'weather-marker';
       el.style.pointerEvents = 'none';
@@ -310,7 +300,7 @@
       el.title = `${label} · ${Math.round(entry.temperature)}°C`;
       try {
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
-        weatherMarkersMap.set(key, { marker, entry });
+        weatherMarkers.push(marker);
       } catch (err) {
         console.error('Weather marker failed', err);
       }
@@ -396,29 +386,11 @@
     if (!weatherOverlayActive) return;
     const map = getMap();
     if (!map || (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())) return;
-
-    const currentZoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
-    if (lastWeatherZoom === null) {
-      lastWeatherZoom = currentZoom;
-    }
-
-    if (Math.abs(currentZoom - lastWeatherZoom) >= 0.2) {
-      lastWeatherZoom = currentZoom;
-      clearWeatherMarkers(true);
-    }
-
     const points = computeWeatherSamplePoints(map);
     if (!points.length) {
+      removeWeatherMarkers();
       return;
     }
-    const newPoints = points.filter((pt) => {
-      const key = markerKeyFor(pt, lastWeatherZoom);
-      return !weatherFetchedKeys.has(key) && !weatherPendingKeys.has(key);
-    });
-    if (!newPoints.length) return;
-
-    newPoints.forEach((pt) => weatherPendingKeys.add(markerKeyFor(pt, lastWeatherZoom)));
-
     if (weatherAbortController) {
       try { weatherAbortController.abort(); } catch {}
     }
@@ -431,7 +403,7 @@
         disableWeatherOverlay();
         return;
       }
-      const results = await Promise.all(newPoints.map(async (pt) => {
+      const results = await Promise.all(points.map(async (pt) => {
         try {
           const entry = await fetchGoogleWeather(pt, key, controller.signal);
           return entry;
@@ -442,10 +414,11 @@
         }
       }));
       if (!weatherOverlayActive || weatherAbortController !== controller) return;
-      newPoints.forEach((pt) => weatherPendingKeys.delete(markerKeyFor(pt, lastWeatherZoom)));
       const entries = results.filter(Boolean);
-      if (!entries.length) return;
-      entries.forEach((entry) => weatherFetchedKeys.add(markerKeyFor(entry, lastWeatherZoom)));
+      if (!entries.length) {
+        removeWeatherMarkers();
+        return;
+      }
       renderWeatherMarkers(map, entries);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -478,8 +451,7 @@
       return false;
     }
     weatherOverlayActive = true;
-    lastWeatherZoom = null;
-    clearWeatherMarkers(true);
+    removeWeatherMarkers();
     refreshWeatherOverlay();
     if (!weatherMoveHandler) {
       weatherMoveHandler = () => scheduleWeatherRefresh();
@@ -503,8 +475,7 @@
       try { map.off('moveend', weatherMoveHandler); } catch {}
       weatherMoveHandler = null;
     }
-    clearWeatherMarkers(true);
-    lastWeatherZoom = null;
+    removeWeatherMarkers();
   }
 
   let suppressFeatureToasts = false;
