@@ -351,32 +351,31 @@
     if (!map) return [];
     const bounds = map.getBounds();
     if (!bounds) return [];
-    const zoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
-    let grid = 1;
-    if (zoom >= 10) grid = 3;
-    else if (zoom >= 7) grid = 2;
+    const center = bounds.getCenter();
 
-    if (grid === 1) {
-      const center = bounds.getCenter();
-      return [{ lng: center.lng, lat: center.lat }];
-    }
-
-    const north = bounds.getNorth();
-    const south = bounds.getSouth();
-    let west = bounds.getWest();
     let east = bounds.getEast();
+    let west = bounds.getWest();
     if (east < west) east += 360;
-    const lngStep = (east - west) / (grid + 1);
-    const latStep = (north - south) / (grid + 1);
+    const lngSpan = Math.abs(east - west);
+    const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
+
+    const radiusLat = latSpan > 0 ? Math.max(Math.min(latSpan * 0.35, latSpan / 2), 0.01) : 0.05;
+    const radiusLng = lngSpan > 0 ? Math.max(Math.min(lngSpan * 0.35, lngSpan / 2), 0.01) : 0.05;
+    const cosLat = Math.cos(center.lat * Math.PI / 180) || 1;
+
     const points = [];
-    for (let r = 1; r <= grid; r += 1) {
-      const lat = Math.max(-85, Math.min(85, south + latStep * r));
-      for (let c = 1; c <= grid; c += 1) {
-        let lng = west + lngStep * c;
-        if (lng > 180) lng -= 360;
-        if (lng < -180) lng += 360;
-        points.push({ lng, lat });
-      }
+    const startAngle = -Math.PI / 2;
+    const step = (2 * Math.PI) / 5;
+    for (let i = 0; i < 5; i += 1) {
+      const angle = startAngle + step * i;
+      const latOffset = Math.sin(angle) * radiusLat;
+      const lngOffset = (Math.cos(angle) * radiusLng) / Math.max(cosLat, 0.01);
+      let lat = center.lat + latOffset;
+      let lng = center.lng + lngOffset;
+      if (lng > 180) lng -= 360;
+      if (lng < -180) lng += 360;
+      lat = Math.max(-85, Math.min(85, lat));
+      points.push({ lng, lat });
     }
     return points;
   }
