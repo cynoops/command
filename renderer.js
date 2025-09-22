@@ -4145,6 +4145,11 @@
           break;
         default: break;
       }
+      if (tool && tool !== 'poi') {
+        featuresLayersVisible = true;
+        const map = getMap();
+        applyFeaturesVisibility(map);
+      }
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
