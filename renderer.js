@@ -3,10 +3,379 @@
   const ce = (tag, cls) => { const el = document.createElement(tag); if (cls) el.className = cls; return el; };
   const DEFAULT_HOME_CENTER = [6.3729914, 49.5658574];
   const DEFAULT_MAP_START = [6.13, 49.61];
-  const DEFAULT_STYLE_URL = 'mapbox://styles/mapbox/streets-v12';
+  const DEFAULT_STYLE_URL = 'mapbox://styles/mapbox/outdoors-v12';
   const DEFAULT_START_ZOOM = 12;
   const DEFAULT_SERIAL_BAUD = '115200';
   const DEFAULT_AUTO_RECONNECT = 'on';
+  const DEFAULT_APP_LANGUAGE = 'en';
+  const LANGUAGE_CODES = ['en','de','fr','es','it'];
+  const LANGUAGE_LABELS = {
+    en: { en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian' },
+    de: { en: 'Englisch', de: 'Deutsch', fr: 'Französisch', es: 'Spanisch', it: 'Italienisch' },
+    fr: { en: 'Anglais', de: 'Allemand', fr: 'Français', es: 'Espagnol', it: 'Italien' },
+    es: { en: 'Inglés', de: 'Alemán', fr: 'Francés', es: 'Español', it: 'Italiano' },
+    it: { en: 'Inglese', de: 'Tedesco', fr: 'Francese', es: 'Spagnolo', it: 'Italiano' },
+  };
+  const DRAWING_ICON_PATHS = {
+    edit: './assets/icons/regular/pencil-simple.svg',
+    hide: './assets/icons/regular/eye.svg',
+    show: './assets/icons/regular/eye-slash.svg',
+    ai: './assets/icons/regular/sparkle.svg',
+    delete: './assets/icons/regular/x.svg'
+  };
+  const makeButtonIcon = (src) => {
+    const img = document.createElement('img');
+    img.className = 'icon';
+    img.src = src;
+    img.alt = '';
+    img.setAttribute('aria-hidden', 'true');
+    return img;
+  };
+  const translationState = {
+    data: null,
+    promise: null,
+    language: DEFAULT_APP_LANGUAGE,
+    reverseLookup: new Map()
+  };
+  const ensureTranslationsLoaded = () => {
+    if (translationState.promise) return translationState.promise;
+    translationState.promise = fetch('./translations.json')
+      .then((resp) => (resp && resp.ok) ? resp.json() : null)
+      .then((json) => {
+        if (json && typeof json === 'object') {
+          translationState.data = json;
+          const english = json[DEFAULT_APP_LANGUAGE] || {};
+          const reverse = new Map();
+          Object.entries(english).forEach(([key, value]) => {
+            if (typeof value === 'string' && !reverse.has(value)) reverse.set(value, key);
+          });
+          translationState.reverseLookup = reverse;
+        } else {
+          translationState.data = null;
+          translationState.reverseLookup = new Map();
+        }
+        return translationState.data;
+      })
+      .catch((err) => {
+        console.error('Failed to load translations', err);
+        translationState.data = null;
+        translationState.reverseLookup = new Map();
+        return null;
+      });
+    return translationState.promise;
+  };
+  const t = (key, fallback) => {
+    const lang = translationState.language || DEFAULT_APP_LANGUAGE;
+    const data = translationState.data;
+    if (data && data[lang] && typeof data[lang][key] === 'string') return data[lang][key];
+    if (data && data[DEFAULT_APP_LANGUAGE] && typeof data[DEFAULT_APP_LANGUAGE][key] === 'string') return data[DEFAULT_APP_LANGUAGE][key];
+    return fallback ?? key;
+  };
+  const translateString = (english, keyOverride) => {
+    if (!english) return english;
+    const dataKey = keyOverride || translationState.reverseLookup.get(english);
+    return dataKey ? t(dataKey, english) : english;
+  };
+  const bindText = (el, key, fallback = '') => {
+    if (!el) return;
+    el.dataset.i18n = key;
+    el.textContent = t(key, fallback);
+  };
+  const bindHtml = (el, key, fallback = '') => {
+    if (!el) return;
+    el.dataset.i18nHtml = key;
+    el.innerHTML = t(key, fallback);
+  };
+  const bindAttr = (el, attr, key, fallback = '') => {
+    if (!el) return;
+    const map = {
+      title: 'i18nTitle',
+      'aria-label': 'i18nAriaLabel',
+      'aria-describedby': 'i18nAriaDescribedby',
+      'aria-labelledby': 'i18nAriaLabelledby',
+      placeholder: 'i18nPlaceholder',
+      'data-tooltip': 'i18nDataTooltip'
+    };
+    const dsKey = map[attr];
+    if (!dsKey) return;
+    el.dataset[dsKey] = key;
+    el.setAttribute(attr, t(key, fallback));
+  };
+  const bindTextAuto = (el, key) => bindText(el, key, el?.textContent || '');
+  const bindHtmlAuto = (el, key) => bindHtml(el, key, el?.innerHTML || '');
+  const bindAttrAuto = (el, attr, key) => bindAttr(el, attr, key, el?.getAttribute?.(attr) || '');
+
+  const DEG_TO_RAD = Math.PI / 180;
+  const RAD_TO_DEG = 180 / Math.PI;
+  const clampLatForMercator = (lat) => Math.max(Math.min(lat, 89.999999), -89.999999);
+  const normalizeLongitude = (lng) => {
+    if (!Number.isFinite(lng)) return lng;
+    let value = lng;
+    while (value > 180) value -= 360;
+    while (value < -180) value += 360;
+    return value;
+  };
+  const formatFixed = (value, digits = 6) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
+  let currentCoordinateSystem = 'latlng';
+  const getCentralMeridian = (zoneNumber) => ((zoneNumber - 1) * 6) - 180 + 3;
+  const dmsParts = (value) => {
+    const abs = Math.abs(value);
+    const degrees = Math.floor(abs);
+    const minutesFull = (abs - degrees) * 60;
+    const minutes = Math.floor(minutesFull);
+    const seconds = (minutesFull - minutes) * 60;
+    return { degrees, minutes, seconds };
+  };
+  const formatDmsCoordinate = (lat, lng) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '—';
+    const latCardinal = lat >= 0 ? 'N' : 'S';
+    const lngCardinal = lng >= 0 ? 'E' : 'W';
+    const latParts = dmsParts(lat);
+    const lngParts = dmsParts(lng);
+    const fmt = ({ degrees, minutes, seconds }) => `${degrees}° ${minutes}' ${seconds.toFixed(2)}"`;
+    return `${fmt(latParts)} ${latCardinal}, ${fmt(lngParts)} ${lngCardinal}`;
+  };
+  const getUtmZoneLetter = (lat) => {
+    const letters = 'CDEFGHJKLMNPQRSTUVWX';
+    const clampedLat = Math.max(Math.min(lat, 90), -90);
+    if (clampedLat <= -80) return 'C';
+    if (clampedLat >= 84) return 'X';
+    const idx = Math.floor((clampedLat + 80) / 8);
+    return letters.charAt(Math.max(0, Math.min(idx, letters.length - 1))) || 'X';
+  };
+  const utmFromLatLng = (lat, lng) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const wrappedLng = normalizeLongitude(lng);
+    const a = 6378137.0;
+    const f = 1 / 298.257223563;
+    const k0 = 0.9996;
+    const eSq = f * (2 - f);
+    const ePrimeSq = eSq / (1 - eSq);
+    let zoneNumber = Math.floor((wrappedLng + 180) / 6) + 1;
+    if (lat >= 56.0 && lat < 64.0 && wrappedLng >= 3.0 && wrappedLng < 12.0) zoneNumber = 32;
+    if (lat >= 72.0 && lat < 84.0) {
+      if (wrappedLng >= 0.0 && wrappedLng < 9.0) zoneNumber = 31;
+      else if (wrappedLng >= 9.0 && wrappedLng < 21.0) zoneNumber = 33;
+      else if (wrappedLng >= 21.0 && wrappedLng < 33.0) zoneNumber = 35;
+      else if (wrappedLng >= 33.0 && wrappedLng < 42.0) zoneNumber = 37;
+    }
+    const latRad = lat * DEG_TO_RAD;
+    const lngRad = wrappedLng * DEG_TO_RAD;
+    const lonOrigin = (zoneNumber - 1) * 6 - 180 + 3;
+    const lonOriginRad = lonOrigin * DEG_TO_RAD;
+    const sinLat = Math.sin(latRad);
+    const cosLat = Math.cos(latRad);
+    const tanLat = Math.tan(latRad);
+    const N = a / Math.sqrt(1 - eSq * sinLat * sinLat);
+    const T = tanLat * tanLat;
+    const C = ePrimeSq * cosLat * cosLat;
+    const A = cosLat * (lngRad - lonOriginRad);
+    const e4 = eSq * eSq;
+    const e6 = e4 * eSq;
+    const M = a * ((1 - eSq / 4 - 3 * e4 / 64 - 5 * e6 / 256) * latRad
+      - (3 * eSq / 8 + 3 * e4 / 32 + 45 * e6 / 1024) * Math.sin(2 * latRad)
+      + (15 * e4 / 256 + 45 * e6 / 1024) * Math.sin(4 * latRad)
+      - (35 * e6 / 3072) * Math.sin(6 * latRad));
+    let easting = k0 * N * (A
+      + (1 - T + C) * Math.pow(A, 3) / 6
+      + (5 - 18 * T + T * T + 72 * C - 58 * ePrimeSq) * Math.pow(A, 5) / 120) + 500000;
+    let northing = k0 * (M + N * tanLat * (Math.pow(A, 2) / 2
+      + (5 - T + 9 * C + 4 * C * C) * Math.pow(A, 4) / 24
+      + (61 - 58 * T + T * T + 600 * C - 330 * ePrimeSq) * Math.pow(A, 6) / 720));
+    const hemisphere = lat >= 0 ? 'N' : 'S';
+    if (lat < 0) northing += 10000000;
+    return {
+      zoneNumber,
+      hemisphere,
+      zoneLetter: getUtmZoneLetter(lat),
+      easting,
+      northing
+    };
+  };
+  const parseUtmZoneInput = (value) => {
+    const text = String(value ?? '').trim().toUpperCase();
+    if (!text) return null;
+    const match = text.match(/^(\d{1,2})([C-HJ-NP-X])$/);
+    if (!match) return null;
+    const zoneNumber = Number(match[1]);
+    const zoneLetter = match[2];
+    if (!Number.isFinite(zoneNumber) || zoneNumber < 1 || zoneNumber > 60) return null;
+    return { zoneNumber, zoneLetter };
+  };
+  const latLngFromUtm = ({ zoneNumber, zoneLetter, easting, northing }) => {
+    if (!Number.isFinite(zoneNumber) || zoneNumber < 1 || zoneNumber > 60) return null;
+    if (!Number.isFinite(easting) || !Number.isFinite(northing)) return null;
+    const letter = typeof zoneLetter === 'string' ? zoneLetter.toUpperCase() : '';
+    if (!/[C-HJ-NP-X]/.test(letter)) return null;
+    const a = 6378137.0;
+    const f = 1 / 298.257223563;
+    const k0 = 0.9996;
+    const eSq = f * (2 - f);
+    const ePrimeSq = eSq / (1 - eSq);
+    const eccSquared = eSq;
+    const eccPrimeSquared = ePrimeSq;
+    const e1 = (1 - Math.sqrt(1 - eccSquared)) / (1 + Math.sqrt(1 - eccSquared));
+    const x = easting - 500000.0;
+    let y = northing;
+    const northernHemisphere = letter >= 'N';
+    if (!northernHemisphere) y -= 10000000.0;
+    const M = y / k0;
+    const mu = M / (a * (1 - eccSquared / 4 - (3 * eccSquared * eccSquared) / 64 - (5 * eccSquared * eccSquared * eccSquared) / 256));
+    const sinMu = Math.sin(mu);
+    const sin2Mu = Math.sin(2 * mu);
+    const sin4Mu = Math.sin(4 * mu);
+    const sin6Mu = Math.sin(6 * mu);
+    const sin8Mu = Math.sin(8 * mu);
+    const phi1Rad = mu
+      + (3 * e1 / 2 - 27 * Math.pow(e1, 3) / 32) * sin2Mu
+      + (21 * e1 * e1 / 16 - 55 * Math.pow(e1, 4) / 32) * sin4Mu
+      + (151 * Math.pow(e1, 3) / 96) * sin6Mu
+      + (1097 * Math.pow(e1, 4) / 512) * sin8Mu;
+    const sinPhi1 = Math.sin(phi1Rad);
+    const cosPhi1 = Math.cos(phi1Rad);
+    const tanPhi1 = Math.tan(phi1Rad);
+    const N1 = a / Math.sqrt(1 - eccSquared * sinPhi1 * sinPhi1);
+    const T1 = tanPhi1 * tanPhi1;
+    const C1 = eccPrimeSquared * cosPhi1 * cosPhi1;
+    const R1 = a * (1 - eccSquared) / Math.pow(1 - eccSquared * sinPhi1 * sinPhi1, 1.5);
+    const D = x / (N1 * k0);
+    let lat = phi1Rad - (N1 * tanPhi1 / R1) * (Math.pow(D, 2) / 2
+      - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * eccPrimeSquared) * Math.pow(D, 4) / 24
+      + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * eccPrimeSquared - 3 * C1 * C1) * Math.pow(D, 6) / 720);
+    lat *= RAD_TO_DEG;
+    let lon = (D - (1 + 2 * T1 + C1) * Math.pow(D, 3) / 6
+      + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * eccPrimeSquared + 24 * T1 * T1) * Math.pow(D, 5) / 120) / cosPhi1;
+    const lonOrigin = (zoneNumber - 1) * 6 - 180 + 3;
+    lon = lonOrigin + lon * RAD_TO_DEG;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lng: lon };
+  };
+  const webMercatorFromLatLng = (lat, lng) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const clampedLat = clampLatForMercator(lat);
+    const rMajor = 6378137.0;
+    const x = rMajor * (lng * DEG_TO_RAD);
+    const y = rMajor * Math.log(Math.tan(Math.PI / 4 + (clampedLat * DEG_TO_RAD) / 2));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  };
+  const gaussKruegerFromLatLng = (lat, lng) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const wrappedLng = normalizeLongitude(lng);
+    const zoneNumber = Math.floor((wrappedLng + 1.5) / 3) + 1;
+    const lonOrigin = zoneNumber * 3;
+    const a = 6378137.0;
+    const f = 1 / 298.257223563;
+    const eSq = f * (2 - f);
+    const ePrimeSq = eSq / (1 - eSq);
+    const latRad = lat * DEG_TO_RAD;
+    const lngRad = wrappedLng * DEG_TO_RAD;
+    const lonOriginRad = lonOrigin * DEG_TO_RAD;
+    const sinLat = Math.sin(latRad);
+    const cosLat = Math.cos(latRad);
+    const tanLat = Math.tan(latRad);
+    const N = a / Math.sqrt(1 - eSq * sinLat * sinLat);
+    const T = tanLat * tanLat;
+    const C = ePrimeSq * cosLat * cosLat;
+    const A = cosLat * (lngRad - lonOriginRad);
+    const e4 = eSq * eSq;
+    const e6 = e4 * eSq;
+    const M = a * ((1 - eSq / 4 - 3 * e4 / 64 - 5 * e6 / 256) * latRad
+      - (3 * eSq / 8 + 3 * e4 / 32 + 45 * e6 / 1024) * Math.sin(2 * latRad)
+      + (15 * e4 / 256 + 45 * e6 / 1024) * Math.sin(4 * latRad)
+      - (35 * e6 / 3072) * Math.sin(6 * latRad));
+    const x = N * (A + (1 - T + C) * Math.pow(A, 3) / 6 + (5 - 18 * T + T * T + 72 * C - 58 * ePrimeSq) * Math.pow(A, 5) / 120);
+    const y = M + N * tanLat * (Math.pow(A, 2) / 2 + (5 - T + 9 * C + 4 * C * C) * Math.pow(A, 4) / 24 + (61 - 58 * T + T * T + 600 * C - 330 * ePrimeSq) * Math.pow(A, 6) / 720);
+    const easting = zoneNumber * 1_000_000 + x;
+    const northing = y;
+    return { zoneNumber, easting, northing };
+  };
+  const latLngFromGaussKrueger = ({ zoneNumber, easting, northing }) => {
+    if (!Number.isFinite(zoneNumber) || zoneNumber < 1 || zoneNumber > 60) return null;
+    if (!Number.isFinite(easting) || !Number.isFinite(northing)) return null;
+    const a = 6378137.0;
+    const f = 1 / 298.257223563;
+    const eSq = f * (2 - f);
+    const ePrimeSq = eSq / (1 - eSq);
+    const e1 = (1 - Math.sqrt(1 - eSq)) / (1 + Math.sqrt(1 - eSq));
+    const x = easting - zoneNumber * 1_000_000;
+    const y = northing;
+    const M = y;
+    const mu = M / (a * (1 - eSq / 4 - 3 * Math.pow(eSq, 2) / 64 - 5 * Math.pow(eSq, 3) / 256));
+    const sinMu = Math.sin(mu);
+    const sin2Mu = Math.sin(2 * mu);
+    const sin4Mu = Math.sin(4 * mu);
+    const sin6Mu = Math.sin(6 * mu);
+    const sin8Mu = Math.sin(8 * mu);
+    const phi1Rad = mu
+      + (3 * e1 / 2 - 27 * Math.pow(e1, 3) / 32) * sin2Mu
+      + (21 * e1 * e1 / 16 - 55 * Math.pow(e1, 4) / 32) * sin4Mu
+      + (151 * Math.pow(e1, 3) / 96) * sin6Mu
+      + (1097 * Math.pow(e1, 4) / 512) * sin8Mu;
+    const sinPhi1 = Math.sin(phi1Rad);
+    const cosPhi1 = Math.cos(phi1Rad);
+    const tanPhi1 = Math.tan(phi1Rad);
+    const N1 = a / Math.sqrt(1 - eSq * sinPhi1 * sinPhi1);
+    const T1 = tanPhi1 * tanPhi1;
+    const C1 = ePrimeSq * cosPhi1 * cosPhi1;
+    const R1 = a * (1 - eSq) / Math.pow(1 - eSq * sinPhi1 * sinPhi1, 1.5);
+    const D = x / N1;
+    let lat = phi1Rad - (N1 * tanPhi1 / R1) * (Math.pow(D, 2) / 2
+      - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ePrimeSq) * Math.pow(D, 4) / 24
+      + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ePrimeSq - 3 * C1 * C1) * Math.pow(D, 6) / 720);
+    lat *= RAD_TO_DEG;
+    let lon = (D - (1 + 2 * T1 + C1) * Math.pow(D, 3) / 6
+      + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ePrimeSq + 24 * T1 * T1) * Math.pow(D, 5) / 120) / cosPhi1;
+    const lonOrigin = zoneNumber * 3;
+    lon = lonOrigin + lon * RAD_TO_DEG;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lng: lon };
+  };
+
+  let refreshCoordModalContent = null;
+
+  const applyTranslations = () => {
+    if (!translationState.data) return;
+    try {
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const key = el.dataset.i18n;
+        if (!key) return;
+        el.textContent = t(key, el.textContent);
+      });
+      document.querySelectorAll('[data-i18n-html]').forEach((el) => {
+        const key = el.dataset.i18nHtml;
+        if (!key) return;
+        el.innerHTML = t(key, el.innerHTML);
+      });
+      const attrBindings = [
+        { selector: '[data-i18n-title]', attr: 'title', ds: 'i18nTitle' },
+        { selector: '[data-i18n-aria-label]', attr: 'aria-label', ds: 'i18nAriaLabel' },
+        { selector: '[data-i18n-aria-describedby]', attr: 'aria-describedby', ds: 'i18nAriaDescribedby' },
+        { selector: '[data-i18n-aria-labelledby]', attr: 'aria-labelledby', ds: 'i18nAriaLabelledby' },
+        { selector: '[data-i18n-placeholder]', attr: 'placeholder', ds: 'i18nPlaceholder' },
+        { selector: '[data-i18n-data-tooltip]', attr: 'data-tooltip', ds: 'i18nDataTooltip' }
+      ];
+      attrBindings.forEach(({ selector, attr, ds }) => {
+        document.querySelectorAll(selector).forEach((el) => {
+          const key = el.dataset[ds];
+          if (!key) return;
+          const translated = t(key, el.getAttribute(attr));
+          if (typeof translated === 'string') el.setAttribute(attr, translated);
+        });
+      });
+      if (typeof refreshCoordModalContent === 'function') {
+        try { refreshCoordModalContent(); }
+        catch (err) { console.error('refreshCoordModalContent failed', err); }
+      }
+      if (shortcutsList) {
+        try { renderShortcutsList(); }
+        catch (err) { console.error('renderShortcutsList failed', err); }
+      }
+      // Update elements that rely on translateString fallback (e.g., dynamic text) by re-triggering manual updates if needed.
+    } catch (err) {
+      console.error('applyTranslations error', err);
+    }
+  };
   const TRACKERS_PANEL_WIDTH = 320;
   const TRACKERS_RECORD_ICON = './assets/icons/regular/record.svg';
   const TRACKERS_PAUSE_ICON = './assets/icons/regular/pause.svg';
@@ -19,7 +388,6 @@
   const statLayer = q('#statLayer');
 
   const serialConnectBtn = q('#serialConnectBtn');
-  const serialConnectLabel = serialConnectBtn?.querySelector('.serial-label');
   const serialStatusDot = q('#serialStatusDot');
   const statSerial = q('#statSerial');
   const statRxRate = q('#statRxRate');
@@ -44,6 +412,9 @@
   const serialFloatToggle = q('#serialFloatToggle');
   // New serial monitor modal
   const serialMonitorBtn = q('#serialMonitorBtn');
+  const languageDropdown = q('#languageDropdown');
+  const languageToggle = q('#languageToggle');
+  const languageMenu = q('#languageMenu');
   const serialMonitorModal = q('#serialMonitorModal');
   const serialMonitorClose = q('#serialMonitorClose');
   const serialMonitorBody = q('#serialMonitorBody');
@@ -58,12 +429,19 @@
   const toolLine = q('#toolLine');
   const toolArrow = q('#toolArrow');
   const toolPOI = q('#toolPOI');
+  const toolWeather = q('#toolWeather');
+  const toolCrosshair = q('#toolCrosshair');
+  const toolShortcuts = q('#toolShortcuts');
   const mapUtilityToolbar = q('#mapUtilityToolbar');
   const mapUtilityButtons = mapUtilityToolbar ? Array.from(mapUtilityToolbar.querySelectorAll('.map-utility-btn')) : [];
+  const weatherUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'cloud-sun');
+  const satelliteUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'satellite');
+  const mapCrosshair = q('#mapCrosshair');
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
   const drawingsList = q('#drawingsList');
   const featuresActions = q('#featuresActions');
+  const featuresLabelsToggle = q('#featuresLabelsToggle');
   const featuresActionsToggleBtn = q('#featuresActionsToggle');
   const featuresActionsMenu = q('#featuresActionsMenu');
   const featuresSaveBtn = q('#featuresSaveBtn');
@@ -75,11 +453,13 @@
   const coordPlace = q('#coordPlace');
   const coordPin = q('#coordPin');
   const toolPin = q('#toolPin');
+  const settingLanguage = q('#settingLanguage');
   const settingHomeAddress = q('#settingHomeAddress');
   const settingAccessToken = q('#settingAccessToken');
   const settingGoogleKey = q('#settingGoogleKey');
   const settingOpenAIKey = q('#settingOpenAIKey');
   const settingStyleUrl = q('#settingStyleUrl');
+  const settingSatelliteStyleUrl = q('#settingSatelliteStyleUrl');
   const settingStartLng = q('#settingStartLng');
   const settingStartLat = q('#settingStartLat');
   const settingStartZoom = q('#settingStartZoom');
@@ -91,11 +471,399 @@
   const defaultAccessToken = settingAccessToken?.defaultValue || '';
   const defaultGoogleKey = settingGoogleKey?.defaultValue || '';
   const defaultOpenAIKey = settingOpenAIKey?.defaultValue || '';
+  const DEFAULT_SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/standard-satellite';
+  let satelliteStyleActive = localStorage.getItem('map.satelliteEnabled') === '1';
   const defaultStyleUrl = settingStyleUrl?.defaultValue || DEFAULT_STYLE_URL;
+  const defaultSatelliteStyleUrl = settingSatelliteStyleUrl?.defaultValue || DEFAULT_SATELLITE_STYLE_URL;
+  let defaultAppLanguage = DEFAULT_APP_LANGUAGE;
   const defaultHomeAddress = settingHomeAddress?.defaultValue || '';
   const defaultStartLng = Number(settingStartLng?.defaultValue || DEFAULT_MAP_START[0]);
   const defaultStartLat = Number(settingStartLat?.defaultValue || DEFAULT_MAP_START[1]);
   const defaultStartZoom = Number(settingStartZoom?.defaultValue || DEFAULT_START_ZOOM);
+  const allowedAppLanguages = new Set(LANGUAGE_CODES);
+  const normalizeAppLanguage = (value) => {
+    const key = String(value ?? '').toLowerCase();
+    return allowedAppLanguages.has(key) ? key : DEFAULT_APP_LANGUAGE;
+  };
+  let weatherOverlayActive = false;
+  const TOOL_CURSOR_SET = new Set(['rect', 'poly', 'circle', 'line', 'arrow', 'poi', 'weather', 'crosshair']);
+  const AI_PRESET_MAP = {
+    Point: [
+      'Move POI {VALUE} meters north',
+      'Move POI {VALUE} meters east',
+      'Move POI {VALUE} meters south',
+      'Move POI {VALUE} meters west',
+      'Create three POIs spaced {VALUE} meters north, east, south, and west of the current location.',
+    ],
+    LineString: [
+      'Extend this line by {VALUE} meters following its current bearing.',
+      'Create a parallel line {VALUE} meters to the {DIRECTION} of this line.',
+      'Split the line into segments every {VALUE} meters.',
+    ],
+    Polygon: [
+      'Divide this polygon into {VALUE} equal-area quadrants.',
+      'Create a {VALUE} meter outward buffer around this polygon.',
+      'Place a POI at each corner of this polygon.'
+    ]
+  };
+  const getMap = () => (window)._map;
+  const updateMapCursor = () => {
+    const map = getMap();
+    const canvas = map?.getCanvas?.();
+    const container = map?.getCanvasContainer?.();
+    const tool = (window)._currentTool;
+    const shouldCrosshair = TOOL_CURSOR_SET.has(tool) || weatherOverlayActive;
+    if (canvas) {
+      canvas.classList.toggle('cursor-crosshair', shouldCrosshair);
+      if (shouldCrosshair) {
+        try { canvas.style.setProperty('cursor', 'crosshair', 'important'); }
+        catch {}
+      } else {
+        try { canvas.style.removeProperty('cursor'); }
+        catch {}
+      }
+    }
+    if (container) {
+      container.classList.toggle('cursor-crosshair', shouldCrosshair);
+      if (shouldCrosshair) {
+        try { container.style.setProperty('cursor', 'crosshair', 'important'); }
+        catch {}
+      } else {
+        try { container.style.removeProperty('cursor'); }
+        catch {}
+      }
+    }
+  };
+  const getBaseMapStyleUrl = () => {
+    const stored = localStorage.getItem('map.styleUrl');
+    const fallback = defaultStyleUrl || DEFAULT_STYLE_URL;
+    const value = (typeof stored === 'string' && stored.trim()) ? stored.trim() : (fallback || DEFAULT_STYLE_URL);
+    return value || DEFAULT_STYLE_URL;
+  };
+  const populateAiPresetOptions = (geometryType) => {
+    if (!aiPresetSelect) return;
+    const presets = AI_PRESET_MAP[geometryType] || [];
+    aiPresetSelect.innerHTML = '';
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = presets.length ? 'Custom instruction' : 'No presets available for this geometry';
+    aiPresetSelect.appendChild(defaultOption);
+    presets.forEach((text) => {
+      const option = document.createElement('option');
+      option.value = text;
+      option.textContent = text;
+      aiPresetSelect.appendChild(option);
+    });
+    aiPresetSelect.disabled = presets.length === 0;
+    aiPresetSelect.value = '';
+    updateAiDynamicFields('');
+  };
+  const updateAiDynamicFields = (presetValue) => {
+    const needsValue = typeof presetValue === 'string' && presetValue.includes('{VALUE}');
+    const needsDirection = typeof presetValue === 'string' && presetValue.includes('{DIRECTION}');
+    if (aiValueField) {
+      aiValueField.hidden = !needsValue;
+      if (!needsValue && aiValueInput) aiValueInput.value = '';
+    }
+    if (aiDirectionField) {
+      aiDirectionField.hidden = !needsDirection;
+      if (!needsDirection && aiDirectionSelect) aiDirectionSelect.value = 'north';
+    }
+  };
+  const getSatelliteMapStyleUrl = () => {
+    const stored = localStorage.getItem('map.satelliteStyleUrl');
+    const fallback = defaultSatelliteStyleUrl || DEFAULT_SATELLITE_STYLE_URL;
+    const value = (typeof stored === 'string' && stored.trim()) ? stored.trim() : (fallback || DEFAULT_SATELLITE_STYLE_URL);
+    return value || DEFAULT_SATELLITE_STYLE_URL;
+  };
+  const getTargetMapStyleUrl = () => (satelliteStyleActive ? getSatelliteMapStyleUrl() : getBaseMapStyleUrl());
+  function applyMapStyle(styleUrl) {
+    if (!styleUrl) return;
+    const map = getMap();
+    if (!map) return;
+    const target = styleUrl.trim();
+    if (!target) return;
+    if ((window)._lastStyleUrl === target) return;
+    try {
+      (window)._lastStyleUrl = target;
+      map.setStyle(target, { diff: false });
+    } catch (err) {
+      console.error('Failed to apply map style', err);
+    }
+  }
+  const applyCurrentMapStyle = () => {
+    const style = getTargetMapStyleUrl();
+    if (style) applyMapStyle(style);
+  };
+  const setWeatherButtonState = (active) => {
+    if (!weatherUtilityBtn) return;
+    weatherUtilityBtn.classList.toggle('is-active', !!active);
+    weatherUtilityBtn.setAttribute('aria-pressed', String(!!active));
+  };
+  const setSatelliteButtonState = (active) => {
+    if (!satelliteUtilityBtn) return;
+    satelliteUtilityBtn.classList.toggle('is-active', !!active);
+    satelliteUtilityBtn.setAttribute('aria-pressed', String(!!active));
+  };
+  setSatelliteButtonState(satelliteStyleActive);
+  const getLanguageLabels = (lang) => LANGUAGE_LABELS[lang] || LANGUAGE_LABELS[DEFAULT_APP_LANGUAGE];
+  const populateLanguageOptions = (activeLanguage) => {
+    if (!settingLanguage) return;
+    const lang = normalizeAppLanguage(activeLanguage || settingLanguage.value || defaultAppLanguage);
+    const labels = getLanguageLabels(lang);
+    const fallbackLabels = getLanguageLabels(DEFAULT_APP_LANGUAGE);
+    const fragment = document.createDocumentFragment();
+    LANGUAGE_CODES.forEach((code) => {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = labels[code] || fallbackLabels[code] || code.toUpperCase();
+      if (code === lang) option.selected = true;
+      fragment.appendChild(option);
+    });
+    settingLanguage.textContent = '';
+    settingLanguage.appendChild(fragment);
+  };
+  const applyLanguagePreference = (value) => {
+    const lang = normalizeAppLanguage(value);
+    translationState.language = lang;
+    try { document.documentElement?.setAttribute('lang', lang); } catch {}
+    ensureTranslationsLoaded().then(() => {
+      if (languageMenu) {
+        languageMenu.querySelectorAll('.lang-menu-item').forEach((item) => {
+          item.classList.toggle('is-active', item.dataset.lang === lang);
+        });
+      }
+      applyTranslations();
+    }).catch(() => {});
+    try {
+      const maybePromise = window.settings?.setLanguage?.(lang);
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.catch((err) => {
+          console.warn('setLanguage invoke failed', err);
+        });
+      }
+    } catch (err) {
+      console.warn('setLanguage dispatch failed', err);
+    }
+  };
+  const labelOf = (input) => input?.closest('label')?.querySelector('.label');
+  const helpOf = (input) => input?.closest('label')?.querySelector('.label-help');
+
+  const bindStaticTranslations = () => {
+    bindTextAuto(tabMapLabel, 'nav.map');
+    bindTextAuto(tabSettingsLabel, 'nav.settings');
+
+    const toolbarBindings = [
+      [toolSearch, 'toolbar.search'],
+      [toolGoTo, 'toolbar.goto'],
+      [toolZoomIn, 'toolbar.zoomIn'],
+      [toolZoomOut, 'toolbar.zoomOut'],
+      [toolResetView, 'toolbar.resetView'],
+      [toolPin, 'toolbar.pin'],
+      [toolRect, 'toolbar.drawRectangle'],
+      [toolPoly, 'toolbar.drawPolygon'],
+      [toolCircle, 'toolbar.drawCircle'],
+      [toolLine, 'toolbar.drawLine'],
+      [toolArrow, 'toolbar.drawArrow'],
+      [toolPOI, 'toolbar.addPoi'],
+      [toolWeather, 'map.utilities.weather'],
+      [toolCrosshair, 'toolbar.showCoordinates'],
+      [toolShortcuts, 'toolbar.shortcuts']
+    ];
+    toolbarBindings.forEach(([btn, key]) => {
+      bindAttrAuto(btn, 'title', key);
+      bindAttrAuto(btn, 'aria-label', key);
+      bindAttrAuto(btn, 'data-tooltip', key);
+    });
+
+    bindAttrAuto(serialConnectBtn, 'title', 'serial.connectAria');
+    bindAttrAuto(serialConnectBtn, 'aria-label', 'serial.connectAria');
+    bindAttrAuto(serialMonitorBtn, 'title', 'serial.openMonitorAria');
+    bindAttrAuto(serialMonitorBtn, 'aria-label', 'serial.openMonitorAria');
+    bindAttrAuto(fullscreenBtn, 'title', 'toolbar.fullscreen');
+    bindAttrAuto(fullscreenBtn, 'aria-label', 'toolbar.fullscreen');
+    bindAttrAuto(coordClose, 'title', 'common.close');
+    bindAttrAuto(coordClose, 'aria-label', 'common.close');
+    if (coordProvider) {
+      coordProvider.querySelectorAll('option').forEach((option) => {
+        const key = option.dataset.i18n;
+        if (key) bindTextAuto(option, key);
+      });
+    }
+    bindTextAuto(coordOpenProvider, 'coordModal.openInBrowser');
+
+    if (languageToggle) {
+      bindAttrAuto(languageToggle, 'title', 'settings.appLanguage');
+      bindAttrAuto(languageToggle, 'aria-label', 'settings.appLanguage');
+    }
+
+    bindTextAuto(document.getElementById('mapWelcomeTitle'), 'map.welcomeTitle');
+    bindHtmlAuto(document.getElementById('mapWelcomeDesc'), 'map.welcomeIntro');
+    const welcomeSteps = mapWelcome?.querySelectorAll('.map-welcome-todo li');
+    if (welcomeSteps?.[0]) bindHtmlAuto(welcomeSteps[0], 'map.welcomeStep1');
+    if (welcomeSteps?.[1]) bindTextAuto(welcomeSteps[1], 'map.welcomeStep2');
+    if (welcomeSteps?.[2]) bindHtmlAuto(welcomeSteps[2], 'map.welcomeStep3');
+    bindTextAuto(mapWelcomeSettings, 'map.welcomeAction');
+
+    bindAttrAuto(mapUtilityToolbar, 'aria-label', 'map.utilities');
+
+    const featuresUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'features');
+    if (featuresUtilityBtn) {
+      bindAttrAuto(featuresUtilityBtn, 'data-tooltip', 'map.utilities.features');
+      bindAttrAuto(featuresUtilityBtn, 'aria-label', 'map.utilities.toggleFeatures');
+      bindTextAuto(featuresUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleFeatures');
+    }
+    if (weatherUtilityBtn) {
+      bindAttrAuto(weatherUtilityBtn, 'data-tooltip', 'map.utilities.weather');
+      bindAttrAuto(weatherUtilityBtn, 'aria-label', 'map.utilities.toggleWeather');
+      bindTextAuto(weatherUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleWeather');
+    }
+    if (satelliteUtilityBtn) {
+      bindAttrAuto(satelliteUtilityBtn, 'data-tooltip', 'map.utilities.satellite');
+      bindAttrAuto(satelliteUtilityBtn, 'aria-label', 'map.utilities.toggleSatellite');
+      bindTextAuto(satelliteUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleSatellite');
+    }
+    const trackersUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'trackers');
+    if (trackersUtilityBtn) {
+      bindAttrAuto(trackersUtilityBtn, 'data-tooltip', 'map.utilities.trackers');
+      bindAttrAuto(trackersUtilityBtn, 'aria-label', 'map.utilities.toggleTrackers');
+      bindTextAuto(trackersUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleTrackers');
+    }
+
+    bindAttrAuto(featuresSidebar, 'aria-label', 'sidebar.featuresTitle');
+    bindTextAuto(featuresSidebar?.querySelector('.features-title'), 'sidebar.featuresTitle');
+    bindAttrAuto(featuresCollapse, 'title', 'sidebar.featuresHide');
+    bindAttrAuto(featuresCollapse, 'aria-label', 'sidebar.featuresHide');
+    const featuresToggleLabel = featuresToggleBtn?.querySelector('.sidebar-toggle-label');
+    const featuresToggleHidden = featuresToggleBtn?.querySelector('.visually-hidden');
+    bindTextAuto(featuresToggleLabel, 'sidebar.featuresToggleLabel');
+    bindTextAuto(featuresToggleHidden, 'sidebar.featuresShow');
+    bindAttrAuto(featuresActionsToggleBtn, 'aria-label', 'features.menu.open');
+    bindTextAuto(featuresActionsToggleBtn?.querySelector('.visually-hidden'), 'features.menu.open');
+    bindTextAuto(featuresSaveBtn?.querySelector('span'), 'features.menu.save');
+    bindTextAuto(featuresLoadBtn?.querySelector('span'), 'features.menu.load');
+    bindTextAuto(featuresClearBtn?.querySelector('span'), 'features.menu.clear');
+    bindAttrAuto(featuresResizer, 'title', 'sidebar.dragResize');
+
+    bindAttrAuto(trackersSidebar, 'aria-label', 'sidebar.trackersTitle');
+    bindTextAuto(trackersSidebar?.querySelector('.trackers-title'), 'sidebar.trackersTitle');
+    bindAttrAuto(trackersCollapse, 'title', 'sidebar.trackersHide');
+    bindAttrAuto(trackersCollapse, 'aria-label', 'sidebar.trackersHide');
+    const trackersToggleLabel = trackersToggleBtn?.querySelector('.sidebar-toggle-label');
+    const trackersToggleHidden = trackersToggleBtn?.querySelector('.visually-hidden');
+    bindTextAuto(trackersToggleLabel, 'sidebar.trackersToggleLabel');
+    bindTextAuto(trackersToggleHidden, 'sidebar.trackersShow');
+    bindTextAuto(trackersEmpty?.querySelector('div'), 'trackers.empty');
+    bindTextAuto(trackersConnectBtn?.querySelector('span'), 'trackers.connect');
+    bindTextAuto(trackersWaiting?.querySelector('span:last-child'), 'trackers.waiting');
+    bindTextAuto(document.getElementById('trackersRecordText'), 'trackers.record');
+    bindTextAuto(trackersMenuToggle?.querySelector('.visually-hidden'), 'trackers.openMenu');
+    bindTextAuto(trackersSaveBtn?.querySelector('span'), 'trackers.save');
+    bindTextAuto(trackersOpenBtn?.querySelector('span'), 'trackers.open');
+
+    bindTextAuto(document.querySelector('.settings-panel h2'), 'settings.title');
+    const settingsGroupHeadings = document.querySelectorAll('.settings-group h3');
+    if (settingsGroupHeadings?.[0]) bindTextAuto(settingsGroupHeadings[0], 'settings.section.general');
+    if (settingsGroupHeadings?.[1]) bindTextAuto(settingsGroupHeadings[1], 'settings.section.apiKeys');
+    if (settingsGroupHeadings?.[2]) bindTextAuto(settingsGroupHeadings[2], 'settings.section.map');
+    if (settingsGroupHeadings?.[3]) bindTextAuto(settingsGroupHeadings[3], 'settings.section.serial');
+
+    bindText(labelOf(settingLanguage), 'settings.appLanguage', labelOf(settingLanguage)?.textContent || 'App Language');
+    bindText(labelOf(settingAccessToken), 'settings.mapboxToken', labelOf(settingAccessToken)?.textContent || 'Mapbox Access Token');
+    const accessTokenHelp = helpOf(settingAccessToken);
+    bindAttr(accessTokenHelp, 'aria-label', 'settings.mapboxToken.help', accessTokenHelp?.getAttribute('aria-label') || '');
+    bindAttr(accessTokenHelp, 'data-tooltip', 'settings.mapboxToken.help', accessTokenHelp?.getAttribute('data-tooltip') || '');
+    bindText(labelOf(settingGoogleKey), 'settings.googleKey', labelOf(settingGoogleKey)?.textContent || 'Google Maps API Key');
+    const googleHelp = helpOf(settingGoogleKey);
+    bindAttr(googleHelp, 'aria-label', 'settings.googleKey.help', googleHelp?.getAttribute('aria-label') || '');
+    bindAttr(googleHelp, 'data-tooltip', 'settings.googleKey.help', googleHelp?.getAttribute('data-tooltip') || '');
+    bindText(labelOf(settingOpenAIKey), 'settings.openaiKey', labelOf(settingOpenAIKey)?.textContent || 'OpenAI API Key');
+    const openaiHelp = helpOf(settingOpenAIKey);
+    bindAttr(openaiHelp, 'aria-label', 'settings.openaiKey.help', openaiHelp?.getAttribute('aria-label') || '');
+    bindAttr(openaiHelp, 'data-tooltip', 'settings.openaiKey.help', openaiHelp?.getAttribute('data-tooltip') || '');
+    bindText(labelOf(settingStyleUrl), 'settings.mapStyleUrl', labelOf(settingStyleUrl)?.textContent || 'Map Style URL');
+    bindText(labelOf(settingSatelliteStyleUrl), 'settings.satelliteStyleUrl', labelOf(settingSatelliteStyleUrl)?.textContent || 'Satellite Map Style URL');
+    bindText(labelOf(settingHomeAddress), 'settings.homeAddress', labelOf(settingHomeAddress)?.textContent || 'Home Address');
+    bindText(labelOf(settingStartLat), 'settings.startLatitude', labelOf(settingStartLat)?.textContent || 'Start Latitude');
+    bindText(labelOf(settingStartLng), 'settings.startLongitude', labelOf(settingStartLng)?.textContent || 'Start Longitude');
+    bindText(labelOf(settingStartZoom), 'settings.startZoom', labelOf(settingStartZoom)?.textContent || 'Start Zoom');
+    bindText(labelOf(settingBaud), 'settings.serialBaud', labelOf(settingBaud)?.textContent || 'Serial Baud Rate');
+    bindText(labelOf(settingAutoReconnect), 'settings.autoReconnect', labelOf(settingAutoReconnect)?.textContent || 'Auto-reconnect Serial');
+    const autoReconnectOff = settingAutoReconnect?.querySelector('option[value="off"]');
+    const autoReconnectOn = settingAutoReconnect?.querySelector('option[value="on"]');
+    bindTextAuto(autoReconnectOff, 'settings.autoReconnect.off');
+    bindTextAuto(autoReconnectOn, 'settings.autoReconnect.on');
+    bindTextAuto(settingsSaveBtn, 'settings.save');
+
+    bindTextAuto(document.getElementById('connectTitle'), 'connectModal.title');
+    bindAttrAuto(connectClose, 'title', 'common.close');
+    bindAttrAuto(portsContainer, 'aria-label', 'connectModal.availablePorts');
+    bindText(connectBaud?.closest('label')?.querySelector('.label'), 'connectModal.baud', connectBaud?.closest('label')?.querySelector('.label')?.textContent || 'Baud');
+    bindTextAuto(refreshPorts, 'connectModal.refresh');
+    bindTextAuto(connectBtnAction, 'connectModal.connect');
+
+    bindTextAuto(document.getElementById('searchTitle'), 'searchModal.title');
+    bindAttrAuto(searchClose, 'title', 'common.close');
+    bindText(labelOf(searchQuery), 'searchModal.address', labelOf(searchQuery)?.textContent || 'Address');
+    bindAttrAuto(searchQuery, 'placeholder', 'searchModal.placeholder');
+    bindAttrAuto(searchResults, 'aria-label', 'searchModal.results');
+
+    bindTextAuto(document.getElementById('gotoTitle'), 'gotoModal.title');
+    bindAttrAuto(gotoClose, 'title', 'common.close');
+    bindText(labelOf(gotoLat), 'gotoModal.latitude', labelOf(gotoLat)?.textContent || 'Latitude');
+    bindAttrAuto(gotoLat, 'placeholder', 'gotoModal.placeholderLat');
+    bindText(labelOf(gotoLng), 'gotoModal.longitude', labelOf(gotoLng)?.textContent || 'Longitude');
+    bindAttrAuto(gotoLng, 'placeholder', 'gotoModal.placeholderLng');
+    const gotoUtmZoneLabel = labelOf(gotoUtmZone);
+    if (gotoUtmZoneLabel) bindText(gotoUtmZoneLabel, 'gotoModal.utmZone', gotoUtmZoneLabel.textContent || 'UTM Zone');
+    bindAttrAuto(gotoUtmZone, 'placeholder', 'gotoModal.placeholderUtmZone');
+    const gotoUtmEastingLabel = labelOf(gotoUtmEasting);
+    if (gotoUtmEastingLabel) bindText(gotoUtmEastingLabel, 'gotoModal.utmEasting', gotoUtmEastingLabel.textContent || 'Easting (mE)');
+    bindAttrAuto(gotoUtmEasting, 'placeholder', 'gotoModal.placeholderUtmEasting');
+    const gotoUtmNorthingLabel = labelOf(gotoUtmNorthing);
+    if (gotoUtmNorthingLabel) bindText(gotoUtmNorthingLabel, 'gotoModal.utmNorthing', gotoUtmNorthingLabel.textContent || 'Northing (mN)');
+    bindAttrAuto(gotoUtmNorthing, 'placeholder', 'gotoModal.placeholderUtmNorthing');
+    const gotoGkZoneLabel = labelOf(gotoGkZone);
+    if (gotoGkZoneLabel) bindText(gotoGkZoneLabel, 'gotoModal.gkZone', gotoGkZoneLabel.textContent || 'GK Zone');
+    bindAttrAuto(gotoGkZone, 'placeholder', 'gotoModal.placeholderGkZone');
+    const gotoGkEastingLabel = labelOf(gotoGkEasting);
+    if (gotoGkEastingLabel) bindText(gotoGkEastingLabel, 'gotoModal.gkEasting', gotoGkEastingLabel.textContent || 'Easting (m)');
+    bindAttrAuto(gotoGkEasting, 'placeholder', 'gotoModal.placeholderGkEasting');
+    const gotoGkNorthingLabel = labelOf(gotoGkNorthing);
+    if (gotoGkNorthingLabel) bindText(gotoGkNorthingLabel, 'gotoModal.gkNorthing', gotoGkNorthingLabel.textContent || 'Northing (m)');
+    bindAttrAuto(gotoGkNorthing, 'placeholder', 'gotoModal.placeholderGkNorthing');
+    const gotoAddPoiLabel = document.getElementById('gotoAddPoiLabel');
+    bindTextAuto(gotoAddPoiLabel, 'gotoModal.addPoi');
+    bindText(labelOf(gotoPoiName), 'gotoModal.poiName', labelOf(gotoPoiName)?.textContent || 'POI name');
+    bindAttrAuto(gotoPoiName, 'placeholder', 'gotoModal.poiPlaceholder');
+    bindTextAuto(gotoSubmit, 'gotoModal.go');
+
+    bindTextAuto(document.getElementById('shortcutsTitle'), 'shortcutsModal.title');
+    bindAttrAuto(shortcutsClose, 'title', 'common.close');
+
+    bindTextAuto(document.getElementById('colorTitle'), 'colorModal.title');
+    bindAttrAuto(colorClose, 'title', 'common.close');
+    bindAttrAuto(document.getElementById('colorGrid'), 'aria-label', 'colorModal.colors');
+
+    bindTextAuto(document.getElementById('aiTitle'), 'aiModal.title');
+    bindAttrAuto(aiClose, 'title', 'common.close');
+    bindText(labelOf(document.getElementById('aiInput')), 'aiModal.instruction', labelOf(document.getElementById('aiInput'))?.textContent || 'Instruction');
+    bindAttrAuto(document.getElementById('aiInput'), 'placeholder', 'aiModal.placeholder');
+    bindTextAuto(document.getElementById('aiSubmit'), 'aiModal.submit');
+
+    bindTextAuto(document.getElementById('serialMonTitle'), 'serialMonitor.title');
+    bindAttrAuto(serialMonitorClose, 'title', 'common.close');
+    bindTextAuto(serialMonitorModal?.querySelector('.modal-row .muted'), 'serialMonitor.connected');
+    bindTextAuto(serialMonitorClearBtn, 'serialMonitor.clear');
+    bindTextAuto(serialDisconnectBtn, 'serialMonitor.disconnect');
+
+    if (footerStatLabels?.[1]) bindTextAuto(footerStatLabels[1], 'footer.zoom');
+    if (footerStatLabels?.[2]) bindTextAuto(footerStatLabels[2], 'footer.bearing');
+    if (footerStatLabels?.[3]) bindTextAuto(footerStatLabels[3], 'footer.pitch');
+    if (footerStatLabels?.[4]) bindTextAuto(footerStatLabels[4], 'footer.address');
+    applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
+  };
+
   const coordToggle = q('#coordToggle');
   const searchModal = q('#searchModal');
   const searchClose = q('#searchClose');
@@ -106,10 +874,23 @@
   const gotoClose = q('#gotoClose');
   const gotoLng = q('#gotoLng');
   const gotoLat = q('#gotoLat');
+  const gotoFieldsLatLng = q('#gotoFieldsLatLng');
+  const gotoFieldsUTM = q('#gotoFieldsUTM');
+  const gotoFieldsGK = q('#gotoFieldsGK');
+  const gotoUtmZone = q('#gotoUtmZone');
+  const gotoUtmEasting = q('#gotoUtmEasting');
+  const gotoUtmNorthing = q('#gotoUtmNorthing');
+  const gotoGkZone = q('#gotoGkZone');
+  const gotoGkEasting = q('#gotoGkEasting');
+  const gotoGkNorthing = q('#gotoGkNorthing');
   const gotoAddPoi = q('#gotoAddPoi');
   const gotoSubmit = q('#gotoSubmit');
   const gotoPoiNameField = q('#gotoPoiNameField');
   const gotoPoiName = q('#gotoPoiName');
+  const shortcutsModal = q('#shortcutsModal');
+  const shortcutsClose = q('#shortcutsClose');
+  const shortcutsList = q('#shortcutsList');
+  if (shortcutsModal) shortcutsModal.setAttribute('aria-hidden', 'true');
   // Sidebar elements
   const featuresSidebar = q('#featuresSidebar');
   const featuresResizer = q('#featuresResizer');
@@ -146,12 +927,415 @@
   const aiSubmit = q('#aiSubmit');
   const aiError = q('#aiError');
   const aiSpinner = q('#aiSpinner');
+  const aiPresetSelect = q('#aiPreset');
+  const aiModifiersInput = q('#aiModifiers');
+  const aiReplaceCheckbox = q('#aiReplaceOriginal');
+  const aiValueField = q('#aiValueField');
+  const aiValueInput = q('#aiValueInput');
+  const aiDirectionField = q('#aiDirectionField');
+  const aiDirectionSelect = q('#aiDirectionSelect');
   let aiTarget = null;
   const toastContainer = q('#toastContainer');
+  const coordModal = q('#coordModal');
+  const coordClose = q('#coordClose');
+  const coordList = q('#coordList');
+  const coordProvider = q('#coordProvider');
+  const coordOpenProvider = q('#coordOpenProvider');
+  const footerStatLabels = document.querySelectorAll('.app-footer .stat .k');
+  const statCenterLabel = footerStatLabels?.[0] || null;
+
+  const getFooterLabelKeyForSystem = (system) => {
+    switch ((system || '').toLowerCase()) {
+      case 'utm':
+        return 'footer.utm';
+      case 'gk':
+        return 'footer.gk';
+      default:
+        return 'footer.latLong';
+    }
+  };
+  const applyFooterCoordLabel = (labelKey) => {
+    if (!statCenterLabel) return;
+    statCenterLabel.dataset.i18n = labelKey;
+    let fallback = 'Lat/Long';
+    if (labelKey === 'footer.utm') fallback = 'UTM';
+    else if (labelKey === 'footer.gk') fallback = 'GK';
+    statCenterLabel.textContent = t(labelKey, fallback);
+  };
+  const formatUtmFooterValue = (lat, lng) => {
+    const utm = utmFromLatLng(lat, lng);
+    if (!utm) return null;
+    const eastingVal = Math.round(utm.easting);
+    const northingVal = Math.round(utm.northing);
+    return `${utm.zoneNumber}${utm.zoneLetter} ${eastingVal} mE ${northingVal} mN`;
+  };
+  const formatGkFooterValue = (lat, lng) => {
+    const gk = gaussKruegerFromLatLng(lat, lng);
+    if (!gk) return null;
+    const eastingVal = Math.round(gk.easting);
+    const northingVal = Math.round(gk.northing);
+    return `GK${gk.zoneNumber} ${eastingVal} mE ${northingVal} mN`;
+  };
+  const getFooterCenterDisplay = (lat, lng) => {
+    switch ((currentCoordinateSystem || '').toLowerCase()) {
+      case 'utm': {
+        const utmText = formatUtmFooterValue(lat, lng);
+        return { labelKey: 'footer.utm', text: utmText || '—' };
+      }
+      case 'gk': {
+        const gkText = formatGkFooterValue(lat, lng);
+        return { labelKey: 'footer.gk', text: gkText || '—' };
+      }
+      default:
+        return { labelKey: 'footer.latLong', text: `${formatFixed(lat, 5)}, ${formatFixed(lng, 5)}` };
+    }
+  };
+  const updateFooterCenterDisplay = (lat, lng) => {
+    const display = getFooterCenterDisplay(lat, lng);
+    applyFooterCoordLabel(display.labelKey);
+    if (statCenter) statCenter.textContent = display.text;
+  };
+
+  if (aiPresetSelect) {
+    aiPresetSelect.addEventListener('change', () => {
+      const selected = aiPresetSelect.value || '';
+      updateAiDynamicFields(selected);
+    });
+  }
+
+  const crosshairState = {
+    active: false,
+    lastFocus: null,
+    lastPoint: null
+  };
+  const buildMapUrl = (service, { lng, lat }) => {
+    const precision = 6;
+    const latStr = Number.isFinite(lat) ? lat.toFixed(precision) : null;
+    const lngStr = Number.isFinite(lng) ? lng.toFixed(precision) : null;
+    if (!latStr || !lngStr) return null;
+    switch (service) {
+      case 'google-maps':
+        return `https://www.google.com/maps/@${latStr},${lngStr},17z`;
+      case 'openstreetmap':
+        return `https://www.openstreetmap.org/?mlat=${latStr}&mlon=${lngStr}#map=17/${latStr}/${lngStr}`;
+      case 'bing':
+        return `https://www.bing.com/maps?cp=${latStr}~${lngStr}&lvl=17`;
+      case 'arcgis':
+        return `https://www.arcgis.com/home/webmap/viewer.html?center=${lngStr},${latStr}&zoom=15`;
+      default:
+        return null;
+    }
+  };
+  const coordinateIconPath = './assets/icons/regular/copy-simple.svg';
+  const shortcutDefinitions = [
+    { key: '1', labelKey: 'shortcuts.drawRectangle', fallback: 'Draw rectangle' },
+    { key: '2', labelKey: 'shortcuts.drawPolygon', fallback: 'Draw polygon' },
+    { key: '3', labelKey: 'shortcuts.drawCircle', fallback: 'Draw circle' },
+    { key: '4', labelKey: 'shortcuts.drawPolyline', fallback: 'Draw polyline' },
+    { key: '5', labelKey: 'shortcuts.drawArrow', fallback: 'Draw arrow' },
+    { key: '6', labelKey: 'shortcuts.addPoi', fallback: 'Add POI' },
+    { key: '7', labelKey: 'shortcuts.weather', fallback: 'Weather' },
+    { key: '8', labelKey: 'shortcuts.showCoordinates', fallback: 'Show coordinates' },
+    { key: '↑', labelKey: 'shortcuts.panUp', fallback: 'Pan map up' },
+    { key: '↓', labelKey: 'shortcuts.panDown', fallback: 'Pan map down' },
+    { key: '←', labelKey: 'shortcuts.panLeft', fallback: 'Pan map left' },
+    { key: '→', labelKey: 'shortcuts.panRight', fallback: 'Pan map right' },
+    { key: 'S', labelKey: 'shortcuts.search', fallback: 'Search address' },
+    { key: 'C', labelKey: 'shortcuts.goto', fallback: 'Go to coordinate' },
+    { key: '+', labelKey: 'shortcuts.zoomIn', fallback: 'Zoom in' },
+    { key: '-', labelKey: 'shortcuts.zoomOut', fallback: 'Zoom out' },
+    { key: 'F', labelKey: 'shortcuts.featuresPanel', fallback: 'Toggle features panel' },
+    { key: 'T', labelKey: 'shortcuts.trackersPanel', fallback: 'Toggle trackers panel' },
+    { key: 'Shift + S', labelKey: 'shortcuts.serialConnect', fallback: 'Open serial connection' },
+    { key: 'M', labelKey: 'shortcuts.serialMonitor', fallback: 'Open serial monitor' }
+  ];
+  const renderShortcutsList = () => {
+    if (!shortcutsList) return;
+    shortcutsList.textContent = '';
+    shortcutDefinitions.forEach((shortcut) => {
+      const row = document.createElement('div');
+      row.className = 'shortcut-item';
+      row.setAttribute('role', 'listitem');
+      const keyCell = document.createElement('div');
+      keyCell.className = 'shortcut-key';
+      keyCell.textContent = shortcut.key;
+      const descriptionCell = document.createElement('div');
+      descriptionCell.className = 'shortcut-description';
+      descriptionCell.textContent = t(shortcut.labelKey, shortcut.fallback);
+      row.appendChild(keyCell);
+      row.appendChild(descriptionCell);
+      shortcutsList.appendChild(row);
+    });
+  };
+  const MAPBOX_STYLE_URL_RE = /^mapbox:\/\/styles\/([^/]+)\/([^/?#]+)/i;
+  const buildMapboxStyleCheckUrl = (styleUrl, token) => {
+    if (!token || typeof styleUrl !== 'string') return null;
+    const match = MAPBOX_STYLE_URL_RE.exec(styleUrl);
+    if (!match) return null;
+    const user = match[1];
+    const styleId = match[2];
+    if (!user || !styleId) return null;
+    return `https://api.mapbox.com/styles/v1/${user}/${styleId}?access_token=${encodeURIComponent(token)}`;
+  };
+  const validateMapboxStyleUrl = async (styleUrl, token) => {
+    const url = buildMapboxStyleCheckUrl(styleUrl, token);
+    if (!url) return true;
+    try {
+      const resp = await fetch(url, { method: 'GET' });
+      return !!(resp && resp.ok);
+    } catch (err) {
+      console.warn('validateMapboxStyleUrl failed', err);
+      return false;
+    }
+  };
+  const buildCoordEntries = (lng, lat) => {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return [];
+    const entries = [];
+    const latFixed = formatFixed(lat, 6);
+    const lngFixed = formatFixed(lng, 6);
+    entries.push({
+      id: 'wgs84-dec',
+      labelKey: 'coordModal.wgs84Decimal',
+      fallbackLabel: 'WGS84 (decimal degrees)',
+      value: `${latFixed}°, ${lngFixed}°`,
+      copy: `${latFixed}, ${lngFixed}`
+    });
+    const dmsValue = formatDmsCoordinate(lat, lng);
+    entries.push({
+      id: 'wgs84-dms',
+      labelKey: 'coordModal.wgs84Dms',
+      fallbackLabel: 'WGS84 (DMS)',
+      value: dmsValue,
+      copy: dmsValue
+    });
+    const utm = utmFromLatLng(lat, lng);
+    if (utm) {
+      const eastingVal = Math.round(utm.easting);
+      const northingVal = Math.round(utm.northing);
+      const utmString = `${utm.zoneNumber}${utm.zoneLetter} ${eastingVal} mE ${northingVal} mN`;
+      entries.push({
+        id: 'utm',
+        labelKey: 'coordModal.utm',
+        fallbackLabel: 'UTM',
+        value: utmString,
+        copy: utmString
+      });
+    }
+    const mercator = webMercatorFromLatLng(lat, lng);
+    if (mercator) {
+      const mercatorValue = `${mercator.x.toFixed(2)} mE, ${mercator.y.toFixed(2)} mN`;
+      entries.push({
+        id: 'web-mercator',
+        labelKey: 'coordModal.webMercator',
+        fallbackLabel: 'Web Mercator (EPSG:3857)',
+        value: mercatorValue,
+        copy: `${mercator.x}, ${mercator.y}`
+      });
+    }
+    return entries;
+  };
+  const renderCoordRowsInternal = (lng, lat) => {
+    if (!coordList) return;
+    coordList.textContent = '';
+    const entries = buildCoordEntries(lng, lat);
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = t('coordModal.unavailable', 'Unable to compute coordinates for this location.');
+      coordList.appendChild(empty);
+      return;
+    }
+    entries.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'coord-row';
+      const info = document.createElement('div');
+      const labelEl = document.createElement('div');
+      labelEl.className = 'coord-label';
+      labelEl.textContent = t(entry.labelKey, entry.fallbackLabel);
+      const valueEl = document.createElement('div');
+      valueEl.className = 'coord-value';
+      valueEl.textContent = entry.value;
+      info.appendChild(labelEl);
+      info.appendChild(valueEl);
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'coord-copy';
+      const copyLabel = t('coordModal.copy', 'Copy');
+      const entryLabel = labelEl.textContent || entry.fallbackLabel;
+      copyBtn.title = copyLabel;
+      copyBtn.setAttribute('aria-label', `${copyLabel} ${entryLabel}`.trim());
+      const icon = document.createElement('img');
+      icon.className = 'icon';
+      icon.src = coordinateIconPath;
+      icon.alt = '';
+      icon.setAttribute('aria-hidden', 'true');
+      copyBtn.appendChild(icon);
+      const sr = document.createElement('span');
+      sr.className = 'visually-hidden';
+      sr.textContent = `${copyLabel} ${entryLabel}`.trim();
+      copyBtn.appendChild(sr);
+      copyBtn.addEventListener('click', async () => {
+        try {
+          const text = entry.copy ?? entry.value;
+          const ok = await writeToClipboard(text);
+          if (!ok) throw new Error('clipboard unavailable');
+          showToast(t('coordModal.copied', 'Copied!'));
+        } catch (err) {
+          console.error('Copy coordinate failed', err);
+          showToast(t('messages.copyFailed', 'Copy failed'), 'error');
+        }
+      });
+      row.appendChild(info);
+      row.appendChild(copyBtn);
+      coordList.appendChild(row);
+    });
+  };
+  const refreshCoordContent = () => {
+    if (!coordModal || coordModal.hidden) return;
+    if (!crosshairState.lastPoint) return;
+    renderCoordRowsInternal(crosshairState.lastPoint.lng, crosshairState.lastPoint.lat);
+  };
+  refreshCoordModalContent = refreshCoordContent;
+  const openCoordModal = () => {
+    if (!coordModal) return;
+    if (!coordModal.hidden) { refreshCoordContent(); return; }
+    crosshairState.lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    coordModal.hidden = false;
+    coordModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      try {
+        const firstBtn = coordModal.querySelector('.coord-copy');
+        if (firstBtn instanceof HTMLElement) firstBtn.focus();
+      } catch {}
+    }, 0);
+  };
+  const closeCoordModal = () => {
+    if (!coordModal || coordModal.hidden) return;
+    coordModal.hidden = true;
+    coordModal.setAttribute('aria-hidden', 'true');
+    const target = crosshairState.lastFocus;
+    crosshairState.lastFocus = null;
+    if (target && typeof target.focus === 'function') {
+      setTimeout(() => {
+        try { target.focus(); } catch {}
+      }, 0);
+    }
+  };
+  const showCoordinatesDialog = (lng, lat) => {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    crosshairState.lastPoint = { lng, lat };
+    renderCoordRowsInternal(lng, lat);
+    openCoordModal();
+  };
+  const openExternalMap = (service) => {
+    if (!crosshairState.lastPoint) return;
+    const url = buildMapUrl(service, crosshairState.lastPoint);
+    if (!url) return;
+    let handled = false;
+    try {
+      if (window.electronAPI?.openExternal) {
+        const maybePromise = window.electronAPI.openExternal(url);
+        handled = true;
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          maybePromise.catch((err) => console.error('openExternal failed', err));
+        }
+      }
+    } catch (err) {
+      console.error('openExternal threw', err);
+    }
+    if (!handled) {
+      try {
+        const win = window.open('', '_blank');
+        if (!win) throw new Error('window.open returned null');
+        win.opener = null;
+        win.location.href = url;
+      } catch (err) {
+        console.error('window.open failed', err);
+      }
+    }
+  };
+  const setCrosshairMode = (active) => {
+    crosshairState.active = !!active;
+    if (mapCrosshair) {
+      mapCrosshair.hidden = false;
+      mapCrosshair.setAttribute('aria-hidden', String(false));
+    }
+    if (active) {
+      crosshairState.lastPoint = null;
+      if (coordList) coordList.textContent = '';
+    }
+    if (!active && coordModal && !coordModal.hidden) {
+      closeCoordModal();
+    }
+    updateMapCursor();
+  };
+
+  coordClose?.addEventListener('click', () => closeCoordModal());
+  coordModal?.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.dataset?.action === 'close') {
+      closeCoordModal();
+    }
+  });
+  coordModal?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeCoordModal();
+      event.stopPropagation();
+    }
+  });
+  coordOpenProvider?.addEventListener('click', () => {
+    const value = coordProvider?.value || 'google-maps';
+    openExternalMap(value);
+  });
+
+
+  bindStaticTranslations();
+  defaultAppLanguage = normalizeAppLanguage(settingLanguage?.value || defaultAppLanguage);
+  translationState.language = defaultAppLanguage;
+  populateLanguageOptions(defaultAppLanguage);
+  ensureTranslationsLoaded().then(() => applyTranslations()).catch(() => {});
 
   const toastIcons = {
     success: './assets/icons/regular/check-circle.svg',
     error: './assets/icons/regular/x-circle.svg',
+  };
+  if (languageToggle && languageMenu) {
+    languageToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleLanguageMenu(languageMenu.hidden);
+    });
+    languageMenu.querySelectorAll('.lang-menu-item').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const lang = btn.dataset.lang;
+        handleLanguageSelect(lang);
+      });
+    });
+    document.addEventListener('click', (e) => {
+      if (!languageDropdown || !languageMenu || languageMenu.hidden) return;
+      const target = e.target;
+      if (target instanceof Node && languageDropdown.contains(target)) return;
+      toggleLanguageMenu(false);
+    });
+  }
+  const toggleLanguageMenu = (show) => {
+    if (!languageDropdown || !languageMenu || !languageToggle) return;
+    const next = typeof show === 'boolean' ? show : languageMenu.hidden;
+    languageMenu.hidden = !next;
+    languageToggle.setAttribute('aria-expanded', String(next));
+    languageDropdown.classList.toggle('is-open', next);
+  };
+
+  const handleLanguageSelect = (lang) => {
+    const normalized = normalizeAppLanguage(lang);
+    if (!normalized) return;
+    if (settingLanguage) {
+      settingLanguage.value = normalized;
+      populateLanguageOptions(normalized);
+    }
+    try { localStorage.setItem('app.language', normalized); } catch {}
+    applyLanguagePreference(normalized);
+    toggleLanguageMenu(false);
   };
   const weatherIconPaths = {
     CLEAR_DAY: './assets/icons/regular/sun.svg',
@@ -174,15 +1358,42 @@
     THUNDERSTORM: './assets/icons/regular/cloud-lightning.svg',
     HAIL: './assets/icons/regular/cloud-warning.svg'
   };
-  let weatherOverlayActive = false;
-  let weatherMarkers = [];
+  let weatherOverlayMarkers = [];
+  let weatherManualMarkers = [];
   let weatherMoveHandler = null;
   let weatherAbortController = null;
   let weatherRefreshTimer = null;
+  const WEATHER_REFRESH_DELAY_MS = 1000;
   let featuresLayersVisible = true;
+  let featureLabelsVisible = true;
   let trackersLayersVisible = true;
-  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
+  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-fill-outline', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-line-start-inner', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
+  const LABEL_LAYER_IDS = ['draw-labels-polygon', 'draw-labels-line-name', 'draw-labels-line-length'];
   const TRACKER_LAYER_IDS = ['tracker-dots', 'tracker-labels', 'tracker-paths'];
+
+  const ensureTriangleMarkerImage = (map) => {
+    try {
+      if (!map || typeof map.hasImage !== 'function' || map.hasImage('triangle-15')) return;
+      const size = 32;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(size / 2, size * 0.15);
+      ctx.lineTo(size * 0.85, size * 0.85);
+      ctx.lineTo(size * 0.15, size * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      const imageData = ctx.getImageData(0, 0, size, size);
+      map.addImage('triangle-15', imageData, { pixelRatio: 2 });
+    } catch (err) {
+      console.warn('Failed adding fallback triangle image', err);
+    }
+  };
 
   mapUtilityButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -196,12 +1407,20 @@
           if (next) {
             const ok = enableWeatherOverlay();
             if (!ok) {
-              btn.classList.remove('is-active');
-              btn.setAttribute('aria-pressed', 'false');
+              setWeatherButtonState(false);
+            } else {
+              setWeatherButtonState(true);
             }
           } else {
             disableWeatherOverlay();
+            setWeatherButtonState(false);
           }
+          break;
+        case 'satellite':
+          satelliteStyleActive = next;
+          localStorage.setItem('map.satelliteEnabled', satelliteStyleActive ? '1' : '0');
+          setSatelliteButtonState(satelliteStyleActive);
+          applyCurrentMapStyle();
           break;
         case 'features':
           featuresLayersVisible = next;
@@ -223,6 +1442,7 @@
         default:
           break;
       }
+      updateMapCursor();
     });
   });
 
@@ -294,44 +1514,105 @@
     }
   }
 
-  function removeWeatherMarkers() {
-    weatherMarkers.forEach((marker) => {
+  const removeMarkersFromList = (list) => {
+    list.forEach((marker) => {
       try { marker.remove(); } catch {}
     });
-    weatherMarkers = [];
+    return [];
+  };
+
+  function clearWeatherOverlayMarkers() {
+    weatherOverlayMarkers = removeMarkersFromList(weatherOverlayMarkers);
   }
 
-  function renderWeatherMarkers(map, entries) {
-    removeWeatherMarkers();
+  function clearManualWeatherMarkers() {
+    weatherManualMarkers = removeMarkersFromList(weatherManualMarkers);
+  }
+
+  function removeAllWeatherMarkers() {
+    clearWeatherOverlayMarkers();
+    clearManualWeatherMarkers();
+  }
+
+  function attachWeatherMarkerInteractions(marker, listRef) {
+    try {
+      const el = marker.getElement();
+      if (!el) return;
+      el.style.pointerEvents = 'auto';
+      el.addEventListener('click', (ev) => {
+        if ((window)._currentTool !== 'weather') return;
+        ev.stopPropagation();
+        try { marker.remove(); } catch {}
+        const idx = listRef.indexOf(marker);
+        if (idx >= 0) listRef.splice(idx, 1);
+      });
+    } catch (err) {
+      console.error('Failed binding weather marker interaction', err);
+    }
+  }
+
+  function createWeatherMarker(map, entry) {
+    const el = document.createElement('div');
+    el.className = 'weather-marker';
+    el.style.pointerEvents = 'auto';
+    el.style.opacity = '0.6';
+    const icon = document.createElement('img');
+    icon.className = 'weather-marker__icon';
+    icon.alt = '';
+    const iconSrc = entry.iconUri ? `${entry.iconUri}.png` : resolveWeatherIcon(entry.code);
+    icon.src = iconSrc;
+    const temp = document.createElement('div');
+    temp.className = 'weather-marker__temp';
+    temp.textContent = `${Math.round(entry.temperature)}°C`;
+    el.appendChild(icon);
+    el.appendChild(temp);
+    const label = entry.description || weatherDescription(entry.code);
+    el.title = `${label} · ${Math.round(entry.temperature)}°C`;
+    return new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
+  }
+
+  function renderWeatherOverlayMarkers(map, entries) {
+    clearWeatherOverlayMarkers();
     if (typeof mapboxgl === 'undefined') {
       console.warn('mapboxgl not available for weather overlay');
       return;
     }
     entries.forEach((entry) => {
-      const el = document.createElement('div');
-      el.className = 'weather-marker';
-      el.style.pointerEvents = 'none';
-      el.style.opacity = '0.6';
-      const icon = document.createElement('img');
-      icon.className = 'weather-marker__icon';
-      icon.alt = '';
-      const iconSrc = entry.iconUri ? `${entry.iconUri}.png` : resolveWeatherIcon(entry.code);
-      icon.src = iconSrc;
-      const temp = document.createElement('div');
-      temp.className = 'weather-marker__temp';
-      temp.textContent = `${Math.round(entry.temperature)}°C`;
-      el.appendChild(icon);
-      el.appendChild(temp);
-      const label = entry.description || weatherDescription(entry.code);
-      el.title = `${label} · ${Math.round(entry.temperature)}°C`;
       try {
-        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
-        weatherMarkers.push(marker);
+        const marker = createWeatherMarker(map, entry);
+        attachWeatherMarkerInteractions(marker, weatherOverlayMarkers);
+        weatherOverlayMarkers.push(marker);
       } catch (err) {
         console.error('Weather marker failed', err);
       }
     });
   }
+
+  let buildFeatureLabelFeatures = () => [];
+  let updateFeatureLabels = () => {};
+
+  function applyLabelVisibility(mapParam) {
+    const map = mapParam || getMap();
+    if (!map) return;
+    const visibility = (featuresLayersVisible && featureLabelsVisible) ? 'visible' : 'none';
+    LABEL_LAYER_IDS.forEach((layerId) => {
+      try {
+        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
+      } catch (err) {
+        console.warn('applyLabelVisibility failed', layerId, err);
+      }
+    });
+  }
+
+  const setFeatureLabelsToggleState = (active) => {
+    featureLabelsVisible = !!active;
+    if (featuresLabelsToggle) {
+      featuresLabelsToggle.classList.toggle('is-active', featureLabelsVisible);
+      featuresLabelsToggle.setAttribute('aria-pressed', String(featureLabelsVisible));
+    }
+    if (featureLabelsVisible) updateFeatureLabels();
+    applyLabelVisibility();
+  };
 
   function applyFeaturesVisibility(mapParam) {
     const map = mapParam || getMap();
@@ -344,6 +1625,7 @@
         console.warn('applyFeaturesVisibility failed', layerId, err);
       }
     });
+    applyLabelVisibility(map);
   }
 
   function applyTrackersVisibility(mapParam) {
@@ -418,76 +1700,78 @@
     const bounds = map.getBounds();
     if (!bounds) return [];
     const center = bounds.getCenter();
+    const centerPoint = map.project(center);
+    const canvas = map.getCanvas?.();
+    const width = Number(canvas?.clientWidth || canvas?.width || 1024);
+    const height = Number(canvas?.clientHeight || canvas?.height || 768);
+    if (!centerPoint || !Number.isFinite(centerPoint.x) || !Number.isFinite(centerPoint.y)) {
+      return [center];
+    }
 
+    const base = Math.max(60, Math.min(width, height) * 0.12);
+    const pitch = typeof map.getPitch === 'function' ? Number(map.getPitch()) : 0;
+    const clampedPitch = Math.max(0, Math.min(85, Number.isFinite(pitch) ? pitch : 0));
+    const pitchScale = 1 + (clampedPitch / 60) * 1.4;
+
+    const forwardBias = base * pitchScale;
+    const lateral = base * 0.85;
+    const backward = base * 0.6;
+
+    const offsets = [
+      { dx: 0, dy: -forwardBias },
+      { dx: lateral, dy: -base * 0.4 },
+      { dx: -lateral, dy: -base * 0.4 },
+      { dx: lateral * 0.9, dy: backward },
+      { dx: -lateral * 0.9, dy: backward }
+    ];
+
+    const points = offsets.map(({ dx, dy }) => {
+      const screenPoint = { x: centerPoint.x + dx, y: centerPoint.y + dy };
+      try {
+        const lngLat = map.unproject(screenPoint);
+        if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return null;
+        const lat = Math.max(-85, Math.min(85, lngLat.lat));
+        let { lng } = lngLat;
+        if (lng > 180) lng -= 360;
+        if (lng < -180) lng += 360;
+        return { lng, lat };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
+    if (points.length) return points;
+
+    const north = bounds.getNorth();
+    const south = bounds.getSouth();
     let east = bounds.getEast();
     let west = bounds.getWest();
     if (east < west) east += 360;
+    const latSpan = Math.abs(north - south);
     const lngSpan = Math.abs(east - west);
-    const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth());
-
-    const radiusLat = latSpan > 0 ? Math.max(Math.min(latSpan * 0.3, latSpan / 2), 0.01) : 0.05;
-    const radiusLng = lngSpan > 0 ? Math.max(Math.min(lngSpan * 0.25, lngSpan / 2.5), 0.01) : 0.05;
-    const cosLat = Math.cos(center.lat * Math.PI / 180) || 1;
-
-    const points = [];
-    const startAngle = -Math.PI / 2;
-    const step = (2 * Math.PI) / 5;
-    for (let i = 0; i < 5; i += 1) {
-      const angle = startAngle + step * i;
-      const latOffset = Math.sin(angle) * radiusLat;
-      const lngOffset = (Math.cos(angle) * radiusLng) / Math.max(cosLat, 0.01);
-      let lat = center.lat + latOffset;
-      let lng = center.lng + lngOffset;
-      if (lng > 180) lng -= 360;
-      if (lng < -180) lng += 360;
-      lat = Math.max(-85, Math.min(85, lat));
-      points.push({ lng, lat });
-    }
-    return points;
+    const fallbackRadiusLat = Math.max(0.01, latSpan * 0.15);
+    const fallbackRadiusLng = Math.max(0.01, lngSpan * 0.12);
+    const clampLat = (lat) => Math.max(-85, Math.min(85, lat));
+    const wrapLng = (lng) => {
+      if (lng > 180) return lng - 360;
+      if (lng < -180) return lng + 360;
+      return lng;
+    };
+    return [
+      { lng: wrapLng(center.lng), lat: clampLat(center.lat + fallbackRadiusLat) },
+      { lng: wrapLng(center.lng), lat: clampLat(center.lat - fallbackRadiusLat) },
+      { lng: wrapLng(center.lng + fallbackRadiusLng), lat: clampLat(center.lat) },
+      { lng: wrapLng(center.lng - fallbackRadiusLng), lat: clampLat(center.lat) }
+    ];
   }
 
   async function refreshWeatherOverlay() {
     if (!weatherOverlayActive) return;
-    const map = getMap();
-    if (!map || (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())) return;
-    const points = computeWeatherSamplePoints(map);
-    if (!points.length) {
-      removeWeatherMarkers();
-      return;
-    }
     if (weatherAbortController) {
       try { weatherAbortController.abort(); } catch {}
+      weatherAbortController = null;
     }
-    const controller = new AbortController();
-    weatherAbortController = controller;
-    try {
-      const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
-      if (!key) {
-        showToast('Weather needs Google Maps API key', 'error');
-        disableWeatherOverlay();
-        return;
-      }
-      const results = await Promise.all(points.map(async (pt) => {
-        try {
-          const entry = await fetchGoogleWeather(pt, key, controller.signal);
-          return entry;
-        } catch (err) {
-          if (controller.signal.aborted) return null;
-          console.error('Weather fetch failed', err);
-          return null;
-        }
-      }));
-      if (!weatherOverlayActive || weatherAbortController !== controller) return;
-      const entries = results.filter(Boolean);
-      if (!entries.length) {
-        removeWeatherMarkers();
-        return;
-      }
-      renderWeatherMarkers(map, entries);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      console.error('Weather overlay refresh failed', err);
-    }
+    clearWeatherOverlayMarkers();
   }
 
   function scheduleWeatherRefresh() {
@@ -496,31 +1780,36 @@
     weatherRefreshTimer = setTimeout(() => {
       weatherRefreshTimer = null;
       refreshWeatherOverlay();
-    }, 400);
+    }, WEATHER_REFRESH_DELAY_MS);
   }
 
   function enableWeatherOverlay() {
     if (!googleServicesEnabled) {
-      showToast('Weather needs Google Maps API access', 'error');
+      showToast(t('status.weatherNeedsAccess', 'Weather needs Google Maps API access'), 'error');
+      setWeatherButtonState(false);
       return false;
     }
     const map = getMap();
     if (!map) {
-      showToast('Map not ready', 'error');
+      showToast(t('status.mapNotReady', 'Map not ready'), 'error');
+      setWeatherButtonState(false);
       return false;
     }
     const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
     if (!key) {
-      showToast('Weather needs Google Maps API key', 'error');
+      showToast(t('status.weatherNeedsKey', 'Weather needs Google Maps API key'), 'error');
+      setWeatherButtonState(false);
       return false;
     }
     weatherOverlayActive = true;
-    removeWeatherMarkers();
+    clearWeatherOverlayMarkers();
+    setWeatherButtonState(true);
     refreshWeatherOverlay();
     if (!weatherMoveHandler) {
       weatherMoveHandler = () => scheduleWeatherRefresh();
-      map.on('moveend', weatherMoveHandler);
+      map.on('move', weatherMoveHandler);
     }
+    updateMapCursor();
     return true;
   }
 
@@ -536,10 +1825,62 @@
       weatherAbortController = null;
     }
     if (weatherMoveHandler && map) {
-      try { map.off('moveend', weatherMoveHandler); } catch {}
+      try { map.off('move', weatherMoveHandler); } catch {}
       weatherMoveHandler = null;
     }
-    removeWeatherMarkers();
+    removeAllWeatherMarkers();
+    setWeatherButtonState(false);
+    updateMapCursor();
+  }
+
+  const ensureWeatherOverlayEnabled = () => {
+    if (weatherOverlayActive) {
+      setWeatherButtonState(true);
+      return true;
+    }
+    const ok = enableWeatherOverlay();
+    if (!ok) {
+      setWeatherButtonState(false);
+      return false;
+    }
+    setWeatherButtonState(true);
+    return true;
+  };
+
+  function addManualWeatherMarker(map, entry) {
+    try {
+      const marker = createWeatherMarker(map, entry);
+      attachWeatherMarkerInteractions(marker, weatherManualMarkers);
+      weatherManualMarkers.push(marker);
+    } catch (err) {
+      console.error('Weather marker failed', err);
+    }
+  }
+
+  async function sampleWeatherAtPoint(lngLat) {
+    const map = getMap();
+    if (!map) {
+      showToast(t('status.mapNotReady', 'Map not ready'), 'error');
+      return;
+    }
+    if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return;
+    const overlayReady = ensureWeatherOverlayEnabled();
+    if (!overlayReady) return;
+    const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+    if (!key) {
+      showToast(t('status.weatherNeedsKey', 'Weather needs Google Maps API key'), 'error');
+      return;
+    }
+    const controller = new AbortController();
+    try {
+      const entry = await fetchGoogleWeather({ lng: lngLat.lng, lat: lngLat.lat }, key, controller.signal);
+      if (!entry) return;
+      addManualWeatherMarker(map, entry);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      console.error('Weather fetch failed', err);
+      showToast(t('status.weatherFetchFailed', 'Weather fetch failed'), 'error');
+    }
   }
 
   let suppressFeatureToasts = false;
@@ -615,8 +1956,6 @@
     return false;
   };
 
-  // Helper to get current Mapbox instance
-  const getMap = () => (window)._map;
   const readMapboxToken = () => (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
   const readGoogleKey = () => (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
   const readOpenAIKey = () => (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
@@ -633,8 +1972,10 @@
     const buttons = document.querySelectorAll('.drawing-ai');
     buttons.forEach((btn) => {
       if (!(btn instanceof HTMLButtonElement)) return;
-      btn.disabled = !aiEnabled;
-      btn.hidden = !aiEnabled;
+      const shouldShow = !!aiEnabled;
+      btn.disabled = !shouldShow;
+      btn.hidden = !shouldShow;
+      btn.style.display = shouldShow ? '' : 'none';
     });
   };
 
@@ -1125,61 +2466,61 @@
     closeTrackersMenu();
     if (!trackersRecordingHasData) return;
     if (!window.file || typeof window.file.saveTrackers !== 'function') {
-      alert('Saving tracker recordings is not available in this build.');
+      alert(t('alerts.trackerSaveUnavailable', 'Saving tracker recordings is not available in this build.'));
       return;
     }
     const payload = getTrackersRecordingPayload();
     if (!payload.trackers.length) {
-      alert('No tracker data is available to save yet.');
+      alert(t('alerts.noTrackerSave', 'No tracker data is available to save yet.'));
       return;
     }
     try {
       const defaultPath = getTrackersSuggestedPath();
       const result = await window.file.saveTrackers(payload, defaultPath);
       if (!result || !result.ok) {
-        if (!result || !result.canceled) showToast('Save failed', 'error');
+        if (!result || !result.canceled) showToast(t('messages.saveFailed', 'Save failed'), 'error');
         return;
       }
-      showToast('Trackers saved');
+      showToast(t('messages.trackersSaved', 'Trackers saved'));
     } catch (err) {
       console.error('Saving trackers failed', err);
-      alert('Could not save trackers. Check the console for details.');
-      showToast('Save failed', 'error');
+      alert(t('alerts.couldNotSaveTrackers', 'Could not save trackers. Check the console for details.'));
+      showToast(t('messages.saveFailed', 'Save failed'), 'error');
     }
   }
 
   async function handleTrackersOpen() {
     closeTrackersMenu();
     if (!window.file || typeof window.file.openTrackers !== 'function') {
-      alert('Opening tracker recordings is not available in this build.');
+      alert(t('alerts.trackerOpenUnavailable', 'Opening tracker recordings is not available in this build.'));
       return;
     }
     if (trackersRecordingHasData && trackersRecordingState.entries.size > 0) {
-      const proceed = confirm('Opening a recording will replace the current recorded data. Continue?');
+      const proceed = confirm(t('alerts.openRecordingReplace', 'Opening a recording will replace the current recorded data. Continue?'));
       if (!proceed) return;
     }
     try {
       const defaultPath = getTrackersSuggestedPath();
       const result = await window.file.openTrackers(defaultPath);
       if (!result || !result.ok) {
-        if (!result || !result.canceled) showToast('Open failed', 'error');
+        if (!result || !result.canceled) showToast(t('messages.openFailed', 'Open failed'), 'error');
         return;
       }
       const normalized = normalizeTrackersRecordingPayload(result.data);
       if (!normalized) {
-        alert('The selected file does not contain tracker tracks.');
+        alert(t('alerts.noTrackerTracksInFile', 'The selected file does not contain tracker tracks.'));
         return;
       }
       const applied = applyImportedTrackers(normalized);
       if (!applied) {
-        alert('No tracker tracks could be loaded from the selected file.');
+        alert(t('alerts.noTrackerTracks', 'No tracker tracks could be loaded from the selected file.'));
         return;
       }
-      showToast('Tracker tracks loaded');
+      showToast(t('messages.trackerTracksLoaded', 'Tracker tracks loaded'));
     } catch (err) {
       console.error('Opening trackers failed', err);
-      alert('Could not open tracker tracks. Check the console for details.');
-      showToast('Open failed', 'error');
+      alert(t('alerts.couldNotOpenTrackers', 'Could not open tracker tracks. Check the console for details.'));
+      showToast(t('messages.openFailed', 'Open failed'), 'error');
     }
   }
 
@@ -1208,6 +2549,53 @@
     const color = trackerColorPalette[trackerColorIndex % trackerColorPalette.length];
     trackerColorIndex += 1;
     return color;
+  };
+
+  const normalizeTrackerIdFromAutoProbe = (type, deviceId) => {
+    const cleanedType = String(type || '').trim().toLowerCase();
+    if (cleanedType === 'base') return 'CO-ROOT';
+    if (cleanedType !== 'tracker') return null;
+    let id = String(deviceId || '').trim();
+    if (!id) return null;
+    if (!id.toUpperCase().startsWith('CO-')) id = `CO-${id}`;
+    id = id.toUpperCase();
+    return id;
+  };
+
+  const ensureTrackerStub = (id, { name } = {}) => {
+    const trackerId = String(id || '').trim();
+    if (!trackerId) return null;
+    let tracker = trackerStore.get(trackerId);
+    if (!tracker) {
+      const color = nextTrackerColor();
+      tracker = {
+        id: trackerId,
+        longitude: null,
+        latitude: null,
+        altitude: null,
+        battery: null,
+        hops: null,
+        updatedAt: Date.now(),
+        raw: null,
+        name: name || null,
+        color,
+        visible: true,
+      };
+      trackerStore.set(trackerId, tracker);
+      trackerDataSeen = true;
+      ensureTrackerHistoryEntry(trackerId);
+      updateTrackerSource();
+      updateTrackerPathSource();
+      renderTrackersList();
+      updateTrackersPanelState();
+      refreshTrackersControlsState();
+      return tracker;
+    }
+    if (name && !tracker.name) {
+      updateTrackerEntry(trackerId, { name });
+      return trackerStore.get(trackerId);
+    }
+    return tracker;
   };
 
   let editingTrackerId = null;
@@ -1750,6 +3138,62 @@
     if (gotoPoiNameField) gotoPoiNameField.hidden = !enabled;
     if (enabled && shouldFocus && gotoPoiName) setTimeout(() => gotoPoiName.focus(), 0);
   };
+  const updateGotoFieldsVisibility = () => {
+    const system = (currentCoordinateSystem || '').toLowerCase();
+    const showLatLng = system !== 'utm' && system !== 'gk';
+    if (gotoFieldsLatLng) gotoFieldsLatLng.hidden = !showLatLng;
+    if (gotoFieldsUTM) gotoFieldsUTM.hidden = system !== 'utm';
+    if (gotoFieldsGK) gotoFieldsGK.hidden = system !== 'gk';
+  };
+  const resetGotoFields = () => {
+    if (gotoLat) gotoLat.value = '';
+    if (gotoLng) gotoLng.value = '';
+    if (gotoUtmZone) gotoUtmZone.value = '';
+    if (gotoUtmEasting) gotoUtmEasting.value = '';
+    if (gotoUtmNorthing) gotoUtmNorthing.value = '';
+    if (gotoGkZone) gotoGkZone.value = '';
+    if (gotoGkEasting) gotoGkEasting.value = '';
+    if (gotoGkNorthing) gotoGkNorthing.value = '';
+  };
+  const populateGotoFieldsFromCenter = () => {
+    resetGotoFields();
+    try {
+      const map = (window)._map;
+      const center = map?.getCenter();
+      if (!center) return;
+      const system = (currentCoordinateSystem || '').toLowerCase();
+      if (system === 'utm') {
+        const utm = utmFromLatLng(center.lat, center.lng);
+        if (!utm) return;
+        if (gotoUtmZone) gotoUtmZone.value = `${utm.zoneNumber}${utm.zoneLetter}`;
+        if (gotoUtmEasting) gotoUtmEasting.value = Math.round(utm.easting);
+        if (gotoUtmNorthing) gotoUtmNorthing.value = Math.round(utm.northing);
+      } else if (system === 'gk') {
+        const gk = gaussKruegerFromLatLng(center.lat, center.lng);
+        if (!gk) return;
+        if (gotoGkZone) gotoGkZone.value = String(gk.zoneNumber);
+        if (gotoGkEasting) gotoGkEasting.value = Math.round(gk.easting);
+        if (gotoGkNorthing) gotoGkNorthing.value = Math.round(gk.northing);
+      } else {
+        if (gotoLat) gotoLat.value = Number(center.lat).toFixed(6);
+        if (gotoLng) gotoLng.value = Number(center.lng).toFixed(6);
+      }
+    } catch (err) {
+      console.warn('populateGotoFieldsFromCenter failed', err);
+    }
+  };
+  const refreshGotoFormForSystem = (forcePopulate = false) => {
+    updateGotoFieldsVisibility();
+    const shouldPopulate = forcePopulate || (gotoModal && gotoModal.hidden === false);
+    if (shouldPopulate) populateGotoFieldsFromCenter();
+    if (gotoModal && gotoModal.hidden === false) {
+      let focusTarget = gotoLat;
+      const system = (currentCoordinateSystem || '').toLowerCase();
+      if (system === 'utm') focusTarget = gotoUtmZone;
+      else if (system === 'gk') focusTarget = gotoGkZone;
+      setTimeout(() => focusTarget?.focus(), 0);
+    }
+  };
   
   const updateSettingsSaveState = () => {
     if (settingsSaveBtn) settingsSaveBtn.disabled = !settingsDirty;
@@ -1770,7 +3214,7 @@
     if (suppressSettingsEvents) return;
     settingsDirty = true;
     updateSettingsSaveState();
-    setSettingsStatus('Unsaved changes');
+    setSettingsStatus(t('status.unsavedChanges', 'Unsaved changes'));
   };
   const parseStartInputs = () => {
     const lat = Number(settingStartLat?.value);
@@ -1792,15 +3236,19 @@
       if (settingOpenAIKey) settingOpenAIKey.value = storedOpenAIKey !== null ? storedOpenAIKey : defaultOpenAIKey;
 
       const storedStyleUrl = localStorage.getItem('map.styleUrl');
+      const storedSatelliteStyleUrl = localStorage.getItem('map.satelliteStyleUrl');
       if (settingStyleUrl) settingStyleUrl.value = storedStyleUrl !== null ? storedStyleUrl : defaultStyleUrl;
+      if (settingSatelliteStyleUrl) settingSatelliteStyleUrl.value = storedSatelliteStyleUrl !== null ? storedSatelliteStyleUrl : defaultSatelliteStyleUrl;
 
       const storedHome = localStorage.getItem('map.homeAddress');
       if (settingHomeAddress) settingHomeAddress.value = storedHome !== null ? storedHome : defaultHomeAddress;
 
       const storedStartPosRaw = localStorage.getItem('map.startPos');
       const startPos = parseStartPos(storedStartPosRaw || `${defaultStartLng}, ${defaultStartLat}`);
-      if (settingStartLng) settingStartLng.value = Number(startPos[0]).toFixed(6);
-      if (settingStartLat) settingStartLat.value = Number(startPos[1]).toFixed(6);
+      if (Array.isArray(startPos) && startPos.length === 2) {
+        if (settingStartLng) settingStartLng.value = Number(startPos[0]).toFixed(6);
+        if (settingStartLat) settingStartLat.value = Number(startPos[1]).toFixed(6);
+      }
 
       const storedZoomRaw = localStorage.getItem('map.startZoom');
       const zoom = Number.isFinite(Number(storedZoomRaw)) ? Number(storedZoomRaw) : defaultStartZoom;
@@ -1812,6 +3260,23 @@
 
       const storedAuto = localStorage.getItem('serial.autoReconnect');
       if (settingAutoReconnect) settingAutoReconnect.value = storedAuto || DEFAULT_AUTO_RECONNECT;
+
+      const storedCoord = (localStorage.getItem('map.coordinateSystem') || 'latlng').toLowerCase();
+      currentCoordinateSystem = storedCoord;
+      if (settingCoordinateSystem) settingCoordinateSystem.value = storedCoord;
+      applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
+      if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
+      refreshGotoFormForSystem(false);
+
+      satelliteStyleActive = localStorage.getItem('map.satelliteEnabled') === '1';
+      setSatelliteButtonState(satelliteStyleActive);
+      updateMapCursor();
+
+      const storedLanguage = localStorage.getItem('app.language');
+      const language = normalizeAppLanguage(storedLanguage);
+      defaultAppLanguage = language;
+      populateLanguageOptions(language);
+      applyLanguagePreference(language);
     } catch (e) {
       console.error('Failed loading settings', e);
     } finally {
@@ -1826,6 +3291,8 @@
     const googleKey = (settingGoogleKey?.value || '').trim();
     const openaiKey = (settingOpenAIKey?.value || '').trim();
     let styleUrl = (settingStyleUrl?.value || '').trim();
+    let satelliteStyleUrl = (settingSatelliteStyleUrl?.value || '').trim();
+    if (!satelliteStyleUrl) satelliteStyleUrl = DEFAULT_SATELLITE_STYLE_URL;
     if (!styleUrl) styleUrl = DEFAULT_STYLE_URL;
     const homeAddress = (settingHomeAddress?.value || '').trim();
     const coords = parseStartInputs();
@@ -1833,10 +3300,10 @@
       const lat = Number(settingStartLat?.value);
       const lng = Number(settingStartLng?.value);
       if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-        alert('Please enter a valid start latitude.');
+        alert(t('alerts.invalidLatitude', 'Please enter a valid start latitude.'));
         settingStartLat?.focus();
       } else {
-        alert('Please enter a valid start longitude.');
+        alert(t('alerts.invalidLongitude', 'Please enter a valid start longitude.'));
         settingStartLng?.focus();
       }
       return null;
@@ -1844,7 +3311,7 @@
     let startZoom = Number(settingStartZoom?.value);
     if (!Number.isFinite(startZoom)) startZoom = DEFAULT_START_ZOOM;
     if (startZoom < 0 || startZoom > 22) {
-      alert('Start zoom must be between 0 and 22.');
+      alert(t('alerts.invalidZoom', 'Start zoom must be between 0 and 22.'));
       settingStartZoom?.focus();
       return null;
     }
@@ -1852,12 +3319,14 @@
     if (!baudValue) baudValue = DEFAULT_SERIAL_BAUD;
     const baudNumber = Number(baudValue);
     if (!Number.isFinite(baudNumber) || baudNumber <= 0) {
-      alert('Please enter a valid positive baud rate.');
+      alert(t('alerts.invalidBaud', 'Please enter a valid positive baud rate.'));
       settingBaud?.focus();
       return null;
     }
     const baud = String(Math.round(baudNumber));
     const autoReconnect = (settingAutoReconnect?.value === 'off') ? 'off' : 'on';
+    const language = normalizeAppLanguage(settingLanguage?.value);
+    const coordinateSystem = (settingCoordinateSystem?.value || 'latlng').toLowerCase();
 
     return {
       accessToken,
@@ -1869,9 +3338,12 @@
       startZoom,
       baud,
       autoReconnect,
+      language,
+      coordinateSystem,
+      satelliteStyleUrl,
     };
   };
-  const applySettings = () => {
+  const applySettings = async () => {
     const values = gatherSettingsFromForm();
     if (!values) return;
 
@@ -1879,29 +3351,67 @@
     const prevStyleUrl = localStorage.getItem('map.styleUrl') || '';
     const prevStartPos = parseStartPos(localStorage.getItem('map.startPos'));
     const prevStartZoom = Number(localStorage.getItem('map.startZoom') || DEFAULT_START_ZOOM);
+    const prevSatelliteStyleUrl = localStorage.getItem('map.satelliteStyleUrl') || defaultSatelliteStyleUrl;
+    const prevSatelliteEnabled = localStorage.getItem('map.satelliteEnabled') === '1';
+    const styleChanged = values.styleUrl !== prevStyleUrl;
+    const satelliteChanged = values.satelliteStyleUrl !== prevSatelliteStyleUrl;
 
     let saveErrored = false;
+    if (styleChanged && MAPBOX_STYLE_URL_RE.test(values.styleUrl || '') && (values.accessToken || prevAccessToken)) {
+      const tokenForCheck = (values.accessToken || prevAccessToken || '').trim();
+      if (tokenForCheck) {
+        const ok = await validateMapboxStyleUrl(values.styleUrl, tokenForCheck);
+        if (!ok) {
+          showToast(t('status.styleLoadFailed', 'Unable to load map style. Restoring previous style.'), 'error');
+          values.styleUrl = prevStyleUrl || DEFAULT_STYLE_URL;
+          if (settingStyleUrl) settingStyleUrl.value = values.styleUrl;
+        }
+      }
+    }
+    if (satelliteChanged && MAPBOX_STYLE_URL_RE.test(values.satelliteStyleUrl || '') && (values.accessToken || prevAccessToken)) {
+      const tokenForCheck = (values.accessToken || prevAccessToken || '').trim();
+      if (tokenForCheck) {
+        const ok = await validateMapboxStyleUrl(values.satelliteStyleUrl, tokenForCheck);
+        if (!ok) {
+          showToast(t('status.styleLoadFailed', 'Unable to load satellite style. Restoring previous style.'), 'error');
+          values.satelliteStyleUrl = prevSatelliteStyleUrl || DEFAULT_SATELLITE_STYLE_URL;
+          if (settingSatelliteStyleUrl) settingSatelliteStyleUrl.value = values.satelliteStyleUrl;
+        }
+      }
+    }
+
     try {
       localStorage.setItem('map.accessToken', values.accessToken);
       localStorage.setItem('map.googleKey', values.googleKey);
       localStorage.setItem('openai.key', values.openaiKey);
       localStorage.setItem('map.styleUrl', values.styleUrl);
+      localStorage.setItem('map.satelliteStyleUrl', values.satelliteStyleUrl);
       localStorage.setItem('map.homeAddress', values.homeAddress);
       localStorage.setItem('map.startPos', `${values.startPos[0].toFixed(6)}, ${values.startPos[1].toFixed(6)}`);
       localStorage.setItem('map.startZoom', String(values.startZoom));
       localStorage.setItem('serial.baud', values.baud);
       localStorage.setItem('serial.autoReconnect', values.autoReconnect);
+      localStorage.setItem('app.language', values.language);
+      localStorage.setItem('map.coordinateSystem', values.coordinateSystem);
     } catch (e) {
       saveErrored = true;
       console.error('Failed saving settings', e);
     }
 
     if (saveErrored) {
-      setSettingsStatus('Failed to save settings', 4000);
+      setSettingsStatus(t('status.settingsSaveFailed', 'Failed to save settings'), 4000);
       return;
     }
 
+    applyLanguagePreference(values.language);
+
     if (connectBaud && values.baud) connectBaud.value = values.baud;
+    if (settingCoordinateSystem) settingCoordinateSystem.value = values.coordinateSystem;
+    if (settingSatelliteStyleUrl) settingSatelliteStyleUrl.value = values.satelliteStyleUrl || DEFAULT_SATELLITE_STYLE_URL;
+    currentCoordinateSystem = values.coordinateSystem || 'latlng';
+    applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
+    if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
+    refreshGotoFormForSystem(false);
 
     try {
       if (values.accessToken && (window).mapboxgl) {
@@ -1918,9 +3428,10 @@
       }
     } else {
       try {
-        if (values.styleUrl && values.styleUrl !== prevStyleUrl) {
-          (window)._lastStyleUrl = values.styleUrl;
-          map.setStyle(values.styleUrl);
+        const prevActiveStyleUrl = prevSatelliteEnabled ? prevSatelliteStyleUrl : prevStyleUrl;
+        const nextActiveStyleUrl = getTargetMapStyleUrl();
+        if (nextActiveStyleUrl && prevActiveStyleUrl !== nextActiveStyleUrl) {
+          applyMapStyle(nextActiveStyleUrl);
         }
       } catch (e) { console.error('Failed applying style', e); }
       try {
@@ -1935,11 +3446,31 @@
 
     loadSettingsForm();
     applyServiceAvailability();
-    setSettingsStatus('Settings saved', 2500);
+    setSettingsStatus(t('status.settingsSaved', 'Settings saved'), 2500);
   };
 
   loadSettingsForm();
   applyServiceAvailability();
+  if (settingLanguage) {
+    settingLanguage.addEventListener('change', () => {
+      populateLanguageOptions(settingLanguage.value);
+      applyLanguagePreference(settingLanguage.value);
+      markSettingsDirty();
+    });
+  }
+  if (settingCoordinateSystem) {
+    settingCoordinateSystem.addEventListener('change', () => {
+      currentCoordinateSystem = (settingCoordinateSystem.value || 'latlng').toLowerCase();
+      applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
+      if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
+      refreshGotoFormForSystem(false);
+    });
+  }
+  if (languageMenu) {
+    languageMenu.querySelectorAll('.lang-menu-item').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.lang === translationState.language);
+    });
+  }
   if (settingsForm) {
     settingsForm.addEventListener('input', (e) => {
       if (e && e.target === settingsSaveBtn) return;
@@ -1949,9 +3480,9 @@
       if (e && e.target === settingsSaveBtn) return;
       markSettingsDirty();
     });
-    settingsForm.addEventListener('submit', (e) => {
+    settingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      applySettings();
+      await applySettings();
     });
   }
   // Per-drawing edit state
@@ -2080,7 +3611,8 @@
 
     // Gather settings with fallbacks
     const accessToken = (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
-    const styleUrl = (localStorage.getItem('map.styleUrl') || defaultStyleUrl || DEFAULT_STYLE_URL).trim();
+    const initialStyleUrl = getTargetMapStyleUrl();
+    const styleUrl = (initialStyleUrl || DEFAULT_STYLE_URL).trim();
     const startPos = parseStartPos(localStorage.getItem('map.startPos') || `${defaultStartLng}, ${defaultStartLat}`);
     const startZoomRaw = localStorage.getItem('map.startZoom');
     const startZoom = Number.isFinite(Number(startZoomRaw)) ? Number(startZoomRaw) : (Number.isFinite(defaultStartZoom) ? defaultStartZoom : DEFAULT_START_ZOOM);
@@ -2103,6 +3635,7 @@
     });
     (window)._map = map; // for debugging
     (window)._lastStyleUrl = styleUrl;
+    setSatelliteButtonState(satelliteStyleActive);
     try { (window)._bindEditInteractions && (window)._bindEditInteractions(); } catch {}
     try { ensureTrackerLayer(map); } catch (e) { console.error('tracker layer init failed', e); }
 
@@ -2112,8 +3645,8 @@
       try {
         const c = map.getCenter();
         lastKnownCenter = { lat: c.lat, lng: c.lng };
+        updateFooterCenterDisplay(c.lat, c.lng);
         statZoom && (statZoom.textContent = fmt(map.getZoom(), 2));
-        statCenter && (statCenter.textContent = `${fmt(c.lat, 5)}, ${fmt(c.lng, 5)}`);
         statBearing && (statBearing.textContent = fmt(map.getBearing(), 1));
         statPitch && (statPitch.textContent = fmt(map.getPitch(), 1));
         const s = map.getStyle();
@@ -2144,6 +3677,7 @@
       updateTrackerPathSource();
       applyFeaturesVisibility(map);
       applyTrackersVisibility(map);
+      updateMapCursor();
     });
     map.on('style.load', () => {
       trackerSourceReady = false;
@@ -2152,6 +3686,11 @@
       updateTrackerSource();
       updateTrackerPathSource();
       applyTrackersVisibility(map);
+      applyFeaturesVisibility(map);
+      updateFeatureLabels();
+      if (weatherOverlayActive) scheduleWeatherRefresh();
+      if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
+      updateMapCursor();
     });
     map.on('moveend', () => { syncInputsFromMap(); if (!mapPinned) updatePlaceFromCenter(); });
 
@@ -2233,13 +3772,31 @@
       if (!map.getSource('edit-mid')) {
         map.addSource('edit-mid', { type: 'geojson', data: { type:'FeatureCollection', features: [] } });
       }
+      if (!map.getSource('draw-labels')) {
+        map.addSource('draw-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      ensureTriangleMarkerImage(map);
       if (!map.getLayer('draw-fill')) {
         map.addLayer({
           id: 'draw-fill',
           type: 'fill',
           source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
           paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.17 }
+        });
+      }
+      if (!map.getLayer('draw-fill-outline')) {
+        map.addLayer({
+          id: 'draw-fill-outline',
+          type: 'line',
+          source: 'draw',
+          filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
+          paint: {
+            'line-color': ['coalesce', ['get','color'], '#2196F3'],
+            'line-width': 2.2,
+            'line-opacity': 0.75,
+            'line-join': 'round'
+          }
         });
       }
       if (!map.getLayer('draw-line')) {
@@ -2247,7 +3804,7 @@
           id: 'draw-line',
           type: 'line',
           source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
           paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 }
         });
       }
@@ -2256,7 +3813,7 @@
           id: 'draw-line-arrows',
           type: 'symbol',
           source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
           layout: {
             'symbol-placement': 'line',
             'symbol-spacing': 40,
@@ -2275,7 +3832,7 @@
       if (!map.getLayer('draw-point-circle')) {
         map.addLayer({
           id: 'draw-point-circle', type: 'circle', source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
           paint: {
             'circle-color': ['coalesce', ['get','color'], '#2196F3'],
             'circle-radius': 9,
@@ -2285,11 +3842,22 @@
           }
         });
       }
+      if (!map.getLayer('draw-line-start-inner')) {
+        map.addLayer({
+          id: 'draw-line-start-inner', type: 'circle', source: 'draw',
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true], ['==', ['get','hasInnerDot'], true]],
+          paint: {
+            'circle-color': '#ffffff',
+            'circle-radius': ['*', 0.6, 9],
+            'circle-opacity': 1
+          }
+        });
+      }
       // Optional label next to POI: show feature name when not empty/Untitled
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','isLineEndpoint'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true], ['!=', ['get','isLineEndpoint'], true]],
           layout: {
             'text-field': [
               'case',
@@ -2316,6 +3884,113 @@
           }
         });
       }
+      if (!map.getLayer('draw-labels-polygon')) {
+        map.addLayer({
+          id: 'draw-labels-polygon',
+          type: 'symbol',
+          source: 'draw-labels',
+          filter: ['==', ['get', 'labelType'], 'polygon'],
+          layout: {
+            'visibility': 'none',
+            'text-field': ['format',
+              ['case',
+                ['all',
+                  ['!=', ['coalesce', ['get', 'name'], ''], ''],
+                  ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'untitled']
+                ],
+                ['coalesce', ['get', 'name'], ''],
+                ''
+              ],
+              {},
+              ['case',
+                ['all',
+                  ['!=', ['coalesce', ['get', 'name'], ''], ''],
+                  ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'untitled']
+                ],
+                '\n',
+                ''
+              ],
+              {},
+              ['coalesce', ['get', 'area'], ''],
+              { 'font-scale': 0.85 }
+            ],
+            'text-size': 14,
+            'text-line-height': 1.1,
+            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'text-anchor': 'center',
+            'text-justify': 'center',
+            'text-max-width': 8,
+            'text-allow-overlap': false,
+            'text-padding': 2,
+            'text-optional': true
+          },
+          paint: {
+            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
+            'text-halo-color': 'rgba(255,255,255,0.85)',
+            'text-halo-width': 1.4,
+            'text-halo-blur': 0.2
+          }
+        });
+      }
+      if (!map.getLayer('draw-labels-line-name')) {
+        map.addLayer({
+          id: 'draw-labels-line-name',
+          type: 'symbol',
+          source: 'draw-labels',
+          filter: ['==', ['get', 'labelType'], 'line-name'],
+          layout: {
+            'visibility': 'none',
+            'text-field': ['case',
+              ['all',
+                ['!=', ['coalesce', ['get', 'name'], ''], ''],
+                ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'untitled']
+              ],
+              ['coalesce', ['get', 'name'], ''],
+              ''
+            ],
+            'text-size': 13,
+            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'text-anchor': 'bottom',
+            'text-offset': [0, -0.7],
+            'text-allow-overlap': false,
+            'text-max-width': 6,
+            'text-padding': 2,
+            'text-optional': true
+          },
+          paint: {
+            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
+            'text-halo-color': 'rgba(255,255,255,0.85)',
+            'text-halo-width': 1.2,
+            'text-halo-blur': 0.2
+          }
+        });
+      }
+      if (!map.getLayer('draw-labels-line-length')) {
+        map.addLayer({
+          id: 'draw-labels-line-length',
+          type: 'symbol',
+          source: 'draw-labels',
+          filter: ['==', ['get', 'labelType'], 'line-length'],
+          layout: {
+            'visibility': 'none',
+            'text-field': ['coalesce', ['get', 'length'], ''],
+            'text-size': 12,
+            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'text-anchor': 'top',
+            'text-offset': [0, 0.7],
+            'text-allow-overlap': false,
+            'text-max-width': 6,
+            'text-padding': 2,
+            'text-optional': true
+          },
+          paint: {
+            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
+            'text-halo-color': 'rgba(255,255,255,0.85)',
+            'text-halo-width': 1.2,
+            'text-halo-blur': 0.2
+          }
+        });
+      }
       if (!map.getLayer('draw-draft-fill')) {
         map.addLayer({ id: 'draw-draft-fill', type: 'fill', source: 'draw-draft', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#2196F3', 'fill-opacity': 0.10 } });
       }
@@ -2323,13 +3998,13 @@
         map.addLayer({ id: 'draw-draft-line', type: 'line', source: 'draw-draft', paint: { 'line-color': '#64b5f6', 'line-width': 2, 'line-dasharray': [2,2] } });
       }
       if (!map.getLayer('draw-hl-fill')) {
-        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.30 } });
+        map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.30 } });
       }
       if (!map.getLayer('draw-hl-line')) {
-        map.addLayer({ id: 'draw-hl-line', type: 'line', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'line-color': '#FFC107', 'line-width': 4 } });
+        map.addLayer({ id: 'draw-hl-line', type: 'line', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]], paint: { 'line-color': '#FFC107', 'line-width': 4 } });
       }
       if (!map.getLayer('draw-hl-point')) {
-        map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true]], paint: { 'circle-color': '#FFC107', 'circle-radius': 9.2, 'circle-opacity': 0.5 } });
+        map.addLayer({ id: 'draw-hl-point', type: 'circle', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]], paint: { 'circle-color': '#FFC107', 'circle-radius': 9.2, 'circle-opacity': 0.5 } });
       }
       if (!map.getLayer('edit-verts')) {
         map.addLayer({ id: 'edit-verts', type: 'circle', source: 'edit-verts', paint: { 'circle-color': '#FFEB3B', 'circle-stroke-color': '#333', 'circle-stroke-width': 1, 'circle-radius': 7 }, layout: { visibility: 'none' } });
@@ -2337,6 +4012,8 @@
       if (!map.getLayer('edit-mid')) {
         map.addLayer({ id: 'edit-mid', type: 'circle', source: 'edit-mid', paint: { 'circle-color': '#00E5FF', 'circle-stroke-color': '#004d5a', 'circle-stroke-width': 1, 'circle-radius': 5 }, layout: { visibility: 'none' } });
       }
+      applyLabelVisibility(map);
+      updateFeatureLabels();
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
@@ -2365,6 +4042,7 @@
     const refreshDraw = () => {
       const src = map.getSource('draw');
       if (src) src.setData(drawStore);
+      updateFeatureLabels();
       updateDrawingsPanel();
       try { if ((window)._editTarget) refreshEditVerts(); } catch {}
     };
@@ -2398,30 +4076,70 @@
     try { applyTrackerVisibilityToDrawings(); } catch {}
 
     const refreshEditVerts = () => {
-      try{
+      try {
         const verts = [];
         const mids = [];
         const eid = (window)._editTarget;
         if (eid) {
           const f = drawStore.features.find(x => x.properties?.id === eid);
-          if (f && f.geometry?.type === 'Polygon') {
-            const ring = (f.geometry.coordinates?.[0] || []).slice();
-            if (ring.length >= 4) {
-              for (let i=0;i<ring.length-1;i++){
-                const c = ring[i];
-                verts.push({ type:'Feature', properties:{ fid: f.properties?.id, idx: i }, geometry:{ type:'Point', coordinates:[c[0], c[1]] } });
-                const n = ring[i+1];
-                const mx = (c[0]+n[0])/2, my = (c[1]+n[1])/2;
-                mids.push({ type:'Feature', properties:{ fid: f.properties?.id, insAfter: i }, geometry:{ type:'Point', coordinates:[mx, my] } });
+          if (f && f.geometry) {
+            const geomType = f.geometry.type;
+            if (geomType === 'Polygon') {
+              const ring = (f.geometry.coordinates?.[0] || []).slice();
+              if (ring.length >= 4) {
+                for (let i = 0; i < ring.length - 1; i++) {
+                  const c = ring[i];
+                  if (!Array.isArray(c)) continue;
+                  const n = ring[i + 1];
+                  if (!Array.isArray(n)) continue;
+                  verts.push({
+                    type: 'Feature',
+                    properties: { fid: f.properties?.id, idx: i, geomType: 'Polygon' },
+                    geometry: { type: 'Point', coordinates: [c[0], c[1]] }
+                  });
+                  const mx = (c[0] + n[0]) / 2;
+                  const my = (c[1] + n[1]) / 2;
+                  mids.push({
+                    type: 'Feature',
+                    properties: { fid: f.properties?.id, insAfter: i, geomType: 'Polygon' },
+                    geometry: { type: 'Point', coordinates: [mx, my] }
+                  });
+                }
+              }
+            } else if (geomType === 'LineString') {
+              const coords = Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : [];
+              if (coords.length >= 2) {
+                for (let i = 0; i < coords.length; i++) {
+                  const c = coords[i];
+                  if (!Array.isArray(c)) continue;
+                  verts.push({
+                    type: 'Feature',
+                    properties: { fid: f.properties?.id, idx: i, geomType: 'LineString' },
+                    geometry: { type: 'Point', coordinates: [c[0], c[1]] }
+                  });
+                  if (i < coords.length - 1) {
+                    const n = coords[i + 1];
+                    if (!Array.isArray(n)) continue;
+                    const mx = (c[0] + n[0]) / 2;
+                    const my = (c[1] + n[1]) / 2;
+                    mids.push({
+                      type: 'Feature',
+                      properties: { fid: f.properties?.id, insAfter: i, geomType: 'LineString' },
+                      geometry: { type: 'Point', coordinates: [mx, my] }
+                    });
+                  }
+                }
               }
             }
           }
         }
         const src = map.getSource('edit-verts');
-        if (src) src.setData({ type:'FeatureCollection', features: verts });
+        if (src) src.setData({ type: 'FeatureCollection', features: verts });
         const msrc = map.getSource('edit-mid');
-        if (msrc) msrc.setData({ type:'FeatureCollection', features: mids });
-      }catch{}
+        if (msrc) msrc.setData({ type: 'FeatureCollection', features: mids });
+      } catch (err) {
+        console.error('refreshEditVerts failed', err);
+      }
     };
     (window)._refreshEditVerts = refreshEditVerts;
 
@@ -2448,20 +4166,26 @@
         if (feats && feats.length) return;
         const ds = (window)._drawStore || drawStore;
         const f = ds.features.find(x => x.properties?.id === eid);
-        if (!f || f.geometry?.type !== 'Polygon') { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
-        const ring = f.geometry.coordinates && f.geometry.coordinates[0];
-        if (!Array.isArray(ring) || ring.length < 4) { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
-        const inside = pointInRing([e.lngLat.lng, e.lngLat.lat], ring);
-        if (!inside) {
-          (window)._editTarget = null;
-          try { map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); } catch {}
-          try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
-          try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
+        if (!f) { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
+        if (f.geometry?.type === 'Polygon') {
+          const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+          if (!Array.isArray(ring) || ring.length < 4) { (window)._editTarget = null; map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); (window)._refreshEditVerts && (window)._refreshEditVerts(); (window)._refreshDraw && (window)._refreshDraw(); return; }
+          const inside = pointInRing([e.lngLat.lng, e.lngLat.lat], ring);
+          if (!inside) {
+            (window)._editTarget = null;
+            try { map.setLayoutProperty('edit-verts','visibility','none'); map.setLayoutProperty('edit-mid','visibility','none'); } catch {}
+            try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
+            try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
+          }
         }
       }catch{}
     });
     const refreshDrawMapOnly = () => {
-      try { const src = map.getSource('draw'); if (src) src.setData(drawStore); } catch {}
+      try {
+        const src = map.getSource('draw');
+        if (src) src.setData(drawStore);
+        updateFeatureLabels();
+      } catch {}
     };
 
     // Expose a loader to replace drawings from external data (file open)
@@ -2509,6 +4233,117 @@
     };
     const fmtLen = (m) => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
     const fmtArea = (a) => a >= 1_000_000 ? `${(a/1_000_000).toFixed(2)} km²` : `${Math.round(a).toLocaleString()} m²`;
+    const polygonCentroid = (ring) => {
+      if (!Array.isArray(ring) || ring.length < 3) return null;
+      let twiceArea = 0;
+      let cx = 0;
+      let cy = 0;
+      for (let i = 0; i < ring.length - 1; i++) {
+        const [x0, y0] = ring[i];
+        const [x1, y1] = ring[i + 1];
+        if (![x0, y0, x1, y1].every(Number.isFinite)) continue;
+        const cross = (x0 * y1) - (x1 * y0);
+        twiceArea += cross;
+        cx += (x0 + x1) * cross;
+        cy += (y0 + y1) * cross;
+      }
+      if (!Number.isFinite(twiceArea) || Math.abs(twiceArea) < 1e-12) {
+        let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+        ring.forEach((pt) => {
+          const [lng, lat] = Array.isArray(pt) ? pt : [];
+          if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        });
+        if (!Number.isFinite(minLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLng) || !Number.isFinite(maxLat)) {
+          return null;
+        }
+        return [ (minLng + maxLng) / 2, (minLat + maxLat) / 2 ];
+      }
+      const areaFactor = twiceArea * 3;
+      if (!Number.isFinite(areaFactor) || Math.abs(areaFactor) < 1e-12) return null;
+      return [ cx / areaFactor, cy / areaFactor ];
+    };
+    buildFeatureLabelFeatures = () => {
+      const labels = [];
+      if (!drawStore || !Array.isArray(drawStore.features)) return labels;
+      drawStore.features.forEach((feature) => {
+        try {
+          if (!feature || feature.properties?.isLineEndpoint) return;
+          if (feature.properties?._trackerHidden) return;
+          if (feature.properties?._featureHidden) return;
+          const geom = feature.geometry;
+          const kind = (feature.properties?.kind || '').toLowerCase();
+          const color = typeof feature.properties?.color === 'string' ? feature.properties.color : '#1f2933';
+          if (geom?.type === 'Polygon' && kind !== 'arrow') {
+            const rings = Array.isArray(geom.coordinates) ? geom.coordinates : [];
+            const ring = Array.isArray(rings[0]) ? rings[0] : null;
+            if (!ring || ring.length < 4) return;
+            const centroid = polygonCentroid(ring);
+            if (!centroid) return;
+            const area = areaSqm(ring);
+            if (!Number.isFinite(area)) return;
+            const name = (feature.properties?.name || '').trim() || 'Untitled';
+            labels.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: centroid },
+              properties: {
+                labelType: 'polygon',
+                name,
+                area: fmtArea(area),
+                color
+              }
+            });
+            return;
+          }
+          if (geom?.type === 'LineString' && (kind === 'line' || kind === 'polyline' || kind === 'path' || kind === '')) {
+            const coords = Array.isArray(geom.coordinates) ? geom.coordinates : [];
+            if (coords.length < 2) return;
+            const start = coords[0];
+            const end = coords[coords.length - 1];
+            if (!Array.isArray(start) || !Array.isArray(end)) return;
+            const name = (feature.properties?.name || '').trim() || 'Untitled';
+            const lengthMetersValue = lengthMeters(coords);
+            if (!Number.isFinite(lengthMetersValue)) return;
+            const length = fmtLen(lengthMetersValue);
+            labels.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [start[0], start[1]] },
+              properties: {
+                labelType: 'line-name',
+                name,
+                color
+              }
+            });
+            labels.push({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [end[0], end[1]] },
+              properties: {
+                labelType: 'line-length',
+                length,
+                color
+              }
+            });
+          }
+        } catch (err) {
+          console.error('buildFeatureLabelFeatures failed', err);
+        }
+      });
+      return labels;
+    };
+    updateFeatureLabels = () => {
+      try {
+        const mapInst = getMap();
+        if (!mapInst) return;
+        const src = mapInst.getSource('draw-labels');
+        if (!src) return;
+        src.setData({ type: 'FeatureCollection', features: buildFeatureLabelFeatures() });
+      } catch (err) {
+        console.error('updateFeatureLabels failed', err);
+      }
+    };
     const newId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
     // Auto-assign palette (cycling)
     const colorPalette = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#4caf50','#ff9800','#795548','#607d8b','#f44336'];
@@ -2537,24 +4372,47 @@
         if (!Array.isArray(start) || !Array.isArray(end)) return;
         const color = lineFeature.properties?.color || '#64b5f6';
         const lineId = lineFeature.properties?.id;
-        const makePoint = (coord, kind, opacity) => ({
+        const makePoint = (coord, kind, { opacity = 1, hasInnerDot = false } = {}) => ({
           type: 'Feature',
           properties: {
             id: newId(),
             kind,
             color,
             pointOpacity: opacity,
+            hasInnerDot,
             relatedLineId: lineId,
             isLineEndpoint: true
           },
           geometry: { type: 'Point', coordinates: [coord[0], coord[1]] }
         });
-        drawStore.features.push(makePoint(start, 'line-start', 0.6));
-        drawStore.features.push(makePoint(end, 'line-end', 1));
+        drawStore.features.push(makePoint(start, 'line-start', { opacity: 1, hasInnerDot: true }));
+        drawStore.features.push(makePoint(end, 'line-end', { opacity: 1 }));
       } catch (err) {
         console.error('addLineEndpoints failed', err);
       }
     };
+    function syncLineEndpoints(lineFeature) {
+      try {
+        if (!lineFeature || lineFeature.geometry?.type !== 'LineString') return;
+        const coords = Array.isArray(lineFeature.geometry?.coordinates) ? lineFeature.geometry.coordinates : null;
+        const lineId = lineFeature.properties?.id;
+        if (!coords || coords.length < 2 || !lineId) return;
+        const start = coords[0];
+        const end = coords[coords.length - 1];
+        if (!Array.isArray(start) || !Array.isArray(end)) return;
+        drawStore.features.forEach((feat) => {
+          if (!feat || feat.properties?.relatedLineId !== lineId) return;
+          if (!feat.geometry || feat.geometry.type !== 'Point') return;
+          if (feat.properties?.kind === 'line-start') {
+            feat.geometry.coordinates = [start[0], start[1]];
+          } else if (feat.properties?.kind === 'line-end') {
+            feat.geometry.coordinates = [end[0], end[1]];
+          }
+        });
+      } catch (err) {
+        console.error('syncLineEndpoints failed', err);
+      }
+    }
     const circleFrom = (center, edge, steps=64) => {
       const latRad = center.lat * Math.PI/180;
       const mPerDegLng = Math.max(1e-6, Math.cos(latRad) * metersPerDegLat);
@@ -2672,6 +4530,20 @@
     const onClick = (e) => {
       const tool = (window)._currentTool;
       if (!tool) return;
+      if (tool === 'weather') {
+        if (e?.preventDefault) e.preventDefault();
+        const lngLat = e?.lngLat;
+        if (lngLat) sampleWeatherAtPoint(lngLat);
+        return;
+      }
+      if (tool === 'crosshair') {
+        if (e?.preventDefault) e.preventDefault();
+        const lngLat = e?.lngLat;
+        if (lngLat && Number.isFinite(lngLat.lng) && Number.isFinite(lngLat.lat)) {
+          showCoordinatesDialog(lngLat.lng, lngLat.lat);
+        }
+        return;
+      }
       if (tool === 'arrow') {
         if (!arrowStart) {
           arrowStart = e.lngLat;
@@ -2756,16 +4628,21 @@
       try { (window)._lineInProgress = false; } catch {}
       try { vertCoords = null; dragStart = null; } catch {}
       try { const m = (window)._map; if (m) { m.dragPan.enable(); m.getCanvas().style.cursor = ''; } } catch {}
+      try { if ((window)._currentTool === 'crosshair') setCrosshairMode(false); } catch {}
+      try { window.setActiveTool?.(null); } catch {}
     };
 
     // ---------- Drawings floating list ----------
     let hoveredId = null;
     const setHighlight = (id) => {
       hoveredId = id || null;
-      const filt = id ? ['==', ['get','id'], id] : ['==', ['get','id'], '__none__'];
-      try { map.setFilter('draw-hl-fill', filt); } catch {}
-      try { map.setFilter('draw-hl-line', filt); } catch {}
-      try { map.setFilter('draw-hl-point', filt); } catch {}
+      const matchId = ['==', ['get', 'id'], id || '__none__'];
+      const polygonFilter = ['all', ['==', ['geometry-type'], 'Polygon'], matchId, ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]];
+      const lineFilter = ['all', ['==', ['geometry-type'], 'LineString'], matchId, ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]];
+      const pointFilter = ['all', ['==', ['geometry-type'], 'Point'], matchId, ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]];
+      try { map.setFilter('draw-hl-fill', polygonFilter); } catch {}
+      try { map.setFilter('draw-hl-line', lineFilter); } catch {}
+      try { map.setFilter('draw-hl-point', pointFilter); } catch {}
     };
     // Color modal helpers
     function buildColorGridOnce(){
@@ -2853,23 +4730,73 @@
       });
 
       const del = document.createElement('button');
-      del.className = 'drawing-del'; del.textContent = '×'; del.title = 'Delete';
-      const editBtn = document.createElement('button');
-      editBtn.className = 'drawing-edit'; editBtn.title = 'Edit polygon'; editBtn.setAttribute('aria-label','Edit polygon'); editBtn.textContent = '✎';
-      const updateEditBtnState = () => {
-        const active = (window)._editTarget && f.properties?.id === (window)._editTarget;
-        editBtn.classList.toggle('active', !!active);
-        editBtn.title = active ? 'Save edits' : 'Edit polygon';
-        editBtn.textContent = active ? '💾' : '✎';
-      };
-      updateEditBtnState();
-      const aiBtn = document.createElement('button');
-      aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions'); aiBtn.textContent = 'AI';
-      if (!aiEnabled) {
-        aiBtn.disabled = true;
-        aiBtn.hidden = true;
+      del.type = 'button';
+      del.className = 'drawing-del';
+      del.title = 'Delete';
+      const delIcon = makeButtonIcon(DRAWING_ICON_PATHS.delete);
+      del.appendChild(delIcon);
+      const g = f.geometry || {};
+      const geomType = g.type || '';
+      const isPointFeature = geomType === 'Point';
+      const isArrowFeature = (f.properties?.kind || '').toLowerCase() === 'arrow';
+      const disableEditAi = isArrowFeature;
+      let editBtn = null;
+      let updateEditBtnState = () => {};
+      let startEdit = () => {};
+      let stopEdit = () => {};
+      if (!disableEditAi) {
+        editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'drawing-edit';
+        const editIdleLabel = g.type === 'LineString' ? 'Edit line' : 'Edit polygon';
+        const editActiveLabel = 'Save edits';
+        editBtn.title = editIdleLabel;
+        editBtn.setAttribute('aria-label', editIdleLabel);
+        const editIcon = makeButtonIcon(DRAWING_ICON_PATHS.edit);
+        editBtn.appendChild(editIcon);
+        updateEditBtnState = () => {
+          const active = (window)._editTarget && f.properties?.id === (window)._editTarget;
+          editBtn.classList.toggle('active', !!active);
+          const label = active ? editActiveLabel : editIdleLabel;
+          editBtn.title = label;
+          editBtn.setAttribute('aria-label', label);
+        };
+        updateEditBtnState();
+        startEdit = () => {
+          try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
+          try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
+          (window)._editTarget = f.properties?.id || null;
+          updateEditBtnState();
+          try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); m.setLayoutProperty('edit-mid','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-mid'); m.moveLayer('edit-verts'); }catch{} } }catch{}
+          if (g.type==='Polygon') flyToFeaturePolygon(f);
+        };
+        stopEdit = () => {
+          (window)._editTarget = null;
+          updateEditBtnState();
+          try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); m.setLayoutProperty('edit-mid','visibility','none'); refreshEditVerts(); } }catch{}
+          setDirty(true); refreshDraw();
+          notifyFeatureModified();
+        };
+        editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
       }
-      const g = f.geometry;
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'drawing-toggle';
+      const toggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.show);
+      toggleBtn.appendChild(toggleIcon);
+      let aiBtn = null;
+      if (!disableEditAi) {
+        aiBtn = document.createElement('button');
+        aiBtn.type = 'button';
+        aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions');
+        const aiIcon = makeButtonIcon(DRAWING_ICON_PATHS.ai);
+        aiBtn.appendChild(aiIcon);
+        if (!aiEnabled) {
+          aiBtn.disabled = true;
+          aiBtn.hidden = true;
+          aiBtn.style.display = 'none';
+        }
+      }
       let label = f.properties.kind || g.type;
       let sizeText = '';
       if (g.type === 'LineString') {
@@ -2886,7 +4813,7 @@
       typeEl.textContent = label;
       size.textContent = sizeText;
       const isArrow = f.properties?.kind === 'arrow';
-      if (isArrow) {
+      if (isArrow && editBtn) {
         editBtn.hidden = true;
         editBtn.disabled = true;
         const lenMeters = Number(f.properties?.lengthMeters);
@@ -2896,8 +4823,9 @@
       // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
       row.appendChild(nameWrap);
       actions.appendChild(colorWrap);
-      actions.appendChild(editBtn);
-      actions.appendChild(aiBtn);
+      if (editBtn) actions.appendChild(editBtn);
+      actions.appendChild(toggleBtn);
+      if (aiBtn) actions.appendChild(aiBtn);
       actions.appendChild(del);
       row.appendChild(actions);
       row.appendChild(meta);
@@ -2961,23 +4889,42 @@
           }
         }catch{}
       };
-      const startEdit = () => {
-        try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
-        try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
-        (window)._editTarget = f.properties?.id || null;
-        updateEditBtnState();
-        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','visible'); m.setLayoutProperty('edit-mid','visibility','visible'); refreshEditVerts(); try{ m.moveLayer('edit-mid'); m.moveLayer('edit-verts'); }catch{} } }catch{}
-        if (f.geometry?.type==='Polygon') flyToFeaturePolygon(f);
+      const applyToggleState = () => {
+        const hidden = !!(f.properties && f.properties._featureHidden);
+        const key = hidden ? 'features.showFeature' : 'features.hideFeature';
+        const labelText = t(key, hidden ? 'Show feature' : 'Hide feature');
+        toggleIcon.src = hidden ? DRAWING_ICON_PATHS.hide : DRAWING_ICON_PATHS.show;
+        toggleBtn.dataset.i18nTitle = key;
+        toggleBtn.dataset.i18nAriaLabel = key;
+        toggleBtn.title = labelText;
+        toggleBtn.setAttribute('aria-label', labelText);
+        toggleBtn.setAttribute('aria-pressed', String(hidden));
+        toggleBtn.classList.toggle('is-hidden', hidden);
+        row.classList.toggle('drawing-row--hidden', hidden);
+        if (hidden && hoveredId === f.properties?.id) setHighlight(null);
       };
-      const stopEdit = () => {
-        (window)._editTarget = null;
-        updateEditBtnState();
-        try{ const m=(window)._map; if (m){ m.setLayoutProperty('edit-verts','visibility','none'); m.setLayoutProperty('edit-mid','visibility','none'); refreshEditVerts(); } }catch{}
-        setDirty(true); refreshDraw();
-        notifyFeatureModified();
-      };
-      editBtn.addEventListener('click', (e) => { e.stopPropagation(); const active = (window)._editTarget && f.properties?.id === (window)._editTarget; if (active) stopEdit(); else startEdit(); });
-      aiBtn.addEventListener('click', (e) => {
+      applyToggleState();
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        f.properties = f.properties || {};
+        const currentlyHidden = !!f.properties._featureHidden;
+        const nextHidden = !currentlyHidden;
+        f.properties._featureHidden = nextHidden;
+        let stoppedEditing = false;
+        if (nextHidden && (window)._editTarget && f.properties?.id === (window)._editTarget) {
+          const prevSuppress = suppressFeatureToasts;
+          suppressFeatureToasts = true;
+          try { stopEdit(); stoppedEditing = true; }
+          finally { suppressFeatureToasts = prevSuppress; }
+        }
+        applyToggleState();
+        if (!stoppedEditing) {
+          setDirty(true);
+          refreshDraw();
+        }
+        notifyFeatureModified(nextHidden ? 'messages.featureHidden' : 'messages.featureShown', nextHidden ? 'Feature hidden' : 'Feature shown');
+      });
+      aiBtn?.addEventListener('click', (e) => {
         if (!aiEnabled) return;
         e.stopPropagation();
         openAiModal(f);
@@ -3081,11 +5028,11 @@
         const result = await window.file.saveAs(data, defaultPath);
         if (result && result.ok) {
           setDirty(false);
-          showToast('Features saved');
+          showToast(t('messages.featuresSaved', 'Features saved'));
         }
       } catch (err) {
         console.error('Saving features failed', err);
-        showToast('Save failed', 'error');
+        showToast(t('messages.saveFailed', 'Save failed'), 'error');
       }
     };
 
@@ -3201,7 +5148,7 @@
       if (!visibleFeatures.length) {
         const empty = document.createElement('div');
         empty.className = 'features-empty';
-        empty.textContent = 'No features yet. Start drawing on the map.';
+        empty.textContent = t('messages.noFeaturesYet', 'No features yet. Start drawing on the map.');
         drawingsList.appendChild(empty);
         updateFeaturesActionsState(false);
         return;
@@ -3332,6 +5279,9 @@
             const center = centroidOfGeom(g);
             ok = !!(center && keepPoint(center.lng, center.lat)) && ring.length>2;
           }
+        } else if (t === 'Point') {
+          // Allow POIs to move freely; accept any point
+          ok = Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
         } else {
           ok = false;
         }
@@ -3344,9 +5294,13 @@
       aiTarget = feature;
       aiError.textContent = '';
       if (aiInput) aiInput.value = '';
+      if (aiModifiersInput) aiModifiersInput.value = '';
+      if (aiReplaceCheckbox) aiReplaceCheckbox.checked = false;
+      const geomType = feature?.geometry?.type;
+      populateAiPresetOptions(geomType);
       if (aiModal) aiModal.hidden = false;
       if (aiMeta) {
-        aiMeta.innerHTML = '<div>Loading…</div>';
+        aiMeta.innerHTML = `<div>${t('status.loading', 'Loading…')}</div>`;
         const center = centroidOf(feature);
         const loc = await describeLocation(center);
         const parts = [];
@@ -3362,27 +5316,53 @@
     aiSubmit?.addEventListener('click', async () => {
       try{
         if (!aiEnabled) {
-          aiError.textContent = 'Add an OpenAI API key in Settings to use AI features.';
+          aiError.textContent = t('messages.addOpenAIKey', 'Add an OpenAI API key in Settings to use AI features.');
           return;
         }
         if (!aiTarget) return;
-        const prompt = (aiInput?.value || '').trim();
+        const manualInstruction = (aiInput?.value || '').trim();
+        let presetInstruction = '';
+        if (aiPresetSelect && !aiPresetSelect.disabled) {
+          presetInstruction = (aiPresetSelect.value || '').trim();
+          if (presetInstruction) {
+            if (presetInstruction.includes('{VALUE}')) {
+              const rawValue = aiValueInput?.value;
+              if (!rawValue) {
+                aiError.textContent = 'Enter a value for the selected preset.';
+                return;
+              }
+              presetInstruction = presetInstruction.replace('{VALUE}', rawValue);
+            }
+            if (presetInstruction.includes('{DIRECTION}')) {
+              const dir = aiDirectionSelect?.value || 'north';
+              presetInstruction = presetInstruction.replace('{DIRECTION}', dir);
+            }
+          }
+        }
+        const modifierInstruction = (aiModifiersInput?.value || '').trim();
+        const promptParts = [presetInstruction, manualInstruction, modifierInstruction].filter((part) => part && part.length > 0);
+        if (!promptParts.length) {
+          aiError.textContent = 'Please enter an instruction, choose a preset, or add modifiers for the AI request.';
+          return;
+        }
+        const prompt = promptParts.join('\n');
         aiError.textContent = '';
-        aiSubmit.disabled = true; aiSubmit.textContent = 'Submitting…'; if (aiSpinner) aiSpinner.style.display='inline-block'; if (aiInput) aiInput.disabled = true;
+        aiSubmit.disabled = true; aiSubmit.textContent = t('aiModal.submitting', 'Submitting…'); if (aiSpinner) aiSpinner.style.display='inline-block'; if (aiInput) aiInput.disabled = true;
         // API key from settings/localStorage
         const openaiKey = (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
         const result = await window.ai.transformDrawing({ type:'Feature', properties:{}, geometry: aiTarget.geometry }, prompt, openaiKey);
-        if (!result || !result.ok) { aiError.textContent = result?.error || 'AI request failed'; return; }
-        // Constrain features to original geometry region
-        const constrained = constrainToOriginal(aiTarget, result.featureCollection);
-        const candidates = (constrained && Array.isArray(constrained.features)) ? constrained.features.filter(f => f && f.type === 'Feature' && f.geometry && ['Polygon','LineString','Point'].includes(f.geometry.type)) : [];
+        if (!result || !result.ok) { aiError.textContent = translateString(result?.error || 'AI request failed', 'messages.aiRequestFailed'); return; }
+        const candidates = (result.featureCollection && Array.isArray(result.featureCollection.features))
+          ? result.featureCollection.features.filter((f) => f && f.type === 'Feature' && f.geometry && ['Polygon','LineString','Point'].includes(f.geometry.type))
+          : [];
         if (!candidates.length) {
-          aiError.textContent = 'The AI response did not contain valid features within the original area. The drawing was not changed.';
+          aiError.textContent = t('messages.aiResponseInvalid', 'The AI response did not contain valid features within the original area. The drawing was not changed.');
           return;
         }
         // Replace the target with new features only after validating we have some
+        const replaceOriginal = !aiReplaceCheckbox || aiReplaceCheckbox.checked;
         const idx = drawStore.features.findIndex(x => x.properties?.id === aiTarget.properties?.id);
-        if (idx >= 0) drawStore.features.splice(idx, 1);
+        if (replaceOriginal && idx >= 0) drawStore.features.splice(idx, 1);
         suppressFeatureToasts = true;
         try {
           candidates.forEach(feat => {
@@ -3398,7 +5378,7 @@
       } catch(e){
         aiError.textContent = String(e);
       } finally {
-        aiSubmit.disabled = false; aiSubmit.textContent = 'SUBMIT'; if (aiSpinner) aiSpinner.style.display='none'; if (aiInput) aiInput.disabled = false;
+        aiSubmit.disabled = false; aiSubmit.textContent = t('aiModal.submit', 'SUBMIT'); if (aiSpinner) aiSpinner.style.display='none'; if (aiInput) aiInput.disabled = false;
       }
     });
 
@@ -3414,18 +5394,19 @@
     if (serialStatusDot) serialStatusDot.dataset.state = state;
     if (statSerial) statSerial.textContent = state === 'connected' ? (path || 'connected') : state;
     if (serialConnectBtn) {
+      const labelKey = state === 'connected' ? 'serial.status.connected' : state === 'connecting' ? 'serial.status.connecting' : 'serial.connectButton';
+      const computedLabel = t(labelKey, state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : 'Connect');
+      serialConnectBtn.setAttribute('aria-label', computedLabel);
+      serialConnectBtn.setAttribute('title', computedLabel);
       if (state === 'connected') {
         serialConnectBtn.disabled = true;
         serialConnectBtn.setAttribute('aria-disabled', 'true');
-        if (serialConnectLabel) serialConnectLabel.textContent = 'Connected';
       } else if (state === 'connecting') {
         serialConnectBtn.disabled = true;
         serialConnectBtn.setAttribute('aria-disabled', 'true');
-        if (serialConnectLabel) serialConnectLabel.textContent = 'Connecting…';
       } else {
         serialConnectBtn.disabled = false;
         serialConnectBtn.removeAttribute('aria-disabled');
-        if (serialConnectLabel) serialConnectLabel.textContent = 'Connect';
       }
     }
 
@@ -3452,10 +5433,20 @@
 
   async function refreshPortsList() {
     try {
-      portsContainer.innerHTML = '<div class="muted">Scanning ports…</div>';
+      if (portsContainer) {
+        portsContainer.innerHTML = '';
+        const scanning = ce('div', 'muted');
+        bindText(scanning, 'connectModal.scanning', 'Scanning ports…');
+        portsContainer.appendChild(scanning);
+      }
       const ports = await window.serial.listPorts();
       if (!ports || ports.length === 0) {
-        portsContainer.innerHTML = '<div class="muted">No ports found</div>';
+        if (portsContainer) {
+          portsContainer.innerHTML = '';
+          const empty = ce('div', 'muted');
+          bindText(empty, 'connectModal.noPorts', 'No ports found');
+          portsContainer.appendChild(empty);
+        }
         selectedPath = null;
         return;
       }
@@ -3581,10 +5572,10 @@
   fullscreenBtn?.addEventListener('click', async () => {
     try {
       const isFull = await window.app.toggleFullScreen();
-      showToast(isFull ? 'Entered fullscreen' : 'Exited fullscreen');
+      showToast(t(isFull ? 'messages.fullscreenEntered' : 'messages.fullscreenExited', isFull ? 'Entered fullscreen' : 'Exited fullscreen'));
     } catch (err) {
       console.error('Toggle fullscreen failed', err);
-      showToast('Fullscreen toggle failed', 'error');
+      showToast(t('messages.fullscreenToggleFailed', 'Fullscreen toggle failed'), 'error');
     }
   });
 
@@ -3610,7 +5601,7 @@
   });
   tabMapInput?.addEventListener('change', () => {
     if (tabMapInput?.checked && settingsDirty) {
-      alert('You have unsaved settings. Please save before returning to the map.');
+      alert(t('alerts.unsavedSettings', 'You have unsaved settings. Please save before returning to the map.'));
       if (tabMapInput) tabMapInput.checked = false;
       if (tabSettingsInput) tabSettingsInput.checked = true;
     }
@@ -3889,6 +5880,11 @@
       featuresResizer.addEventListener('touchstart', onDown, { passive:false });
     }
 
+    setFeatureLabelsToggleState(true);
+    featuresLabelsToggle?.addEventListener('click', () => {
+      setFeatureLabelsToggleState(!featureLabelsVisible);
+    });
+
     featuresCollapse?.addEventListener('click', () => {
       applyOpen(false);
       setTimeout(() => { try { featuresToggleBtn?.focus?.(); } catch {} }, 240);
@@ -4088,7 +6084,7 @@
   // Save completed (from main)
   window.file && window.file.onSaved && window.file.onSaved(() => {
     setDirty(false);
-    showToast('Features saved');
+    showToast(t('messages.featuresSaved', 'Features saved'));
   });
   // Open data from main -> prompt overwrite and load
   if (window.file && window.file.onOpenData) {
@@ -4100,7 +6096,10 @@
         const src = m.getSource('draw');
         if (!src) return;
         if (isDirty) {
-          const promptRes = await window.file.askSaveDiscardCancel('You have unsaved drawings.', 'Do you want to save before opening a file?');
+          const promptRes = await window.file.askSaveDiscardCancel(
+            t('alerts.unsavedDrawings', 'You have unsaved drawings.'),
+            t('alerts.saveBeforeOpening', 'Do you want to save before opening a file?')
+          );
           if (!promptRes || promptRes.choice === 'cancel') return;
           if (promptRes.choice === 'save') {
             try {
@@ -4128,7 +6127,10 @@
     window.app.onConfirmClose(async () => {
       try {
         if (!isDirty) { window.app.confirmCloseResult(true); return; }
-        const promptRes = await window.file.askSaveDiscardCancel('You have unsaved drawings.', 'Do you want to save before closing?');
+        const promptRes = await window.file.askSaveDiscardCancel(
+          t('alerts.unsavedDrawings', 'You have unsaved drawings.'),
+          t('alerts.saveBeforeClosing', 'Do you want to save before closing?')
+        );
         if (!promptRes || promptRes.choice === 'cancel') { window.app.confirmCloseResult(false); return; }
           if (promptRes.choice === 'save') {
             try {
@@ -4160,7 +6162,10 @@
           hasExisting = curr.length > 0;
         } catch {}
         if (hasExisting || isDirty) {
-          const res = await window.file.askSaveDiscardCancel('You have unsaved drawings.', 'Do you want to save before creating a new file?');
+          const res = await window.file.askSaveDiscardCancel(
+            t('alerts.unsavedDrawings', 'You have unsaved drawings.'),
+            t('alerts.saveBeforeNew', 'Do you want to save before creating a new file?')
+          );
           if (!res || res.choice === 'cancel') return;
           if (res.choice === 'save') {
             try {
@@ -4206,7 +6211,7 @@
       if (previousTool === 'arrow' && tool !== 'arrow') {
         window._cleanupArrowInteraction?.();
       }
-      const all = [toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI];
+      const all = [toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI, toolWeather, toolCrosshair];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
@@ -4221,9 +6226,22 @@
           toolPOI?.classList.add('active');
           toolPOI?.setAttribute('aria-pressed', String(true));
           break;
+        case 'weather':
+          toolWeather?.classList.add('active');
+          toolWeather?.setAttribute('aria-pressed', String(true));
+          break;
+        case 'crosshair':
+          toolCrosshair?.classList.add('active');
+          toolCrosshair?.setAttribute('aria-pressed', String(true));
+          break;
         default: break;
       }
-      if (tool && tool !== 'poi') ensureFeaturesVisible();
+      if (tool === 'crosshair') {
+        setCrosshairMode(true);
+      } else if (previousTool === 'crosshair') {
+        setCrosshairMode(false);
+      }
+      if (tool && tool !== 'poi' && tool !== 'weather' && tool !== 'crosshair') ensureFeaturesVisible();
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
@@ -4252,6 +6270,8 @@
       }
     });
     toolPOI?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poi' ? null : 'poi'));
+    toolWeather?.addEventListener('click', () => setActiveTool((window)._currentTool === 'weather' ? null : 'weather'));
+    toolCrosshair?.addEventListener('click', () => setActiveTool((window)._currentTool === 'crosshair' ? null : 'crosshair'));
 
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
@@ -4277,14 +6297,9 @@
     // Go To coordinates modal
     function openGotoModal(){
       if (!gotoModal) return;
-      try{
-        const c = (window)._map?.getCenter();
-        if (gotoLat && c) gotoLat.value = Number(c.lat).toFixed(6);
-        if (gotoLng && c) gotoLng.value = Number(c.lng).toFixed(6);
-      }catch{}
-      syncGotoPoiControls();
       gotoModal.hidden = false;
-      setTimeout(() => gotoLat?.focus(), 0);
+      refreshGotoFormForSystem(true);
+      syncGotoPoiControls();
     }
     function closeGotoModal(){ if (gotoModal) gotoModal.hidden = true; }
     toolGoTo?.addEventListener('click', openGotoModal);
@@ -4301,19 +6316,83 @@
       syncGotoPoiControls(shouldFocus);
     });
     syncGotoPoiControls();
+
+    const openShortcutsModal = () => {
+      if (!shortcutsModal) return;
+      renderShortcutsList();
+      shortcutsModal.hidden = false;
+      shortcutsModal.setAttribute('aria-hidden', 'false');
+      setTimeout(() => {
+        try { shortcutsClose?.focus(); }
+        catch (err) { console.warn('focus shortcutsClose failed', err); }
+      }, 0);
+    };
+    const closeShortcutsModal = () => {
+      if (!shortcutsModal || shortcutsModal.hidden) return;
+      shortcutsModal.hidden = true;
+      shortcutsModal.setAttribute('aria-hidden', 'true');
+    };
+
     const performGoto = async () => {
       try{
-        const lng = Number(gotoLng?.value);
-        const lat = Number(gotoLat?.value);
-        if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
-          alert('Please enter valid coordinates.'); return;
+        const map = (window)._map; if (!map) return;
+        let targetLat = null;
+        let targetLng = null;
+        const system = (currentCoordinateSystem || '').toLowerCase();
+        if (system === 'utm') {
+          const zoneParsed = parseUtmZoneInput(gotoUtmZone?.value);
+          const easting = Number(gotoUtmEasting?.value);
+          const northing = Number(gotoUtmNorthing?.value);
+          if (!zoneParsed || !Number.isFinite(easting) || !Number.isFinite(northing)) {
+            alert(t('alerts.invalidCoords', 'Please enter valid coordinates.'));
+            if (!zoneParsed) gotoUtmZone?.focus();
+            else if (!Number.isFinite(easting)) gotoUtmEasting?.focus();
+            else gotoUtmNorthing?.focus();
+            return;
+          }
+          const latLng = latLngFromUtm({ ...zoneParsed, easting, northing });
+          if (!latLng || !Number.isFinite(latLng.lat) || !Number.isFinite(latLng.lng)) {
+            alert(t('alerts.invalidCoords', 'Please enter valid coordinates.'));
+            gotoUtmZone?.focus();
+            return;
+          }
+          targetLat = latLng.lat;
+          targetLng = latLng.lng;
+        } else if (system === 'gk') {
+          const zoneNumber = Number(gotoGkZone?.value);
+          const easting = Number(gotoGkEasting?.value);
+          const northing = Number(gotoGkNorthing?.value);
+          const zoneValid = Number.isInteger(zoneNumber) && zoneNumber >= 1 && zoneNumber <= 60;
+          if (!zoneValid || !Number.isFinite(easting) || !Number.isFinite(northing)) {
+            alert(t('alerts.invalidCoords', 'Please enter valid coordinates.'));
+            if (!zoneValid) gotoGkZone?.focus();
+            else if (!Number.isFinite(easting)) gotoGkEasting?.focus();
+            else gotoGkNorthing?.focus();
+            return;
+          }
+          const latLng = latLngFromGaussKrueger({ zoneNumber, easting, northing });
+          if (!latLng || !Number.isFinite(latLng.lat) || !Number.isFinite(latLng.lng)) {
+            alert(t('alerts.invalidCoords', 'Please enter valid coordinates.'));
+            gotoGkZone?.focus();
+            return;
+          }
+          targetLat = latLng.lat;
+          targetLng = latLng.lng;
+        } else {
+          const lng = Number(gotoLng?.value);
+          const lat = Number(gotoLat?.value);
+          if (!Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+            alert(t('alerts.invalidCoords', 'Please enter valid coordinates.'));
+            return;
+          }
+          targetLat = lat;
+          targetLng = lng;
         }
-        const m = (window)._map; if (!m) return;
-        m.flyTo({ center: [lng, lat], zoom: Math.max(14, m.getZoom() || 14), duration: 600 });
+        map.flyTo({ center: [targetLng, targetLat], zoom: Math.max(14, map.getZoom() || 14), duration: 600 });
         if (gotoAddPoi && gotoAddPoi.checked) {
           try {
             const ds = (window)._drawStore || drawStore;
-            const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[lng, lat] } };
+            const poi = { type:'Feature', properties:{}, geometry:{ type:'Point', coordinates:[targetLng, targetLat] } };
             const name = (gotoPoiName?.value || '').trim();
             if (name) poi.properties.name = name;
             const af = (typeof annotateFeature === 'function') ? annotateFeature : (f)=>f;
@@ -4323,25 +6402,198 @@
           } catch (err) { console.error('Add POI failed', err); }
         }
         closeGotoModal();
-      } catch {}
+      } catch (err) {
+        console.error('performGoto failed', err);
+      }
     };
     gotoSubmit?.addEventListener('click', performGoto);
     // Allow Enter key to submit from either field
     gotoLat?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
     gotoLng?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); performGoto(); } });
+    [gotoUtmZone, gotoUtmEasting, gotoUtmNorthing, gotoGkZone, gotoGkEasting, gotoGkNorthing].forEach((input) => {
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); performGoto(); }
+      });
+    });
+
+    toolShortcuts?.addEventListener('click', openShortcutsModal);
+    shortcutsClose?.addEventListener('click', closeShortcutsModal);
+    shortcutsModal?.addEventListener('click', (e) => {
+      const target = e.target;
+      if (target && target.dataset && target.dataset.action === 'close') {
+        closeShortcutsModal();
+      }
+    });
+    shortcutsModal?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeShortcutsModal();
+        e.stopPropagation();
+      }
+    });
+
+    const TYPING_INPUT_TYPES = new Set(['text','search','email','url','tel','number','password','date','time','datetime-local','month','week','color']);
+    const MAP_PAN_STEP = 160;
+    const isTypingTarget = (target) => {
+      if (!target) return false;
+      if (target.isContentEditable) return true;
+      const tag = (target.tagName || '').toLowerCase();
+      if (tag === 'textarea' || tag === 'select') return true;
+      if (tag === 'input') {
+        const type = (target.type || '').toLowerCase();
+        return TYPING_INPUT_TYPES.has(type);
+      }
+      return false;
+    };
+
+    const toggleToolShortcut = (tool) => {
+      if (typeof (window).setActiveTool !== 'function') return;
+      const current = (window)._currentTool;
+      if (current === tool) {
+        if (tool === 'line' && (window)._lineInProgress) return;
+        (window).setActiveTool(null);
+      } else {
+        if (tool === 'arrow') window._cleanupArrowInteraction?.();
+        (window).setActiveTool(tool);
+      }
+    };
+
+    const panMapBy = (dx, dy) => {
+      try {
+        const map = getMap();
+        if (!map) return;
+        map.panBy([dx, dy], { duration: 180, easing: (t) => 1 - Math.pow(1 - t, 2) });
+      } catch (err) {
+        console.warn('panMapBy failed', err);
+      }
+    };
+
+    const toggleFeaturesSidebarViaShortcut = () => {
+      const isOpen = !featuresSidebar?.hidden;
+      if (isOpen) {
+        featuresCollapse?.click();
+      } else {
+        featuresToggleBtn?.click();
+      }
+    };
+
+    const toggleTrackersSidebarViaShortcut = () => {
+      const isOpen = !trackersSidebar?.hidden;
+      if (isOpen) {
+        trackersCollapse?.click();
+      } else {
+        trackersToggleBtn?.click();
+      }
+    };
+
+    const openSerialMonitorFromShortcut = () => {
+      if (serialMonitorBtn && !serialMonitorBtn.hidden) {
+        serialMonitorBtn.click();
+      } else if (serialMonitorModal) {
+        serialMonitorModal.hidden = false;
+      }
+    };
+
+    const handleKeyboardShortcuts = (event) => {
+      if (!tabMapInput?.checked) return;
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+
+      const key = event.key;
+      if (shortcutsModal && shortcutsModal.hidden === false) {
+        closeShortcutsModal();
+      }
+      switch (key) {
+        case '1': toggleToolShortcut('rect'); event.preventDefault(); return;
+        case '2': toggleToolShortcut('poly'); event.preventDefault(); return;
+        case '3': toggleToolShortcut('circle'); event.preventDefault(); return;
+        case '4': toggleToolShortcut('line'); event.preventDefault(); return;
+        case '5': toggleToolShortcut('arrow'); event.preventDefault(); return;
+        case '6': toggleToolShortcut('poi'); event.preventDefault(); return;
+        case '7': toggleToolShortcut('weather'); event.preventDefault(); return;
+        case '8': toggleToolShortcut('crosshair'); event.preventDefault(); return;
+        case 'ArrowUp':
+          panMapBy(0, -MAP_PAN_STEP);
+          event.preventDefault();
+          return;
+        case 'ArrowDown':
+          panMapBy(0, MAP_PAN_STEP);
+          event.preventDefault();
+          return;
+        case 'ArrowLeft':
+          panMapBy(-MAP_PAN_STEP, 0);
+          event.preventDefault();
+          return;
+        case 'ArrowRight':
+          panMapBy(MAP_PAN_STEP, 0);
+          event.preventDefault();
+          return;
+        case '+':
+          toolZoomIn?.click();
+          event.preventDefault();
+          return;
+        case '=':
+          if (event.shiftKey) {
+            toolZoomIn?.click();
+            event.preventDefault();
+            return;
+          }
+          break;
+        case '-':
+        case '_':
+          toolZoomOut?.click();
+          event.preventDefault();
+          return;
+        case 'F':
+        case 'f':
+          toggleFeaturesSidebarViaShortcut();
+          event.preventDefault();
+          return;
+        case 'T':
+        case 't':
+          toggleTrackersSidebarViaShortcut();
+          event.preventDefault();
+          return;
+        case 'C':
+        case 'c':
+          openGotoModal();
+          event.preventDefault();
+          return;
+        case 'M':
+        case 'm':
+          openSerialMonitorFromShortcut();
+          event.preventDefault();
+          return;
+        case 'S':
+        case 's':
+          if (event.shiftKey) {
+            openConnectModal();
+          } else {
+            toolSearch?.click();
+          }
+          event.preventDefault();
+          return;
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyboardShortcuts);
 
     // Clicking the LAT/LONG in footer opens the same Go To dialog
     try {
       if (statCenter) {
         statCenter.style.cursor = 'pointer';
-        statCenter.title = 'Click to enter coordinates';
+        statCenter.dataset.i18nTitle = 'messages.clickToEnterCoordinates';
+        statCenter.title = t('messages.clickToEnterCoordinates', 'Click to enter coordinates');
         statCenter.addEventListener('click', openGotoModal);
       }
     } catch {}
 
     if (footerAddress) {
       footerAddress.style.cursor = 'pointer';
-      footerAddress.title = 'Click to copy address';
+      footerAddress.dataset.i18nTitle = 'messages.clickToCopyAddress';
+      footerAddress.title = t('messages.clickToCopyAddress', 'Click to copy address');
       footerAddress.addEventListener('click', async () => {
         try {
           const addr = (footerAddress.textContent || '').trim() || lastKnownAddress || '';
@@ -4355,26 +6607,35 @@
             if (!ok) throw new Error('clipboard unavailable');
             footerAddress.classList.add('copied');
             setTimeout(() => footerAddress.classList.remove('copied'), 1200);
-            showToast('Address copied to clipboard');
+            showToast(t('messages.addressCopied', 'Address copied to clipboard'));
           } catch (err) {
             console.error('Copy address failed', err);
-            showToast('Copy failed', 'error');
+            showToast(t('messages.copyFailed', 'Copy failed'), 'error');
           }
         } catch (err) {
           console.error('Copy address wrapper failed', err);
-          showToast('Copy failed', 'error');
+          showToast(t('messages.copyFailed', 'Copy failed'), 'error');
         }
       });
     }
+
+    const renderSearchMessage = (key, fallback) => {
+      if (!searchResults) return;
+      searchResults.innerHTML = '';
+      const msg = document.createElement('div');
+      msg.className = 'muted';
+      bindText(msg, key, fallback);
+      searchResults.appendChild(msg);
+    };
 
     // Live search with debounce
     let searchTimer = null;
     async function performSearch(qstr){
       if (!googleServicesEnabled || !searchResults) return;
       const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
-      if (!key) { searchResults.innerHTML = '<div class="muted">Set Google API key in Settings.</div>'; return; }
-      if (!qstr || qstr.trim().length < 3) { searchResults.innerHTML = '<div class="muted">Type at least 3 characters…</div>'; return; }
-      searchResults.innerHTML = '<div class="muted">Searching…</div>';
+      if (!key) { renderSearchMessage('searchModal.setGoogleKey', 'Set Google API key in Settings.'); return; }
+      if (!qstr || qstr.trim().length < 3) { renderSearchMessage('searchModal.typeHint', 'Type at least 3 characters…'); return; }
+      renderSearchMessage('searchModal.searching', 'Searching…');
       try{
         const url = 'https://places.googleapis.com/v1/places:searchText';
         const resp = await fetch(url, {
@@ -4388,7 +6649,7 @@
         });
         const data = await resp.json();
         const items = Array.isArray(data.places) ? data.places : [];
-        if (!items.length) { searchResults.innerHTML = '<div class="muted">No results</div>'; return; }
+        if (!items.length) { renderSearchMessage('searchModal.noResults', 'No results'); return; }
         searchResults.innerHTML = '';
         items.forEach((it) => {
           const row = document.createElement('div');
@@ -4407,7 +6668,7 @@
         });
       }catch(e){
         console.error(e);
-        searchResults.innerHTML = '<div class="muted">Search failed</div>';
+        renderSearchMessage('searchModal.searchFailed', 'Search failed');
       }
     }
     searchQuery?.addEventListener('input', () => {
@@ -4507,13 +6768,24 @@
       const { lng, lat } = lngLat;
       const ds = (window)._drawStore; if (!ds) return;
       const f = ds.features.find(x => x.properties?.id === dragging.fid);
-      if (!f || f.geometry?.type !== 'Polygon') return;
-      const ring = f.geometry.coordinates && f.geometry.coordinates[0];
-      if (!Array.isArray(ring)) return;
-      const i = dragging.idx;
-      if (!Number.isInteger(i) || i < 0 || i >= ring.length-1) return;
-      ring[i] = [lng, lat];
-      ring[ring.length-1] = ring[0]; // keep closed
+      if (!f || !f.geometry) return;
+      if (f.geometry.type === 'Polygon') {
+        const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+        if (!Array.isArray(ring)) return;
+        const i = dragging.idx;
+        if (!Number.isInteger(i) || i < 0 || i >= ring.length - 1) return;
+        ring[i] = [lng, lat];
+        ring[ring.length - 1] = ring[0]; // keep closed
+      } else if (f.geometry.type === 'LineString') {
+        const coords = Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+        if (!coords) return;
+        const i = dragging.idx;
+        if (!Number.isInteger(i) || i < 0 || i >= coords.length) return;
+        coords[i] = [lng, lat];
+        syncLineEndpoints(f);
+      } else {
+        return;
+      }
       try { const src = m.getSource('draw'); if (src) src.setData(ds); } catch {}
       try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
     };
@@ -4557,7 +6829,7 @@
       const feat = e.features && e.features[0];
       if (!feat) return;
       if (e.originalEvent && 'button' in e.originalEvent && e.originalEvent.button !== 0) return; // left click only
-      dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx) };
+      dragging = { fid: feat.properties?.fid, idx: Number(feat.properties?.idx), geomType: feat.properties?.geomType || null };
       beginDrag();
       e.preventDefault();
     };
@@ -4579,39 +6851,46 @@
           // Layer-specific events (attach now; Mapbox allows binding before layer exists)
           m.on('mousedown', 'edit-verts', onDown);
           m.on('touchstart', 'edit-verts', onDown, { passive:false });
+          const handleMidEvent = (feat, originalEvent) => {
+            if (!feat) return;
+            const fid = feat.properties?.fid;
+            const after = Number(feat.properties?.insAfter);
+            const geomType = feat.properties?.geomType || null;
+            const ds = (window)._drawStore; if (!ds) return;
+            const f = ds.features.find(x => x.properties?.id === fid);
+            if (!f || !f.geometry) return;
+            const coord = feat.geometry && feat.geometry.coordinates; if (!coord) return;
+            if (geomType === 'Polygon' && f.geometry.type === 'Polygon') {
+              const ring = f.geometry.coordinates && f.geometry.coordinates[0];
+              if (!Array.isArray(ring) || after < 0 || after >= ring.length - 1) return;
+              ring.splice(after + 1, 0, [coord[0], coord[1]]);
+              ring[ring.length - 1] = ring[0];
+              try { const src = m.getSource('draw'); if (src) src.setData(ds); } catch {}
+              try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
+              dragging = { fid, idx: after + 1, geomType: 'Polygon' };
+              beginDrag();
+              originalEvent?.preventDefault?.();
+            } else if (geomType === 'LineString' && f.geometry.type === 'LineString') {
+              const coords = Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+              if (!coords || after < 0 || after >= coords.length - 1) return;
+              coords.splice(after + 1, 0, [coord[0], coord[1]]);
+              syncLineEndpoints(f);
+              try { const src = m.getSource('draw'); if (src) src.setData(ds); } catch {}
+              try { (window)._refreshEditVerts && (window)._refreshEditVerts(); } catch {}
+              dragging = { fid, idx: after + 1, geomType: 'LineString' };
+              beginDrag();
+              originalEvent?.preventDefault?.();
+            }
+          };
           m.on('mousedown', 'edit-mid', (e) => {
             if (!(window)._editTarget) return;
-            const feat = e.features && e.features[0]; if (!feat) return;
-            const fid = feat.properties?.fid; const after = Number(feat.properties?.insAfter);
-            const ds = (window)._drawStore; if (!ds) return;
-            const f = ds.features.find(x => x.properties?.id === fid); if (!f || f.geometry?.type !== 'Polygon') return;
-            const ring = f.geometry.coordinates && f.geometry.coordinates[0];
-            if (!Array.isArray(ring) || after < 0 || after >= ring.length-1) return;
-            const coord = feat.geometry && feat.geometry.coordinates; if (!coord) return;
-            ring.splice(after+1, 0, [coord[0], coord[1]]);
-            ring[ring.length-1] = ring[0];
-            try{ const src = m.getSource('draw'); if (src) src.setData(ds); }catch{}
-            try{ (window)._refreshEditVerts && (window)._refreshEditVerts(); }catch{}
-            dragging = { fid, idx: after+1 };
-            beginDrag();
-            e.preventDefault();
+            const feat = e.features && e.features[0];
+            handleMidEvent(feat, e);
           });
           m.on('touchstart', 'edit-mid', (e) => {
             if (!(window)._editTarget) return;
-            const feat = e.features && e.features[0]; if (!feat) return;
-            const fid = feat.properties?.fid; const after = Number(feat.properties?.insAfter);
-            const ds = (window)._drawStore; if (!ds) return;
-            const f = ds.features.find(x => x.properties?.id === fid); if (!f || f.geometry?.type !== 'Polygon') return;
-            const ring = f.geometry.coordinates && f.geometry.coordinates[0];
-            if (!Array.isArray(ring) || after < 0 || after >= ring.length-1) return;
-            const coord = feat.geometry && feat.geometry.coordinates; if (!coord) return;
-            ring.splice(after+1, 0, [coord[0], coord[1]]);
-            ring[ring.length-1] = ring[0];
-            try{ const src = m.getSource('draw'); if (src) src.setData(ds); }catch{}
-            try{ (window)._refreshEditVerts && (window)._refreshEditVerts(); }catch{}
-            dragging = { fid, idx: after+1 };
-            beginDrag();
-            e.preventDefault();
+            const feat = e.features && e.features[0];
+            handleMidEvent(feat, e);
           }, { passive:false });
           m.on('mouseenter', 'edit-verts', () => { if ((window)._editTarget) m.getCanvas().style.cursor = 'grab'; });
           m.on('mouseleave', 'edit-verts', () => { if ((window)._editTarget && !dragging) m.getCanvas().style.cursor = ''; });
@@ -4640,6 +6919,43 @@
     }
     try { processTrackerLine(line); } catch (err) { console.error('tracker parse failed', err); }
   });
+  if (typeof window.serial.onAutoProbe === 'function') {
+    window.serial.onAutoProbe((payload) => {
+      const path = payload?.path || '—';
+      const responseRaw = String(payload?.response || '').trim();
+      let handled = false;
+      if (responseRaw.includes(':')) {
+        const [typePart, ...rest] = responseRaw.split(':');
+        const idPart = rest.join(':');
+        const normalizedId = normalizeTrackerIdFromAutoProbe(typePart, idPart);
+        if (normalizedId) {
+          ensureTrackerStub(normalizedId, { name: normalizedId === 'CO-ROOT' ? 'CO-ROOT' : null });
+          const template = t('status.autoProbeAdded', 'Auto probe discovered {id} on {path}');
+          const msg = template
+            .replace('{id}', normalizedId)
+            .replace('{path}', path);
+          showToast(msg);
+          handled = true;
+        }
+      }
+      if (!handled) {
+        const template = t('status.autoProbeResponse', 'Auto probe response from {path}: {response}');
+        const message = template
+          .replace('{path}', path)
+          .replace('{response}', responseRaw);
+        showToast(message);
+      }
+    });
+  }
+  if (typeof window.serial.onAutoProbeError === 'function') {
+    window.serial.onAutoProbeError((payload) => {
+      const template = t('status.autoProbeError', 'Auto probe failed for {path}: {error}');
+      const message = template
+        .replace('{path}', payload?.path || '—')
+        .replace('{error}', String(payload?.error || '').trim() || '—');
+      showToast(message, 'error');
+    });
+  }
 })();
 
 // Serial monitor modal wiring

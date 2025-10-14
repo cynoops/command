@@ -9,6 +9,19 @@ const { registerFileIPC } = require('./src/main/ipc/file-ipc');
 const { registerSerialIPC } = require('./src/main/ipc/serial-ipc');
 const { registerAppIPC } = require('./src/main/ipc/app-ipc');
 const { registerAIIPC } = require('./src/main/ipc/ai-ipc');
+const { registerSettingsIPC } = require('./src/main/ipc/settings-ipc');
+
+// Electron apps launched from Finder on macOS may not have writable stdout/stderr.
+// Guard against EPIPE/EIO errors when console.* writes to these streams.
+const muteBrokenPipe = (stream) => {
+  if (!stream || typeof stream.on !== 'function') return;
+  stream.on('error', (err) => {
+    if (err && (err.code === 'EPIPE' || err.code === 'EIO')) return;
+    throw err;
+  });
+};
+muteBrokenPipe(process.stdout);
+muteBrokenPipe(process.stderr);
 
 let mainWindow = null;
 let currentFilePathMain = null;
@@ -27,7 +40,7 @@ try {
 const createWindow = () => {
   const win = new BrowserWindow({
     width: 1200, height: 700,
-    title: 'Command',
+    title: 'Command - CYNOOPS',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -68,6 +81,7 @@ app.whenReady().then(() => {
   registerSerialIPC({ ipcMain }, state);
   registerAppIPC({ ipcMain }, state);
   registerAIIPC({ ipcMain }, state);
+  registerSettingsIPC({ ipcMain }, state);
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

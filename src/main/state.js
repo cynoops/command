@@ -8,5 +8,7 @@ module.exports = {
   quitRequested: false,
   currentPort: null,
   currentParser: null,
+  appSettings: {
+    language: 'en',
+  },
 };
-

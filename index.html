@@ -24,62 +24,81 @@
       </nav>
 
       <div class="app-toolbar" role="toolbar" aria-label="Map tools">
-        <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false">
+        <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false" data-tooltip="Search address">
           <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false">
+        <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false" data-tooltip="Go to coordinates">
           <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
         </button>
         <div class="tool-divider" aria-hidden="true"></div>
         <!-- View controls -->
-        <button id="toolZoomIn" class="tool-btn" title="Zoom in">
+        <button id="toolZoomIn" class="tool-btn" title="Zoom in" data-tooltip="Zoom in">
           <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolZoomOut" class="tool-btn" title="Zoom out">
+        <button id="toolZoomOut" class="tool-btn" title="Zoom out" data-tooltip="Zoom out">
           <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch">
+        <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch" data-tooltip="Reset bearing & pitch">
           <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false">
+        <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false" data-tooltip="Pin/unpin map">
           <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
         </button>
         <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false">
+        <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false" data-tooltip="Draw rectangle">
           <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false">
+        <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false" data-tooltip="Draw polygon">
           <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false">
+        <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false" data-tooltip="Draw circle">
           <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false">
+        <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false" data-tooltip="Draw polyline">
           <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
         </button>
-        <button id="toolArrow" class="tool-btn" title="Draw arrow" aria-pressed="false">
+        <button id="toolArrow" class="tool-btn" title="Draw arrow" aria-pressed="false" data-tooltip="Draw arrow">
           <img class="icon" src="./assets/icons/regular/arrow-fat-line-right.svg" alt="" aria-hidden="true" />
         </button>
         <!-- POI button sits next to Line -->
-        <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false">
+        <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false" data-tooltip="Add POI">
           <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
         </button>
+        <div class="tool-divider" aria-hidden="true"></div>
+        <button id="toolWeather" class="tool-btn" title="Sample weather" aria-pressed="false" data-tooltip="Sample weather">
+          <img class="icon" src="./assets/icons/regular/cloud.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolCrosshair" class="tool-btn" title="Show coordinates" aria-pressed="false" data-tooltip="Show coordinates">
+          <img class="icon" src="./assets/icons/regular/crosshair.svg" alt="" aria-hidden="true" />
+        </button>
         <div class="tool-spacer"></div>
+        <button id="toolShortcuts" class="tool-btn" title="Keyboard shortcuts" data-tooltip="Keyboard shortcuts">
+          <img class="icon" src="./assets/icons/regular/keyboard.svg" alt="" aria-hidden="true" />
+        </button>
       </div>
 
       <div class="actions">
         <button id="serialConnectBtn" class="serial-btn" title="Connect to serial port" aria-label="Connect to serial port">
           <img class="icon" src="./assets/icons/regular/usb.svg" alt="" aria-hidden="true" />
-          <span class="serial-label">Connect</span>
           <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
         </button>
         <button id="serialMonitorBtn" class="serial-btn" title="Open serial monitor" aria-label="Open serial monitor" hidden>
           <img class="icon" src="./assets/icons/regular/monitor.svg" alt="" aria-hidden="true" />
-          <span class="serial-label">Serial Monitor</span>
         </button>
+        <div class="lang-dropdown" id="languageDropdown">
+          <button class="btn-icon" id="languageToggle" type="button" aria-haspopup="true" aria-expanded="false" title="Change language" aria-label="Change language">
+            <img class="icon" src="./assets/icons/regular/globe.svg" alt="" aria-hidden="true" />
+          </button>
+          <div class="lang-menu" id="languageMenu" role="menu" hidden>
+          <button class="lang-menu-item" type="button" role="menuitem" data-lang="en">English</button>
+          <button class="lang-menu-item" type="button" role="menuitem" data-lang="de">Deutsch</button>
+          <button class="lang-menu-item" type="button" role="menuitem" data-lang="fr">Français</button>
+          <button class="lang-menu-item" type="button" role="menuitem" data-lang="es">Español</button>
+          <button class="lang-menu-item" type="button" role="menuitem" data-lang="it">Italiano</button>
+          </div>
+        </div>
         <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
           <img class="icon" src="./assets/icons/regular/corners-out.svg" alt="" aria-hidden="true" />
-          <span class="serial-label">Full Screen</span>
         </button>
       </div>
     </header>
@@ -110,7 +129,7 @@
         </div>
         <div id="map" class="map-container" aria-label="Interactive map">
           <!-- Crosshair overlay (placed inside container so it's always centered) -->
-          <div id="mapCrosshair" class="map-crosshair" aria-hidden="true"></div>
+          <div id="mapCrosshair" class="map-crosshair" aria-hidden="false"></div>
         </div>
         <div id="mapUtilityToolbar" class="map-utility-toolbar" aria-label="Map utilities">
           <button class="map-utility-btn is-active" type="button" data-tool="features" aria-pressed="true" data-tooltip="Features">
@@ -120,6 +139,10 @@
           <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="cloud-sun" data-tooltip="Weather">
             <img src="./assets/icons/regular/cloud-sun.svg" alt="" class="icon" aria-hidden="true" />
             <span class="visually-hidden">Toggle weather overlay</span>
+          </button>
+          <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="satellite" data-tooltip="Satellite">
+            <img src="./assets/icons/regular/map-trifold.svg" alt="" class="icon" aria-hidden="true" />
+            <span class="visually-hidden">Toggle satellite map style</span>
           </button>
           <button class="map-utility-btn is-active" type="button" data-tool="trackers" aria-pressed="true" data-tooltip="Trackers">
             <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
@@ -131,7 +154,12 @@
         <aside id="featuresSidebar" class="features-sidebar" aria-label="Features panel" hidden>
           <div class="features-header">
             <span class="features-title">Features</span>
-            <button id="featuresCollapse" class="btn-icon" title="Hide sidebar" aria-label="Hide sidebar">⟨</button>
+            <div class="features-header-actions">
+              <button id="featuresLabelsToggle" class="btn-icon" type="button" title="Toggle feature labels" aria-label="Toggle feature labels" aria-pressed="false">
+                <img src="./assets/icons/regular/exam.svg" alt="" class="icon" aria-hidden="true" />
+              </button>
+              <button id="featuresCollapse" class="btn-icon" title="Hide sidebar" aria-label="Hide sidebar">⟨</button>
+            </div>
           </div>
           <div id="drawingsList" class="features-list" aria-live="polite"></div>
           <div id="featuresActions" class="features-actions">
@@ -225,6 +253,22 @@
           <h2>Settings</h2>
           <form id="settingsForm" class="settings-form">
             <div class="settings-group">
+              <h3>General</h3>
+              <div class="settings-fields">
+                <label class="field">
+                  <span class="label">App Language</span>
+                  <select id="settingLanguage" autocomplete="off">
+                    <option value="en">English</option>
+                    <option value="de">German</option>
+                    <option value="fr">French</option>
+                    <option value="es">Spanish</option>
+                    <option value="it">Italian</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-group">
               <h3>API Keys</h3>
               <div class="settings-fields">
                 <label class="field">
@@ -249,27 +293,39 @@
             </div>
 
             <div class="settings-group">
-              <h3>Map Settings</h3>
+              <h3 data-i18n="settings.section.map">Map Settings</h3>
               <div class="settings-fields">
                 <label class="field">
-                  <span class="label">Map Style URL</span>
+                  <span class="label" data-i18n="settings.mapStyleUrl">Map Style URL</span>
                   <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
                 </label>
                 <label class="field">
-                  <span class="label">Home Address</span>
+                  <span class="label" data-i18n="settings.satelliteStyleUrl">Satellite Map Style URL</span>
+                  <input id="settingSatelliteStyleUrl" type="text" placeholder="mapbox://styles/mapbox/standard-satellite" value="mapbox://styles/mapbox/standard-satellite" />
+                </label>
+                <label class="field">
+                  <span class="label" data-i18n="settings.homeAddress">Home Address</span>
                   <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
                 </label>
                 <label class="field">
-                  <span class="label">Start Latitude</span>
+                  <span class="label" data-i18n="settings.startLatitude">Start Latitude</span>
                   <input id="settingStartLat" type="number" step="0.000001" min="-90" max="90" placeholder="49.610000" value="49.610000" />
                 </label>
                 <label class="field">
-                  <span class="label">Start Longitude</span>
+                  <span class="label" data-i18n="settings.startLongitude">Start Longitude</span>
                   <input id="settingStartLng" type="number" step="0.000001" min="-180" max="180" placeholder="6.130000" value="6.130000" />
                 </label>
                 <label class="field">
-                  <span class="label">Start Zoom</span>
+                  <span class="label" data-i18n="settings.startZoom">Start Zoom</span>
                   <input id="settingStartZoom" type="number" min="0" max="22" step="0.1" value="12" />
+                </label>
+                <label class="field">
+                  <span class="label" data-i18n="settings.coordinateSystem">Coordinate System</span>
+                  <select id="settingCoordinateSystem">
+                    <option value="latlng" data-i18n="settings.coord.latlng">Lat/Long</option>
+                    <option value="utm" data-i18n="settings.coord.utm">UTM</option>
+                    <option value="gk" data-i18n="settings.coord.gk">GK</option>
+                  </select>
                 </label>
               </div>
             </div>
@@ -340,6 +396,32 @@
     </div>
   </div>
 
+  <!-- Coordinates Modal -->
+  <div id="coordModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="coordTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(420px, 92vw);">
+      <div class="modal-header">
+        <h3 id="coordTitle" data-i18n="coordModal.title">Coordinates</h3>
+        <button id="coordClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="coordList" class="coord-list"></div>
+      </div>
+      <div class="modal-footer coord-footer">
+        <label class="coord-target">
+          <span class="visually-hidden" data-i18n="coordModal.targetLabel">Choose map provider</span>
+          <select id="coordProvider" data-i18n-placeholder="coordModal.targetLabel">
+            <option value="google-maps" data-i18n="coordModal.openGoogleMaps">Google Maps</option>
+            <option value="openstreetmap" data-i18n="coordModal.openOSM">OpenStreetMap</option>
+            <option value="bing" data-i18n="coordModal.openBing">Bing Maps</option>
+            <option value="arcgis" data-i18n="coordModal.openArcgis">ArcGIS Maps</option>
+          </select>
+        </label>
+        <button id="coordOpenProvider" class="btn coord-open-btn" type="button" data-i18n="coordModal.openInBrowser">Open in browser</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Search Modal -->
   <div id="searchModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="searchTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
@@ -367,14 +449,42 @@
         <button id="gotoClose" class="btn-icon" title="Close">×</button>
       </div>
       <div class="modal-body">
-        <div class="goto-fields">
+        <div id="gotoFieldsLatLng" class="goto-fields">
           <label class="field">
-            <span class="label">Latitude</span>
+            <span class="label" data-i18n="gotoModal.latitude">Latitude</span>
             <input id="gotoLat" type="number" step="0.000001" min="-90" max="90" placeholder="e.g., 49.6100" />
           </label>
           <label class="field">
-            <span class="label">Longitude</span>
+            <span class="label" data-i18n="gotoModal.longitude">Longitude</span>
             <input id="gotoLng" type="number" step="0.000001" min="-180" max="180" placeholder="e.g., 6.1300" />
+          </label>
+        </div>
+        <div id="gotoFieldsUTM" class="goto-fields" hidden>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.utmZone">UTM Zone</span>
+            <input id="gotoUtmZone" type="text" maxlength="4" placeholder="32U" />
+          </label>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.utmEasting">Easting (mE)</span>
+            <input id="gotoUtmEasting" type="number" step="1" placeholder="445000" />
+          </label>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.utmNorthing">Northing (mN)</span>
+            <input id="gotoUtmNorthing" type="number" step="1" placeholder="5412000" />
+          </label>
+        </div>
+        <div id="gotoFieldsGK" class="goto-fields" hidden>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.gkZone">GK Zone</span>
+            <input id="gotoGkZone" type="number" min="0" max="60" step="1" placeholder="2" />
+          </label>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.gkEasting">Easting (m)</span>
+            <input id="gotoGkEasting" type="number" step="1" placeholder="3450000" />
+          </label>
+          <label class="field">
+            <span class="label" data-i18n="gotoModal.gkNorthing">Northing (m)</span>
+            <input id="gotoGkNorthing" type="number" step="1" placeholder="5483000" />
           </label>
         </div>
         <div class="switch-field">
@@ -392,6 +502,20 @@
           <div class="spacer"></div>
           <button id="gotoSubmit" class="btn btn-primary">Go</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Modal -->
+  <div id="shortcutsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="shortcutsTitle">Keyboard Shortcuts</h3>
+        <button id="shortcutsClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="shortcutsList" class="shortcut-grid" role="list"></div>
       </div>
     </div>
   </div>
@@ -421,8 +545,33 @@
       <div class="modal-body">
         <div id="aiMeta" class="ai-meta"></div>
         <label class="field">
+          <span class="label">Suggested modification</span>
+          <select id="aiPreset"></select>
+        </label>
+        <label class="field" id="aiValueField" hidden>
+          <span class="label">Value</span>
+          <input id="aiValueInput" type="number" step="0.01" />
+        </label>
+        <label class="field" id="aiDirectionField" hidden>
+          <span class="label">Direction</span>
+          <select id="aiDirectionSelect">
+            <option value="north">North</option>
+            <option value="east">East</option>
+            <option value="south">South</option>
+            <option value="west">West</option>
+          </select>
+        </label>
+        <label class="field">
           <span class="label">Instruction</span>
-          <textarea id="aiInput" rows="4" placeholder="For example: Split the polygon into 2 equal areas; Divide the polygon into cells of 40,000 m²; Extend the line by 2 km to the northeast; Replace with 5 evenly spaced POIs along the line;"></textarea>
+          <textarea id="aiInput" rows="4" placeholder="Add custom instructions for the AI (optional)"></textarea>
+        </label>
+        <label class="field">
+          <span class="label">Additional modifiers (optional)</span>
+          <textarea id="aiModifiers" rows="3" placeholder="Add any extra constraints or details you'd like the AI to consider."></textarea>
+        </label>
+        <label class="field field-inline">
+          <input id="aiReplaceOriginal" type="checkbox" />
+          <span>Replace original geometry</span>
         </label>
         <div class="modal-row">
           <div id="aiSpinner" aria-hidden="true"></div>

@@ -13,6 +13,16 @@ contextBridge.exposeInMainWorld("serial", {
     const listener = (_e, payload) => cb(payload);
     ipcRenderer.on("serial:status", listener);
     return () => ipcRenderer.off("serial:status", listener);
+  },
+  onAutoProbe: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('serial:autoProbeResponse', listener);
+    return () => ipcRenderer.off('serial:autoProbeResponse', listener);
+  },
+  onAutoProbeError: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('serial:autoProbeError', listener);
+    return () => ipcRenderer.off('serial:autoProbeError', listener);
   }
 });
 
@@ -93,4 +103,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       return false;
     }
   }
+});
+
+contextBridge.exposeInMainWorld("settings", {
+  setLanguage: (language) => ipcRenderer.invoke('settings:setLanguage', { language }),
+  getLanguage: () => ipcRenderer.invoke('settings:getLanguage')
 });
