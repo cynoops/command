@@ -1,8 +1,25 @@
 'use strict';
 
-const path = require('path');
-
 function registerFileIPC({ ipcMain, dialog, fsp }, state) {
+  const sendToRenderer = (channel, payload) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow || mainWindow.isDestroyed?.()) return;
+    try {
+      mainWindow.webContents.send(channel, payload);
+    } catch (err) {
+      console.error(`file-ipc: failed sending ${channel}`, err);
+    }
+  };
+
+  state.fileBridge = state.fileBridge || {};
+  state.fileBridge.requestSaveFromRenderer = () => sendToRenderer('file:request-save');
+  state.fileBridge.broadcastOpenData = (featureCollection) => sendToRenderer('file:open-data', featureCollection);
+  state.fileBridge.broadcastNewFile = () => {
+    state.currentFilePath = null;
+    sendToRenderer('file:new');
+    sendToRenderer('file:current-file', { path: null });
+  };
+
   // Renderer provides data back to main for saving
   ipcMain.on('file:provide-save', async (_e, payload) => {
     const mainWindow = state.mainWindow;
@@ -24,10 +41,8 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
       await fsp.writeFile(targetPath, text, 'utf8');
       state.currentFilePath = targetPath;
       state.forceSaveAs = false;
-      try {
-        mainWindow.webContents.send('file:saved', { filePath: targetPath });
-        mainWindow.webContents.send('file:current-file', { path: state.currentFilePath });
-      } catch {}
+      sendToRenderer('file:saved', { filePath: targetPath });
+      sendToRenderer('file:current-file', { path: state.currentFilePath });
     } catch (e) {
       dialog.showErrorBox('Save Failed', String(e));
     }
@@ -47,7 +62,8 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
       const text = JSON.stringify(data, null, 2);
       await fsp.writeFile(filePath, text, 'utf8');
       state.currentFilePath = filePath;
-      try { mainWindow.webContents.send('file:current-file', { path: state.currentFilePath }); } catch {}
+      sendToRenderer('file:current-file', { path: state.currentFilePath });
+      sendToRenderer('file:saved', { filePath });
       return { ok: true, canceled: false, filePath };
     } catch (e) {
       dialog.showErrorBox('Save Failed', String(e));
@@ -89,7 +105,10 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
       const raw = await fsp.readFile(filePath, 'utf8');
       const data = JSON.parse(raw);
       state.currentFilePath = filePath;
-      try { mainWindow.webContents.send('file:current-file', { path: state.currentFilePath }); } catch {}
+      sendToRenderer('file:current-file', { path: state.currentFilePath });
+      if (data && data.type === 'FeatureCollection') {
+        sendToRenderer('file:open-data', data);
+      }
       return { ok: true, canceled: false, filePath, data };
     } catch (e) {
       dialog.showErrorBox('Open Failed', String(e));

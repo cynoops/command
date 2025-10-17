@@ -1,7 +1,6 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require("electron");
 const fs = require('fs');
 const fsp = fs.promises;
-const https = require('https');
 // Modularized main process pieces
 const state = require('./src/main/state');
 const { setupMenu: setupAppMenu } = require('./src/main/menu');
@@ -24,10 +23,6 @@ muteBrokenPipe(process.stdout);
 muteBrokenPipe(process.stderr);
 
 let mainWindow = null;
-let currentFilePathMain = null;
-let forceSaveAsMain = false;
-let currentPort = null;
-let currentParser = null;
 
 try {
   app.name = 'Command';
@@ -79,7 +74,7 @@ app.whenReady().then(() => {
   // Register IPC using modular handlers
   registerFileIPC({ ipcMain, dialog, fsp }, state);
   registerSerialIPC({ ipcMain }, state);
-  registerAppIPC({ ipcMain }, state);
+  registerAppIPC({ ipcMain, shell }, state);
   registerAIIPC({ ipcMain }, state);
   registerSettingsIPC({ ipcMain }, state);
 });

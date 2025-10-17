@@ -102,7 +102,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       console.error('electronAPI.writeClipboard failed', err);
       return false;
     }
-  }
+  },
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', { url })
 });
 
 contextBridge.exposeInMainWorld("settings", {

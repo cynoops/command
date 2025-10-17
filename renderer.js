@@ -385,12 +385,8 @@
   const statCenter = q('#statCenter');
   const statBearing = q('#statBearing');
   const statPitch = q('#statPitch');
-  const statLayer = q('#statLayer');
-
   const serialConnectBtn = q('#serialConnectBtn');
   const serialStatusDot = q('#serialStatusDot');
-  const statSerial = q('#statSerial');
-  const statRxRate = q('#statRxRate');
   const footerAddress = q('#footerAddress');
   const fullscreenBtn = q('#fullscreenBtn');
   const tabMapInput = q('#tab-map');
@@ -407,9 +403,6 @@
   const connectBtnAction = q('#connectBtnAction');
   const connectBaud = q('#connectBaud');
 
-  const serialFloat = q('#serialFloat');
-  const serialFloatBody = q('#serialFloatBody');
-  const serialFloatToggle = q('#serialFloatToggle');
   // New serial monitor modal
   const serialMonitorBtn = q('#serialMonitorBtn');
   const languageDropdown = q('#languageDropdown');
@@ -421,8 +414,6 @@
   const serialConnPath = q('#serialConnPath');
   const serialDisconnectBtn = q('#serialDisconnectBtn');
   const serialMonitorClearBtn = q('#serialMonitorClear');
-  const inputLng = q('#inputLng');
-  const inputLat = q('#inputLat');
   const toolRect = q('#toolRect');
   const toolPoly = q('#toolPoly');
   const toolCircle = q('#toolCircle');
@@ -447,11 +438,6 @@
   const featuresSaveBtn = q('#featuresSaveBtn');
   const featuresLoadBtn = q('#featuresLoadBtn');
   const featuresClearBtn = q('#featuresClearBtn');
-  const coordFloat = q('.coord-float');
-  const drawingsFloat = q('#drawingsFloat');
-  const drawingsToggle = q('#drawingsToggle');
-  const coordPlace = q('#coordPlace');
-  const coordPin = q('#coordPin');
   const toolPin = q('#toolPin');
   const settingLanguage = q('#settingLanguage');
   const settingHomeAddress = q('#settingHomeAddress');
@@ -864,7 +850,6 @@
     applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
   };
 
-  const coordToggle = q('#coordToggle');
   const searchModal = q('#searchModal');
   const searchClose = q('#searchClose');
   const searchQuery = q('#searchQuery');
@@ -2004,7 +1989,6 @@
     }
     if (!googleServicesEnabled) {
       if (searchModal) searchModal.hidden = true;
-      if (coordPlace) coordPlace.textContent = '—';
       if (footerAddress) footerAddress.textContent = '—';
     }
 
@@ -2025,8 +2009,6 @@
   };
 
   let selectedPath = null;
-  let rxCount = 0;
-  let lastTick = Date.now();
   let isDirty = false;
   const setDirty = (v=true) => { isDirty = !!v; (window)._dirty = isDirty; };
   let settingsDirty = false;
@@ -3649,25 +3631,14 @@
         statZoom && (statZoom.textContent = fmt(map.getZoom(), 2));
         statBearing && (statBearing.textContent = fmt(map.getBearing(), 1));
         statPitch && (statPitch.textContent = fmt(map.getPitch(), 1));
-        const s = map.getStyle();
-        statLayer && (statLayer.textContent = s && s.name ? s.name : (typeof s === 'string' ? s : '—'));
       } catch {}
     }
     map.on('load', updateStats);
     map.on('move', updateStats);
 
-    // Coordinate input bindings
-    const syncInputsFromMap = () => {
-      try {
-        const c = map.getCenter();
-        if (inputLng) inputLng.value = Number(c.lng).toFixed(6);
-        if (inputLat) inputLat.value = Number(c.lat).toFixed(6);
-      } catch {}
-    };
     // Pin toggle state
     let mapPinned = false;
     map.on('load', () => {
-      syncInputsFromMap();
       updatePlaceFromCenter();
       maybeFlyHomeOnStartup();
       trackerSourceReady = false;
@@ -3692,7 +3663,7 @@
       if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
       updateMapCursor();
     });
-    map.on('moveend', () => { syncInputsFromMap(); if (!mapPinned) updatePlaceFromCenter(); });
+    map.on('moveend', () => { if (!mapPinned) updatePlaceFromCenter(); });
 
     const setPinned = (v) => {
       mapPinned = !!v;
@@ -3705,45 +3676,38 @@
           map.doubleClickZoom.enable(); map.touchZoomRotate.enable(); map.keyboard.enable();
         }
       } catch {}
-      coordPin?.setAttribute('aria-pressed', String(mapPinned));
-      coordPin?.classList.toggle('active', mapPinned);
       toolPin?.setAttribute('aria-pressed', String(mapPinned));
       toolPin?.classList.toggle('active', mapPinned);
     };
-    coordPin?.addEventListener('click', () => setPinned(!mapPinned));
     toolPin?.addEventListener('click', () => setPinned(!mapPinned));
 
     async function updatePlaceFromCenter(){
       try{
-        // If footer address element is missing and no coord place, skip
-        if (!coordPlace && !footerAddress) return;
+        if (!footerAddress) return;
         const c = map.getCenter();
         lastKnownCenter = { lat: c.lat, lng: c.lng };
         if (!googleServicesEnabled) {
-          if (coordPlace) coordPlace.textContent = '—';
-          if (footerAddress) footerAddress.textContent = '—';
+          footerAddress.textContent = '—';
           lastKnownAddress = '';
           return;
         }
         const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
         if (!key) {
-          if (coordPlace) coordPlace.textContent = '—';
-          if (footerAddress) footerAddress.textContent = '—';
+          footerAddress.textContent = '—';
+          lastKnownAddress = '';
           return;
         }
         const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(c.lat + ',' + c.lng)}&key=${encodeURIComponent(key)}`;
         const resp = await fetch(url);
         const data = await resp.json();
         if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) {
-          if (coordPlace) coordPlace.textContent = '—';
-          if (footerAddress) footerAddress.textContent = '—';
+          footerAddress.textContent = '—';
           lastKnownAddress = '';
           return;
         }
         const res = data.results[0];
         const addr = res.formatted_address || res.formattedAddress || '—';
-        if (coordPlace) coordPlace.textContent = addr;
-        if (footerAddress) footerAddress.textContent = addr;
+        footerAddress.textContent = addr;
         lastKnownAddress = addr;
         try{
           const comps = res.address_components || [];
@@ -5392,7 +5356,6 @@
 
   function setStatus(state, path) {
     if (serialStatusDot) serialStatusDot.dataset.state = state;
-    if (statSerial) statSerial.textContent = state === 'connected' ? (path || 'connected') : state;
     if (serialConnectBtn) {
       const labelKey = state === 'connected' ? 'serial.status.connected' : state === 'connecting' ? 'serial.status.connecting' : 'serial.connectButton';
       const computedLabel = t(labelKey, state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : 'Connect');
@@ -5501,17 +5464,6 @@
       connectBtnAction.disabled = false;
     }
   }
-
-  // RX rate ticker
-  setInterval(() => {
-    const now = Date.now();
-    const dt = (now - lastTick) / 1000;
-    if (dt >= 1) {
-      const rate = Math.round(rxCount / dt);
-      if (statRxRate) statRxRate.textContent = `${rate}/s`;
-      rxCount = 0; lastTick = now;
-    }
-  }, 250);
 
   // Wire buttons
   featuresActionsToggleBtn?.addEventListener('click', (e) => {
@@ -5708,93 +5660,6 @@
     initPos();
   }
 
-  function initFloatingPanels(){
-    const mapView = q('.view-map');
-    if (!mapView) return;
-    // Location panel is fixed (no drag/collapse). Position via CSS/reset only.
-    // Drawings panel: default top-left
-    makeDraggable(drawingsFloat, {
-      handle: q('.drawings-header') || drawingsFloat,
-      container: mapView,
-      storageKey: 'ui.panel.drawings',
-      defaultPos: () => ({ left: 10, top: 10 })
-    });
-    // Serial panel: draggable via header (default top-right)
-    makeDraggable(serialFloat, {
-      handle: q('#serialFloat .serial-float-header'),
-      container: mapView,
-      storageKey: 'ui.panel.serial',
-      defaultPos: () => {
-        const mvRect = mapView.getBoundingClientRect();
-        const mainRect = q('.app-main')?.getBoundingClientRect();
-        const containerWidth = mvRect.width > 0 ? mvRect.width : (mainRect?.width || window.innerWidth);
-        const elW = serialFloat?.offsetWidth || 360; // fallback to CSS width
-        const margin = 10;
-        const left = Math.max(0, containerWidth - elW - margin);
-        const top = margin;
-        return { left, top };
-      }
-    });
-
-    // Track container size for responsive repositioning
-    let lastW = mapView.getBoundingClientRect().width;
-    let lastH = mapView.getBoundingClientRect().height;
-
-    const getRelPos = (el) => {
-      const crect = mapView.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      return { left: r.left - crect.left, top: r.top - crect.top, width: r.width, height: r.height };
-    };
-    const clamp01 = (n, min, max) => Math.max(min, Math.min(max, n));
-
-    const adjustPanelsOnResize = () => {
-      const crect = mapView.getBoundingClientRect();
-      const newW = crect.width || lastW || 1;
-      const newH = crect.height || lastH || 1;
-      if (!newW || !newH) return;
-
-      // Drawings: presumed top-left anchored unless close to right
-      if (drawingsFloat) {
-        const p = getRelPos(drawingsFloat);
-        const rightOld = Math.max(0, lastW - p.left - p.width);
-        let left;
-        if (rightOld < p.left) {
-          // right-anchored
-          const rightNew = Math.max(0, rightOld * (newW / Math.max(1, lastW)));
-          left = clamp01(newW - p.width - rightNew, 0, Math.max(0, newW - p.width));
-        } else {
-          left = clamp01(p.left * (newW / Math.max(1, lastW)), 0, Math.max(0, newW - p.width));
-        }
-        const top = clamp01(p.top * (newH / Math.max(1, lastH)), 0, Math.max(0, newH - p.height));
-        drawingsFloat.style.left = `${left}px`;
-        drawingsFloat.style.top = `${top}px`;
-        try { localStorage.setItem('ui.panel.drawings', JSON.stringify({ left, top })); } catch {}
-      }
-
-      // Serial: often right-anchored; adjust similarly
-      if (serialFloat) {
-        const p = getRelPos(serialFloat);
-        const rightOld = Math.max(0, lastW - p.left - p.width);
-        const rightNew = Math.max(0, rightOld * (newW / Math.max(1, lastW)));
-        const left = clamp01(newW - p.width - rightNew, 0, Math.max(0, newW - p.width));
-        const top = clamp01(p.top * (newH / Math.max(1, lastH)), 0, Math.max(0, newH - p.height));
-        serialFloat.style.left = `${left}px`;
-        serialFloat.style.top = `${top}px`;
-        try { localStorage.setItem('ui.panel.serial', JSON.stringify({ left, top })); } catch {}
-      }
-
-      // Coord (location) panel stays fixed via CSS bottom/left; no adjustment needed
-
-      lastW = newW; lastH = newH;
-    };
-
-    let resizeTimer = null;
-    window.addEventListener('resize', () => {
-      if (resizeTimer) cancelAnimationFrame(resizeTimer);
-      resizeTimer = requestAnimationFrame(adjustPanelsOnResize);
-    });
-  }
-
   // --- Features sidebar: sizing, collapse ---
   function initSidebar(){
     const root = document.documentElement;
@@ -5970,66 +5835,14 @@
     try { document.body.classList.add('sidebar-ready'); } catch {}
   }
 
-  // Reset floating panels to initial positions
-  function resetFloatingPanels(){
-    try{
-      localStorage.removeItem('ui.panel.coord');
-      localStorage.removeItem('ui.panel.drawings');
-    }catch{}
-    const mapView = q('.view-map');
-    if (!mapView) return;
-    // Coord default: bottom-left (50px)
-    if (coordFloat){
-      const left = 10; const bottom = 50;
-      coordFloat.style.left = left + 'px';
-      coordFloat.style.bottom = bottom + 'px';
-      coordFloat.style.top = '';
-      try{ localStorage.setItem('ui.panel.coord', JSON.stringify({ left, bottom })); }catch{}
-    }
-    // Drawings default: top-left
-    if (drawingsFloat){
-      const left = 10, top = 10;
-      drawingsFloat.style.left = left + 'px';
-      drawingsFloat.style.top = top + 'px';
-      try{ localStorage.setItem('ui.panel.drawings', JSON.stringify({ left, top })); }catch{}
-    }
-    // Serial default: top-right, robust even if map view is hidden
-    if (serialFloat){
-      const mvRect = mapView.getBoundingClientRect();
-      const mainRect = q('.app-main')?.getBoundingClientRect();
-      const containerWidth = mvRect.width > 0 ? mvRect.width : (mainRect?.width || window.innerWidth);
-      const elW = serialFloat?.offsetWidth || 360;
-      const margin = 10;
-      const left = Math.max(0, containerWidth - elW - margin);
-      const top = margin;
-      serialFloat.style.left = left + 'px';
-      serialFloat.style.top = top + 'px';
-      try{ localStorage.setItem('ui.panel.serial', JSON.stringify({ left, top })); }catch{}
-    }
-  }
-
-  // Drawings panel collapse toggle
-  drawingsToggle?.addEventListener('click', () => {
-    if (!drawingsFloat) return;
-    const collapsed = drawingsFloat.classList.toggle('collapsed');
-    drawingsToggle.setAttribute('aria-expanded', String(!collapsed));
-  });
-  coordToggle?.addEventListener('click', () => {
-    if (!coordFloat) return;
-    const collapsed = coordFloat.classList.toggle('collapsed');
-    coordToggle.setAttribute('aria-expanded', String(!collapsed));
-  });
-
   // Initialize panels + sidebar + map after DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      initFloatingPanels();
       try { initSidebar(); } catch {}
       try { initTrackersSidebar(); } catch {}
       initMap();
     }, { once: true });
   } else {
-    initFloatingPanels();
     try { initSidebar(); } catch {}
     try { initTrackersSidebar(); } catch {}
     initMap();
@@ -6053,18 +5866,6 @@
   });
 
   const maxLines = 500;
-  // When user changes coords manually, re-center the map
-  function centerFromInputs() {
-    const map = (window)._map;
-    if (!map) return;
-    const lng = Number(inputLng?.value);
-    const lat = Number(inputLat?.value);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-    if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return;
-    try { map.setCenter([lng, lat]); } catch (e) { console.error(e); }
-  }
-  inputLng?.addEventListener('change', centerFromInputs);
-  inputLat?.addEventListener('change', centerFromInputs);
 
   // ---- File menu interactions ----
   // Save request from main -> send data back
@@ -6902,9 +6703,8 @@
   })();
 
   window.serial.onData((line) => {
-    const outEl = serialMonitorBody || serialFloatBody;
+    const outEl = serialMonitorBody;
     if (outEl) {
-      rxCount += 1;
       const atBottom = Math.abs(outEl.scrollHeight - outEl.scrollTop - outEl.clientHeight) < 8;
       const text = typeof line === 'string' ? line : String(line);
       outEl.append(document.createTextNode(text.replace(/\r?\n$/, '')));
@@ -6966,7 +6766,6 @@
   const disconnectBtn = document.querySelector('#serialDisconnectBtn');
   const clearBtn = document.querySelector('#serialMonitorClear');
   const monitorBody = document.querySelector('#serialMonitorBody');
-  const floatBody = document.querySelector('#serialFloatBody');
   if (btn && modal) {
     btn.addEventListener('click', () => { modal.hidden = false; });
     closeBtn?.addEventListener('click', () => { modal.hidden = true; });
@@ -6982,7 +6781,6 @@
     clearBtn.addEventListener('click', () => {
       try {
         if (monitorBody) monitorBody.textContent = '';
-        if (floatBody) floatBody.textContent = '';
       } catch {}
     });
   }
