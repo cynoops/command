@@ -106,6 +106,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', { url })
 });
 
+contextBridge.exposeInMainWorld("mapTools", {
+  saveMapSnapshot: (payload) => ipcRenderer.invoke('map:save-map-snapshot', payload)
+});
+
 contextBridge.exposeInMainWorld("settings", {
   setLanguage: (language) => ipcRenderer.invoke('settings:setLanguage', { language }),
   getLanguage: () => ipcRenderer.invoke('settings:getLanguage')

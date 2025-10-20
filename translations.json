@@ -192,6 +192,7 @@
     "alerts.noFeaturesInFile": "The selected file does not contain any features to load.",
     "alerts.noValidFeatures": "No valid features could be imported from the selected file.",
     "alerts.couldNotLoadFeatures": "Could not load features. Check the console for details.",
+    "alerts.mapNotReady": "Map is not ready yet.",
     "prompts.mergeReplace": "Features already exist. Click OK to MERGE, or Cancel to REPLACE ALL.",
     "prompts.mergeReplaceInfo": "MERGE keeps current features and adds items from the file. REPLACE ALL discards current features.",
     "messages.featureUpdated": "Feature updated",
@@ -234,7 +235,15 @@
     "messages.showTrackerSidebar": "Show tracker sidebar",
     "messages.hideTrackerSidebar": "Hide tracker sidebar",
     "messages.trackerColorHex": "Tracker color (hex)",
-    "messages.searchAddress": "Search address"
+    "messages.searchAddress": "Search address",
+    "toolbar.saveSnapshot": "Save snapshot",
+    "alerts.snapshotUnavailable": "Snapshot export is not available.",
+    "alerts.snapshotFailed": "Failed to save map snapshot.",
+    "alerts.snapshotSuccess": "Map snapshot saved.",
+    "alerts.snapshotCancelled": "Save cancelled.",
+    "toolbar.setScale": "Set scale",
+    "alerts.scaleApplied": "Scale applied.",
+    "alerts.scaleFailed": "Could not set scale."
   },
   "de": {
     "nav.map": "KARTE",
@@ -429,6 +438,7 @@
     "alerts.noFeaturesInFile": "Die ausgewählte Datei enthält keine zu ladenden Elemente.",
     "alerts.noValidFeatures": "Aus der ausgewählten Datei konnten keine gültigen Elemente importiert werden.",
     "alerts.couldNotLoadFeatures": "Elemente konnten nicht geladen werden. Details siehe Konsole.",
+    "alerts.mapNotReady": "Die Karte ist noch nicht bereit.",
     "prompts.mergeReplace": "Elemente sind bereits vorhanden. Klicken Sie auf OK, um zu ZUSAMMENFÜHREN, oder auf Abbrechen, um ALLE ZU ERSETZEN.",
     "prompts.mergeReplaceInfo": "ZUSAMMENFÜHREN behält aktuelle Elemente bei und fügt Elemente aus der Datei hinzu. ALLE ERSETZEN verwirft die aktuellen Elemente.",
     "messages.featureUpdated": "Element aktualisiert",
@@ -471,7 +481,15 @@
     "messages.showTrackerSidebar": "Tracker-Seitenleiste anzeigen",
     "messages.hideTrackerSidebar": "Tracker-Seitenleiste ausblenden",
     "messages.trackerColorHex": "Tracker-Farbe (Hex)",
-    "messages.searchAddress": "Adresse suchen"
+    "messages.searchAddress": "Adresse suchen",
+    "toolbar.saveSnapshot": "Snapshot speichern",
+    "alerts.snapshotUnavailable": "Snapshot-Export ist nicht verfügbar.",
+    "alerts.snapshotFailed": "Kartensnapshot konnte nicht gespeichert werden.",
+    "alerts.snapshotSuccess": "Kartensnapshot gespeichert.",
+    "alerts.snapshotCancelled": "Speichern abgebrochen.",
+    "toolbar.setScale": "Maßstab einstellen",
+    "alerts.scaleApplied": "Maßstab angewendet.",
+    "alerts.scaleFailed": "Maßstab konnte nicht gesetzt werden."
   },
   "fr": {
     "nav.map": "CARTE",
@@ -666,6 +684,7 @@
     "alerts.noFeaturesInFile": "Le fichier sélectionné ne contient aucun élément à charger.",
     "alerts.noValidFeatures": "Aucun élément valide n'a pu être importé depuis le fichier sélectionné.",
     "alerts.couldNotLoadFeatures": "Impossible de charger les éléments. Consultez la console pour plus de détails.",
+    "alerts.mapNotReady": "La carte n'est pas encore prête.",
     "prompts.mergeReplace": "Des éléments existent déjà. Cliquez sur OK pour FUSIONNER ou sur Annuler pour TOUT REMPLACER.",
     "prompts.mergeReplaceInfo": "FUSIONNER conserve les éléments actuels et ajoute ceux du fichier. TOUT REMPLACER supprime les éléments actuels.",
     "messages.featureUpdated": "Élément mis à jour",
@@ -708,7 +727,15 @@
     "messages.showTrackerSidebar": "Afficher la barre latérale du traceur",
     "messages.hideTrackerSidebar": "Masquer la barre latérale du traceur",
     "messages.trackerColorHex": "Couleur du traceur (hex)",
-    "messages.searchAddress": "Rechercher une adresse"
+    "messages.searchAddress": "Rechercher une adresse",
+    "toolbar.saveSnapshot": "Enregistrer l’instantané",
+    "alerts.snapshotUnavailable": "L’export de snapshot n’est pas disponible.",
+    "alerts.snapshotFailed": "Impossible d’enregistrer le snapshot de la carte.",
+    "alerts.snapshotSuccess": "Snapshot de carte enregistré.",
+    "alerts.snapshotCancelled": "Enregistrement annulé.",
+    "toolbar.setScale": "Définir l’échelle",
+    "alerts.scaleApplied": "Échelle appliquée.",
+    "alerts.scaleFailed": "Impossible de définir l’échelle."
   },
   "es": {
     "nav.map": "MAPA",
@@ -903,6 +930,7 @@
     "alerts.noFeaturesInFile": "El archivo seleccionado no contiene elementos para cargar.",
     "alerts.noValidFeatures": "No se pudieron importar elementos válidos del archivo seleccionado.",
     "alerts.couldNotLoadFeatures": "No se pudieron cargar los elementos. Consulte la consola para obtener detalles.",
+    "alerts.mapNotReady": "El mapa aún no está listo.",
     "prompts.mergeReplace": "Los elementos ya existen. Haz clic en Aceptar para COMBINAR o en Cancelar para REEMPLAZAR TODO.",
     "prompts.mergeReplaceInfo": "COMBINAR mantiene los elementos actuales y agrega los del archivo. REEMPLAZAR TODO descarta los elementos actuales.",
     "messages.featureUpdated": "Elemento actualizado",
@@ -945,7 +973,15 @@
     "messages.showTrackerSidebar": "Mostrar barra lateral del rastreador",
     "messages.hideTrackerSidebar": "Ocultar barra lateral del rastreador",
     "messages.trackerColorHex": "Color del rastreador (hex)",
-    "messages.searchAddress": "Buscar dirección"
+    "messages.searchAddress": "Buscar dirección",
+    "toolbar.saveSnapshot": "Guardar instantánea",
+    "alerts.snapshotUnavailable": "La exportación de instantáneas no está disponible.",
+    "alerts.snapshotFailed": "No se pudo guardar la instantánea del mapa.",
+    "alerts.snapshotSuccess": "Instantánea del mapa guardada.",
+    "alerts.snapshotCancelled": "Guardado cancelado.",
+    "toolbar.setScale": "Definir escala",
+    "alerts.scaleApplied": "Escala aplicada.",
+    "alerts.scaleFailed": "No se pudo establecer la escala."
   },
   "it": {
     "nav.map": "MAPPA",
@@ -1140,6 +1176,7 @@
     "alerts.noFeaturesInFile": "Il file selezionato non contiene elementi da caricare.",
     "alerts.noValidFeatures": "Non è stato possibile importare elementi validi dal file selezionato.",
     "alerts.couldNotLoadFeatures": "Impossibile caricare gli elementi. Controlla la console per dettagli.",
+    "alerts.mapNotReady": "La mappa non è ancora pronta.",
     "prompts.mergeReplace": "Gli elementi esistono già. Fai clic su OK per UNIRE o su Annulla per SOSTITUIRE TUTTO.",
     "prompts.mergeReplaceInfo": "UNISCI mantiene gli elementi attuali e aggiunge quelli del file. SOSTITUISCI TUTTO elimina gli elementi attuali.",
     "messages.featureUpdated": "Elemento aggiornato",
@@ -1182,6 +1219,14 @@
     "messages.showTrackerSidebar": "Mostra barra laterale del tracker",
     "messages.hideTrackerSidebar": "Nascondi barra laterale del tracker",
     "messages.trackerColorHex": "Colore del tracker (hex)",
-    "messages.searchAddress": "Cerca indirizzo"
+    "messages.searchAddress": "Cerca indirizzo",
+    "toolbar.saveSnapshot": "Salva istantanea",
+    "alerts.snapshotUnavailable": "L’esportazione dell’istantanea non è disponibile.",
+    "alerts.snapshotFailed": "Impossibile salvare l’istantanea della mappa.",
+    "alerts.snapshotSuccess": "Istantanea della mappa salvata.",
+    "alerts.snapshotCancelled": "Salvataggio annullato.",
+    "toolbar.setScale": "Imposta scala",
+    "alerts.scaleApplied": "Scala applicata.",
+    "alerts.scaleFailed": "Impossibile impostare la scala."
   }
 }

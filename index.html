@@ -9,6 +9,7 @@
 
   <!-- Your main app styles -->
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./scale-dialog.css" />
 
   <!-- Mapbox GL CSS (bundled locally into dist/vendor) -->
   <link rel="stylesheet" href="./dist/vendor/mapbox-gl/mapbox-gl.css" />
@@ -71,11 +72,39 @@
         <button id="toolCrosshair" class="tool-btn" title="Show coordinates" aria-pressed="false" data-tooltip="Show coordinates">
           <img class="icon" src="./assets/icons/regular/crosshair.svg" alt="" aria-hidden="true" />
         </button>
+        <button id="toolSetScale" class="tool-btn" title="Set scale" aria-pressed="false" data-tooltip="Set scale">
+          <img class="icon" src="./assets/icons/regular/ruler.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolPrint" class="tool-btn" title="Save snapshot" aria-pressed="false" data-tooltip="Save snapshot">
+          <img class="icon" src="./assets/icons/regular/printer.svg" alt="" aria-hidden="true" />
+        </button>
         <div class="tool-spacer"></div>
         <button id="toolShortcuts" class="tool-btn" title="Keyboard shortcuts" data-tooltip="Keyboard shortcuts">
           <img class="icon" src="./assets/icons/regular/keyboard.svg" alt="" aria-hidden="true" />
         </button>
       </div>
+
+      <dialog id="scaleDialog" class="scale-dialog" aria-labelledby="scaleDialogTitle">
+        <form method="dialog" class="scale-dialog__content">
+          <header class="scale-dialog__header">
+            <h2 id="scaleDialogTitle">Set map scale</h2>
+            <button type="button" class="scale-dialog__close" data-action="close" aria-label="Close">
+              <img class="icon" src="./assets/icons/regular/x.svg" alt="" aria-hidden="true" />
+            </button>
+          </header>
+          <div class="scale-dialog__grid">
+            <button type="button" class="scale-option" data-scale="5000">1:5,000</button>
+            <button type="button" class="scale-option" data-scale="10000">1:10,000</button>
+            <button type="button" class="scale-option" data-scale="15000">1:15,000</button>
+            <button type="button" class="scale-option" data-scale="20000">1:20,000</button>
+            <button type="button" class="scale-option" data-scale="25000">1:25,000</button>
+            <button type="button" class="scale-option" data-scale="50000">1:50,000</button>
+          </div>
+          <div class="scale-dialog__actions">
+            <button type="submit" class="btn-secondary" value="cancel">Close</button>
+          </div>
+        </form>
+      </dialog>
 
       <div class="actions">
         <button id="serialConnectBtn" class="serial-btn" title="Connect to serial port" aria-label="Connect to serial port">
@@ -360,9 +389,9 @@
     <footer class="app-footer" aria-live="polite">
       <div class="stat"><span class="k">Lat/Long</span><span id="statCenter" class="v">—</span></div>
       <div class="stat"><span class="k">Zoom</span><span id="statZoom" class="v">—</span></div>
+      <div class="stat"><span class="k">Scale</span><span id="statScale" class="v">—</span></div>
       <div class="stat"><span class="k">Bearing</span><span id="statBearing" class="v">—</span></div>
       <div class="stat"><span class="k">Pitch</span><span id="statPitch" class="v">—</span></div>
-      <!-- Removed: Layer, Serial, RX -->
       <div class="stat" style="justify-self:end; text-align:right;">
         <span class="k">Address</span>
         <span id="footerAddress" class="v">—</span>

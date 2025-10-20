@@ -382,12 +382,13 @@
 
   // Map stats UI
   const statZoom = q('#statZoom');
+  const statScale = q('#statScale');
   const statCenter = q('#statCenter');
   const statBearing = q('#statBearing');
   const statPitch = q('#statPitch');
+  const footerAddress = q('#footerAddress');
   const serialConnectBtn = q('#serialConnectBtn');
   const serialStatusDot = q('#serialStatusDot');
-  const footerAddress = q('#footerAddress');
   const fullscreenBtn = q('#fullscreenBtn');
   const tabMapInput = q('#tab-map');
   const tabSettingsInput = q('#tab-settings');
@@ -395,6 +396,9 @@
   const tabSettingsLabel = document.querySelector('label[for="tab-settings"]');
   const mapWelcome = q('#mapWelcome');
   const mapWelcomeSettings = q('#mapWelcomeSettings');
+  const scaleDialog = q('#scaleDialog');
+  const scaleDialogClose = scaleDialog?.querySelector('[data-action="close"]') || null;
+  const scaleOptionButtons = scaleDialog ? Array.from(scaleDialog.querySelectorAll('.scale-option')) : [];
 
   const connectModal = q('#connectModal');
   const portsContainer = q('#portsContainer');
@@ -422,6 +426,8 @@
   const toolPOI = q('#toolPOI');
   const toolWeather = q('#toolWeather');
   const toolCrosshair = q('#toolCrosshair');
+  const toolSetScale = q('#toolSetScale');
+  const toolPrint = q('#toolPrint');
   const toolShortcuts = q('#toolShortcuts');
   const mapUtilityToolbar = q('#mapUtilityToolbar');
   const mapUtilityButtons = mapUtilityToolbar ? Array.from(mapUtilityToolbar.querySelectorAll('.map-utility-btn')) : [];
@@ -654,6 +660,8 @@
       [toolPOI, 'toolbar.addPoi'],
       [toolWeather, 'map.utilities.weather'],
       [toolCrosshair, 'toolbar.showCoordinates'],
+      [toolSetScale, 'toolbar.setScale'],
+      [toolPrint, 'toolbar.saveSnapshot'],
       [toolShortcuts, 'toolbar.shortcuts']
     ];
     toolbarBindings.forEach(([btn, key]) => {
@@ -844,9 +852,10 @@
     bindTextAuto(serialDisconnectBtn, 'serialMonitor.disconnect');
 
     if (footerStatLabels?.[1]) bindTextAuto(footerStatLabels[1], 'footer.zoom');
-    if (footerStatLabels?.[2]) bindTextAuto(footerStatLabels[2], 'footer.bearing');
-    if (footerStatLabels?.[3]) bindTextAuto(footerStatLabels[3], 'footer.pitch');
-    if (footerStatLabels?.[4]) bindTextAuto(footerStatLabels[4], 'footer.address');
+    if (footerStatLabels?.[2]) bindTextAuto(footerStatLabels[2], 'footer.scale');
+    if (footerStatLabels?.[3]) bindTextAuto(footerStatLabels[3], 'footer.bearing');
+    if (footerStatLabels?.[4]) bindTextAuto(footerStatLabels[4], 'footer.pitch');
+    if (footerStatLabels?.[5]) bindTextAuto(footerStatLabels[5], 'footer.address');
     applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
   };
 
@@ -1989,7 +1998,7 @@
     }
     if (!googleServicesEnabled) {
       if (searchModal) searchModal.hidden = true;
-      if (footerAddress) footerAddress.textContent = '—';
+      lastKnownAddress = '';
     }
 
     refreshAiButtonsVisibility();
@@ -3611,6 +3620,7 @@
     const map = new (window).mapboxgl.Map({
       container: mapEl,
       style: styleUrl,
+      preserveDrawingBuffer: true,
       center: startPos,
       zoom: Number.isFinite(startZoom) ? startZoom : 12,
       attributionControl: true,
@@ -3622,6 +3632,22 @@
     try { ensureTrackerLayer(map); } catch (e) { console.error('tracker layer init failed', e); }
 
     const fmt = (n, d=2) => (Number.isFinite(n) ? n.toFixed(d) : '—');
+    const computeScaleDenominator = (mapInstance) => {
+      if (!mapInstance) return null;
+      try {
+        const zoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : null;
+        const center = typeof mapInstance.getCenter === 'function' ? mapInstance.getCenter() : null;
+        if (!Number.isFinite(zoom) || !center || !Number.isFinite(center.lat)) return null;
+        const metersPerPixel = 156543.03392 * Math.cos(center.lat * DEG_TO_RAD) / Math.pow(2, zoom);
+        if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return null;
+        const scale = (metersPerPixel * 96) / 0.0254;
+        if (!Number.isFinite(scale) || scale <= 0) return null;
+        return Math.round(scale);
+      } catch (err) {
+        console.warn('computeScaleDenominator failed', err);
+        return null;
+      }
+    };
 
     function updateStats() {
       try {
@@ -3629,6 +3655,10 @@
         lastKnownCenter = { lat: c.lat, lng: c.lng };
         updateFooterCenterDisplay(c.lat, c.lng);
         statZoom && (statZoom.textContent = fmt(map.getZoom(), 2));
+        if (statScale) {
+          const scaleVal = computeScaleDenominator(map);
+          statScale.textContent = scaleVal ? `1 : ${scaleVal.toLocaleString()}` : '—';
+        }
         statBearing && (statBearing.textContent = fmt(map.getBearing(), 1));
         statPitch && (statPitch.textContent = fmt(map.getPitch(), 1));
       } catch {}
@@ -3638,6 +3668,7 @@
 
     // Pin toggle state
     let mapPinned = false;
+  let _lastScaleTrigger = null;
     map.on('load', () => {
       updatePlaceFromCenter();
       maybeFlyHomeOnStartup();
@@ -3683,32 +3714,31 @@
 
     async function updatePlaceFromCenter(){
       try{
-        if (!footerAddress) return;
         const c = map.getCenter();
         lastKnownCenter = { lat: c.lat, lng: c.lng };
         if (!googleServicesEnabled) {
-          footerAddress.textContent = '—';
           lastKnownAddress = '';
+          if (footerAddress) footerAddress.textContent = '—';
           return;
         }
         const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
         if (!key) {
-          footerAddress.textContent = '—';
           lastKnownAddress = '';
+          if (footerAddress) footerAddress.textContent = '—';
           return;
         }
         const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(c.lat + ',' + c.lng)}&key=${encodeURIComponent(key)}`;
         const resp = await fetch(url);
         const data = await resp.json();
         if (data.status !== 'OK' || !Array.isArray(data.results) || data.results.length === 0) {
-          footerAddress.textContent = '—';
           lastKnownAddress = '';
+          if (footerAddress) footerAddress.textContent = '—';
           return;
         }
         const res = data.results[0];
         const addr = res.formatted_address || res.formattedAddress || '—';
-        footerAddress.textContent = addr;
         lastKnownAddress = addr;
+        if (footerAddress) footerAddress.textContent = addr || '—';
         try{
           const comps = res.address_components || [];
           const country = comps.find(c => (c.types||[]).includes('country'));
@@ -3716,7 +3746,10 @@
           (window)._placeCountryCode = country?.short_name || country?.long_name || '';
           (window)._placeCity = city?.short_name || city?.long_name || '';
         }catch{}
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        if (footerAddress) footerAddress.textContent = '—';
+      }
     }
 
     // ---- Drawing sources/layers ----
@@ -6074,6 +6107,649 @@
     toolWeather?.addEventListener('click', () => setActiveTool((window)._currentTool === 'weather' ? null : 'weather'));
     toolCrosshair?.addEventListener('click', () => setActiveTool((window)._currentTool === 'crosshair' ? null : 'crosshair'));
 
+    const applyScaleFromDenominator = (scaleValue) => {
+      const map = getMap();
+      if (!map || !Number.isFinite(scaleValue) || scaleValue <= 0) return false;
+      const center = map.getCenter?.();
+      if (!center || !Number.isFinite(center.lat)) return false;
+      const latRad = center.lat * DEG_TO_RAD;
+      const cosLat = Math.cos(latRad);
+      if (!Number.isFinite(cosLat) || Math.abs(cosLat) < 1e-6) return false;
+      const targetMetersPerPixel = (scaleValue * 0.0254) / 96;
+      if (!Number.isFinite(targetMetersPerPixel) || targetMetersPerPixel <= 0) return false;
+      const metersPerPixelAtLat = 156543.03392 * cosLat;
+      const zoom = Math.log2(metersPerPixelAtLat / targetMetersPerPixel);
+      if (!Number.isFinite(zoom)) return false;
+      const clampedZoom = Math.max(0, Math.min(24, zoom));
+      try {
+        map.easeTo({ zoom: clampedZoom, duration: 600, easing: (t) => t });
+        return true;
+      } catch (err) {
+        console.warn('applyScaleFromDenominator failed', err);
+        return false;
+      }
+    };
+
+    const closeScaleDialog = () => {
+      if (!scaleDialog) return;
+      try {
+        if (typeof scaleDialog.close === 'function') {
+          if (scaleDialog.open) scaleDialog.close();
+        } else {
+          scaleDialog.hidden = true;
+          const trigger = _lastScaleTrigger;
+          _lastScaleTrigger = null;
+          if (trigger && typeof trigger.focus === 'function') {
+            try { trigger.focus(); } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn('scaleDialog.close failed', err);
+      }
+    };
+
+    const openScaleDialog = () => {
+      if (!scaleDialog) return;
+      _lastScaleTrigger = document.activeElement || null;
+      try {
+        if (typeof scaleDialog.showModal === 'function') {
+          scaleDialog.showModal();
+        } else {
+          scaleDialog.hidden = false;
+        }
+        setTimeout(() => {
+          try { scaleDialog?.querySelector?.('.scale-option')?.focus(); }
+          catch {}
+        }, 0);
+      } catch (err) {
+        console.warn('scaleDialog.showModal failed', err);
+      }
+    };
+
+    scaleDialogClose?.addEventListener('click', (event) => {
+      event?.preventDefault?.();
+      closeScaleDialog();
+    });
+    if (scaleDialog) {
+      scaleDialog.addEventListener('cancel', (event) => {
+        event?.preventDefault?.();
+        closeScaleDialog();
+      });
+      scaleDialog.addEventListener('click', (event) => {
+        if (event.target === scaleDialog) closeScaleDialog();
+      });
+      scaleDialog.addEventListener('close', () => {
+        const trigger = _lastScaleTrigger;
+        _lastScaleTrigger = null;
+        if (trigger && typeof trigger.focus === 'function') {
+          try { trigger.focus(); } catch {}
+        }
+      });
+    }
+
+    scaleOptionButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const scaleValue = Number(btn.dataset.scale);
+        const ok = applyScaleFromDenominator(scaleValue);
+        if (ok) {
+          closeScaleDialog();
+          showToast(t('alerts.scaleApplied', 'Scale applied.'), 'success', 1800);
+        } else {
+          showToast(t('alerts.scaleFailed', 'Could not set scale.'), 'error', 2400);
+        }
+      });
+    });
+
+    toolSetScale?.addEventListener('click', (event) => {
+      event?.preventDefault?.();
+      openScaleDialog();
+    });
+
+    const waitForMapIdle = (map, timeout = 4000) => {
+      if (!map) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        try {
+          const isIdle = () => {
+            try {
+              const loaded = typeof map.loaded === 'function' ? map.loaded() : true;
+              const moving = typeof map.isMoving === 'function' ? map.isMoving() : false;
+              const zooming = typeof map.isZooming === 'function' ? map.isZooming() : false;
+              const rotating = typeof map.isRotating === 'function' ? map.isRotating() : false;
+              return loaded && !moving && !zooming && !rotating;
+            } catch {
+              return false;
+            }
+          };
+          if (isIdle()) {
+            resolve(true);
+            return;
+          }
+          let finished = false;
+          let timer = null;
+          const handleIdle = () => {
+            if (finished) return;
+            finished = true;
+            try { map.off?.('idle', handleIdle); } catch {}
+            if (timer) clearTimeout(timer);
+            resolve(true);
+          };
+          map.on?.('idle', handleIdle);
+          map.triggerRepaint?.();
+          timer = setTimeout(() => {
+            if (finished) return;
+            finished = true;
+            try { map.off?.('idle', handleIdle); } catch {}
+            resolve(false);
+          }, timeout);
+        } catch (err) {
+          console.warn('waitForMapIdle failed', err);
+          resolve(false);
+        }
+      });
+    };
+
+    const captureMapSnapshot = async () => {
+      const map = getMap();
+      if (!map) throw new Error('Map is not ready');
+      await waitForMapIdle(map);
+      const canvas = map.getCanvas?.();
+      if (!canvas) throw new Error('Map canvas unavailable');
+      const rect = typeof canvas.getBoundingClientRect === 'function'
+        ? canvas.getBoundingClientRect()
+        : null;
+      const dpr = window.devicePixelRatio || 1;
+
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const ctx = exportCanvas.getContext('2d');
+      if (!ctx) throw new Error('Unable to prepare snapshot canvas');
+      ctx.drawImage(canvas, 0, 0);
+
+      const center = map.getCenter?.() || null;
+      const zoom = typeof map.getZoom === 'function' ? map.getZoom() : null;
+      const bearingRaw = typeof map.getBearing === 'function' ? map.getBearing() : null;
+      const pitch = typeof map.getPitch === 'function' ? map.getPitch() : null;
+      const styleUrl = ((window)._lastStyleUrl && typeof (window)._lastStyleUrl === 'string')
+        ? (window)._lastStyleUrl
+        : getTargetMapStyleUrl();
+      const normalizedBearing = Number.isFinite(bearingRaw)
+        ? ((bearingRaw % 360) + 360) % 360
+        : null;
+      const latForScale = Number.isFinite(center?.lat) ? center.lat : 0;
+      const metersPerPixel = Number.isFinite(zoom)
+        ? 156543.03392 * Math.cos(latForScale * DEG_TO_RAD) / Math.pow(2, zoom)
+        : null;
+      const scaleDenominator = Number.isFinite(metersPerPixel)
+        ? (metersPerPixel * 96) / 0.0254
+        : null;
+      const utm = Number.isFinite(center?.lat) && Number.isFinite(center?.lng)
+        ? utmFromLatLng(center.lat, center.lng)
+        : null;
+
+      const formatDegrees = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return `${value.toFixed(6)}°`;
+      };
+      const formatZoom = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return value.toFixed(2);
+      };
+      const formatBearing = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return `${value.toFixed(1)}°`;
+      };
+      const formatPitch = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        return `${value.toFixed(1)}°`;
+      };
+      const formatScale = (value) => {
+        if (!Number.isFinite(value) || value <= 0) return '—';
+        return `1 : ${Math.round(value).toLocaleString()}`;
+      };
+      const formatUTMLines = (value) => {
+        if (!value) return ['—'];
+        const { zoneNumber, zoneLetter, easting, northing } = value;
+        if (!Number.isFinite(zoneNumber) || !zoneLetter) return ['—'];
+        const east = Math.round(easting).toLocaleString();
+        const north = Math.round(northing).toLocaleString();
+        return [`Zone ${zoneNumber}${zoneLetter}`, `${east} mE`, `${north} mN`];
+      };
+
+      const drawCompass = (ctx, cx, cy, radius, bearingDeg) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = `600 ${Math.round(radius * 0.75)}px "Inter", "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('N', 0, -radius * 0.7);
+
+        if (Number.isFinite(bearingDeg)) {
+          ctx.rotate((-bearingDeg) * DEG_TO_RAD);
+          ctx.fillStyle = '#f97316';
+          ctx.beginPath();
+          ctx.moveTo(0, -radius * 0.78);
+          ctx.lineTo(radius * 0.18, radius * 0.28);
+          ctx.lineTo(0, radius * 0.08);
+          ctx.lineTo(-radius * 0.18, radius * 0.28);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.moveTo(0, radius * 0.12);
+          ctx.lineTo(radius * 0.1, radius * 0.44);
+          ctx.lineTo(-radius * 0.1, radius * 0.44);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      };
+
+      const drawSnapshotPanel = () => {
+        const padding = Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.015);
+        const baseFont = '"Inter", "Segoe UI", "Helvetica Neue", sans-serif';
+        const valueFontSize = Math.max(9, Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.01));
+        const labelFontSize = Math.max(7, Math.round(valueFontSize * 0.65));
+        const lineHeight = valueFontSize + 1;
+        const labelSpacing = Math.round(labelFontSize * 0.2);
+        const metricSpacing = Math.round(lineHeight * 0.3);
+
+        const metrics = [
+          { label: 'Latitude', lines: [formatDegrees(center?.lat)] },
+          { label: 'Longitude', lines: [formatDegrees(center?.lng)] },
+          { label: 'UTM', lines: formatUTMLines(utm) },
+          { label: 'Zoom', lines: [formatZoom(zoom)] },
+          { label: 'Heading', lines: [formatBearing(normalizedBearing)] },
+          { label: 'Pitch', lines: [formatPitch(pitch)] },
+          { label: 'Scale', lines: [formatScale(scaleDenominator)] }
+        ];
+
+        const labelFont = `600 ${labelFontSize}px ${baseFont}`;
+        const valueFont = `500 ${valueFontSize}px ${baseFont}`;
+
+        const wrapValueLines = (lines, width) => {
+          ctx.font = valueFont;
+          const result = [];
+          const parts = Array.isArray(lines) ? lines : [lines];
+          const measure = (text) => ctx.measureText(text).width;
+          parts.forEach((textValue) => {
+            const words = String(textValue).split(/\s+/);
+            let current = '';
+            words.forEach((word) => {
+              const candidate = current ? `${current} ${word}` : word;
+              if (measure(candidate) <= width) {
+                current = candidate;
+              } else {
+                if (current) result.push(current);
+                if (measure(word) <= width) {
+                  current = word;
+                } else {
+                  let fragment = '';
+                  for (const char of word) {
+                    const next = fragment ? `${fragment}${char}` : char;
+                    if (measure(next) > width && fragment) {
+                      result.push(fragment);
+                      fragment = char;
+                    } else {
+                      fragment = next;
+                    }
+                  }
+                  current = fragment;
+                }
+              }
+            });
+            if (current) {
+              result.push(current);
+              current = '';
+            }
+          });
+          if (!result.length) result.push('');
+          return result;
+        };
+
+        const compassRadiusBase = Math.min(Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.055), 56);
+        const compassDiameter = compassRadiusBase * 2;
+        const maxPanelWidth = exportCanvas.width - padding * 2;
+        const minTextWidth = Math.max(150, Math.round(valueFontSize * 6));
+
+        const measureMetrics = (textWidth) => {
+          let maxWidth = 0;
+          let totalHeight = 0;
+          const wrappedMetrics = metrics.map((metric) => {
+            ctx.font = labelFont;
+            const labelText = metric.label.toUpperCase();
+            const labelWidth = ctx.measureText(labelText).width;
+            if (labelWidth > maxWidth) maxWidth = labelWidth;
+            totalHeight += labelFontSize + labelSpacing;
+
+            ctx.font = valueFont;
+            const wrappedLines = wrapValueLines(metric.lines, textWidth);
+            wrappedLines.forEach((line) => {
+              const w = ctx.measureText(line).width;
+              if (w > maxWidth) maxWidth = w;
+            });
+            totalHeight += wrappedLines.length * lineHeight + metricSpacing;
+            return { label: metric.label, lines: wrappedLines };
+          });
+          if (wrappedMetrics.length) totalHeight -= metricSpacing;
+          return { wrappedMetrics, maxWidth, totalHeight };
+        };
+
+        let textWidth = Math.max(minTextWidth, maxPanelWidth - (compassDiameter + padding * 3));
+        if (textWidth < minTextWidth) textWidth = minTextWidth;
+
+        let { wrappedMetrics, maxWidth, totalHeight } = measureMetrics(textWidth);
+        textWidth = Math.max(minTextWidth, Math.min(textWidth, maxWidth));
+        let panelWidth = compassDiameter + padding * 3 + textWidth;
+        if (panelWidth > maxPanelWidth) {
+          textWidth = Math.max(minTextWidth, maxPanelWidth - (compassDiameter + padding * 3));
+          ({ wrappedMetrics, maxWidth, totalHeight } = measureMetrics(textWidth));
+          textWidth = Math.max(minTextWidth, Math.min(textWidth, maxWidth));
+          panelWidth = Math.min(maxPanelWidth, compassDiameter + padding * 3 + textWidth);
+        }
+
+        const innerHeight = Math.max(totalHeight, compassDiameter);
+        const panelHeight = Math.min(exportCanvas.height - padding * 2, innerHeight + padding * 2);
+        const x = exportCanvas.width - panelWidth - padding;
+        const y = padding;
+
+        ctx.save();
+
+        const cornerRadius = Math.max(12, Math.round(panelWidth * 0.08));
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.55)';
+        ctx.shadowBlur = Math.max(8, Math.round(panelWidth * 0.04));
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.round(panelWidth * 0.015);
+
+        const gradient = ctx.createLinearGradient(x, y, x, y + panelHeight);
+        gradient.addColorStop(0, 'rgba(30, 41, 59, 0.95)');
+        gradient.addColorStop(1, 'rgba(17, 24, 39, 0.9)');
+        ctx.fillStyle = gradient;
+
+        ctx.beginPath();
+        ctx.moveTo(x + cornerRadius, y);
+        ctx.lineTo(x + panelWidth - cornerRadius, y);
+        ctx.quadraticCurveTo(x + panelWidth, y, x + panelWidth, y + cornerRadius);
+        ctx.lineTo(x + panelWidth, y + panelHeight - cornerRadius);
+        ctx.quadraticCurveTo(x + panelWidth, y + panelHeight, x + panelWidth - cornerRadius, y + panelHeight);
+        ctx.lineTo(x + cornerRadius, y + panelHeight);
+        ctx.quadraticCurveTo(x, y + panelHeight, x, y + panelHeight - cornerRadius);
+        ctx.lineTo(x, y + cornerRadius);
+        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const compassRadius = Math.min(compassRadiusBase, (panelHeight - padding * 2) / 2);
+        const compassCx = x + panelWidth - padding - compassRadius;
+        const compassCy = y + padding + compassRadius;
+        drawCompass(ctx, compassCx, compassCy, compassRadius, normalizedBearing);
+
+        const textLeft = x + padding;
+        const textRightLimit = compassCx - compassRadius - Math.round(padding * 0.6);
+        const availableTextWidth = Math.max(60, Math.min(textWidth, textRightLimit - textLeft));
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        let textY = y + padding;
+        wrappedMetrics.forEach((metric, idx) => {
+          ctx.font = labelFont;
+          ctx.fillStyle = 'rgba(203, 213, 225, 0.88)';
+          ctx.fillText(metric.label.toUpperCase(), textLeft, textY);
+          textY += labelFontSize + labelSpacing;
+
+          ctx.font = valueFont;
+          ctx.fillStyle = '#f8fafc';
+          const lines = wrapValueLines(metric.lines, availableTextWidth);
+          lines.forEach((line) => {
+            ctx.fillText(line, textLeft, textY);
+            textY += lineHeight;
+          });
+
+          if (idx !== wrappedMetrics.length - 1) {
+            textY += metricSpacing;
+          }
+        });
+
+        ctx.restore();
+      };
+
+      drawSnapshotPanel();
+
+      const drawScaleBar = () => {
+        if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return;
+        const maxBarWidthPx = Math.min(exportCanvas.width * 0.28, 220);
+        const niceSteps = [1, 2, 5];
+        let bestMeters = null;
+        let bestWidthPx = 0;
+        const targetMeters = metersPerPixel * maxBarWidthPx;
+        for (let exp = -3; exp <= 6; exp++) {
+          const base = Math.pow(10, exp);
+          niceSteps.forEach((step) => {
+            const lengthMeters = step * base;
+            const widthPx = lengthMeters / metersPerPixel;
+            if (widthPx <= maxBarWidthPx) {
+              if (widthPx > bestWidthPx) {
+                bestWidthPx = widthPx;
+                bestMeters = lengthMeters;
+              }
+            }
+          });
+        }
+        if (!bestMeters) {
+          // fallback: choose the smallest candidate greater than target
+          let minOverflow = Infinity;
+          let minLength = null;
+          for (let exp = -3; exp <= 6; exp++) {
+            const base = Math.pow(10, exp);
+            niceSteps.forEach((step) => {
+              const lengthMeters = step * base;
+              const widthPx = lengthMeters / metersPerPixel;
+              if (widthPx > maxBarWidthPx && widthPx < minOverflow) {
+                minOverflow = widthPx;
+                minLength = lengthMeters;
+              }
+            });
+          }
+          bestMeters = minLength || targetMeters || 1000;
+          bestWidthPx = bestMeters / metersPerPixel;
+        }
+        if (!Number.isFinite(bestMeters) || !Number.isFinite(bestWidthPx) || bestWidthPx <= 0) return;
+
+        const segments = 4;
+        const segmentWidth = bestWidthPx / segments;
+        const barHeight = Math.max(8, Math.round(exportCanvas.height * 0.015));
+        const margin = Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.02);
+        const labelHeight = barHeight * 1.8;
+        const panelPadding = Math.round(barHeight * 0.9);
+        const contentWidth = bestWidthPx + panelPadding * 2 + 50;
+        const contentHeight = barHeight + panelPadding * 2 + labelHeight;
+        const panelWidth = Math.max(contentWidth, 160);
+        const panelHeight = Math.max(contentHeight, barHeight + panelPadding * 2 + labelHeight);
+        const panelX = exportCanvas.width - margin - panelWidth;
+        const panelY = exportCanvas.height - margin - panelHeight;
+        const barX = panelX + panelPadding;
+        const barY = panelY + panelPadding + labelHeight;
+        ctx.save();
+
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.45)';
+        ctx.shadowBlur = Math.max(6, Math.round(panelWidth * 0.04));
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.round(panelWidth * 0.015);
+        const gradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelHeight);
+        gradient.addColorStop(0, 'rgba(15, 23, 42, 0.92)');
+        gradient.addColorStop(1, 'rgba(15, 23, 42, 0.88)');
+        const cornerRadius = Math.max(10, Math.round(panelWidth * 0.08));
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.moveTo(panelX + cornerRadius, panelY);
+        ctx.lineTo(panelX + panelWidth - cornerRadius, panelY);
+        ctx.quadraticCurveTo(panelX + panelWidth, panelY, panelX + panelWidth, panelY + cornerRadius);
+        ctx.lineTo(panelX + panelWidth, panelY + panelHeight - cornerRadius);
+        ctx.quadraticCurveTo(panelX + panelWidth, panelY + panelHeight, panelX + panelWidth - cornerRadius, panelY + panelHeight);
+        ctx.lineTo(panelX + cornerRadius, panelY + panelHeight);
+        ctx.quadraticCurveTo(panelX, panelY + panelHeight, panelX, panelY + panelHeight - cornerRadius);
+        ctx.lineTo(panelX, panelY + cornerRadius);
+        ctx.quadraticCurveTo(panelX, panelY, panelX + cornerRadius, panelY);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.translate(barX, barY);
+
+        for (let i = 0; i < segments; i++) {
+          ctx.fillStyle = i % 2 === 0 ? '#0f172a' : '#f8fafc';
+          ctx.fillRect(segmentWidth * i, 0, segmentWidth, barHeight);
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 0.8;
+          ctx.strokeRect(segmentWidth * i + 0.4, 0.4, segmentWidth - 0.8, barHeight - 0.8);
+        }
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-0.5, -0.5, bestWidthPx + 1, barHeight + 1);
+
+        const useKilometers = bestMeters >= 1000;
+        const unitLabel = useKilometers ? 'km' : 'm';
+        const formatter = (meters) => {
+          if (useKilometers) {
+            const km = meters / 1000;
+            return Math.abs(km - Math.round(km)) < 1e-6 ? `${Math.round(km)}` : km.toFixed(1);
+          }
+          return Math.round(meters).toLocaleString();
+        };
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = `600 ${Math.max(9, Math.round(barHeight * 0.85))}px "Inter", "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        for (let i = 0; i <= segments; i++) {
+          const valueMeters = bestMeters * (i / segments);
+          const label = formatter(valueMeters);
+          ctx.fillText(label, segmentWidth * i, -6);
+        }
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = `500 ${Math.max(8, Math.round(barHeight * 0.75))}px "Inter", "Segoe UI", sans-serif`;
+        ctx.fillText(unitLabel.toUpperCase(), bestWidthPx + 10, barHeight / 2);
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.font = `600 ${Math.max(9, Math.round(barHeight * 0.72))}px "Inter", "Segoe UI", sans-serif`;
+        ctx.fillStyle = 'rgba(203, 213, 225, 0.9)';
+        const title = 'SCALE';
+        ctx.fillText(title, -panelPadding, -labelHeight + Math.max(2, Math.round(barHeight * 0.2)));
+        ctx.font = `500 ${Math.max(9, Math.round(barHeight * 0.78))}px "Inter", "Segoe UI", sans-serif`;
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`1 : ${Math.round(bestMeters / (segmentWidth / segments * metersPerPixel)).toLocaleString()}`, -panelPadding, -Math.max(4, Math.round(barHeight * 0.15)));
+
+        ctx.restore();
+      };
+
+      drawScaleBar();
+
+      let dataUrl = '';
+      try {
+        dataUrl = exportCanvas.toDataURL('image/png');
+      } catch (err) {
+        console.warn('exportCanvas.toDataURL failed', err);
+        dataUrl = '';
+      }
+      if (!dataUrl || dataUrl === 'data:,') {
+        throw new Error('Unable to capture map imagery');
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:]/g, '').replace(/\..+/, '');
+      const defaultFileName = `map-snapshot-${timestamp}.png`;
+      return {
+        dataUrl,
+        width: exportCanvas.width,
+        height: exportCanvas.height,
+        clientWidth: rect?.width || canvas.clientWidth || canvas.width,
+        clientHeight: rect?.height || canvas.clientHeight || canvas.height,
+        devicePixelRatio: dpr,
+        defaultFileName,
+        meta: {
+          zoom,
+          bearing: normalizedBearing,
+          pitch,
+          center: center ? { lat: center.lat, lng: center.lng } : null,
+          styleUrl,
+          utm,
+          metersPerPixel,
+          scaleDenominator,
+          capturedAt: new Date().toISOString()
+        }
+      };
+    };
+
+    const handleSaveMapSnapshot = async () => {
+      if (!toolPrint || toolPrint.disabled) return;
+      toolPrint.disabled = true;
+      try {
+        const map = getMap();
+        if (!map) {
+          showToast(t('alerts.mapNotReady', 'Map is not ready yet.'), 'error', 2200);
+          return;
+        }
+        const snapshot = await captureMapSnapshot();
+        if (!snapshot?.dataUrl) {
+          showToast(t('alerts.snapshotUnavailable', 'Snapshot export is not available.'), 'error', 2600);
+          return;
+        }
+        if (!window.mapTools || typeof window.mapTools.saveMapSnapshot !== 'function') {
+          showToast(t('alerts.snapshotUnavailable', 'Snapshot export is not available.'), 'error', 2400);
+          return;
+        }
+        const result = await window.mapTools.saveMapSnapshot(snapshot);
+        if (!result) {
+          showToast(t('alerts.snapshotFailed', 'Failed to save map snapshot.'), 'error', 2600);
+          return;
+        }
+        if (result.ok) {
+          showToast(t('alerts.snapshotSuccess', 'Map snapshot saved.'), 'success', 2000);
+        } else if (result.canceled) {
+          showToast(t('alerts.snapshotCancelled', 'Save cancelled.'), 'error', 2000);
+        } else {
+          const message = typeof result.error === 'string' && result.error.trim()
+            ? result.error
+            : t('alerts.snapshotFailed', 'Failed to save map snapshot.');
+          showToast(message, 'error', 2600);
+        }
+      } catch (err) {
+        console.error('handleSaveMapSnapshot failed', err);
+        showToast(t('alerts.snapshotFailed', 'Failed to save map snapshot.'), 'error', 2600);
+      } finally {
+        toolPrint.disabled = false;
+      }
+    };
+
+    toolPrint?.addEventListener('click', handleSaveMapSnapshot);
+
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
     function openSearchModal(){
@@ -6403,18 +7079,13 @@
           const latStr = Number.isFinite(lat) ? lat.toFixed(6) : '—';
           const lngStr = Number.isFinite(lng) ? lng.toFixed(6) : '—';
           const text = addr ? `${addr}, LAT ${latStr}, LONG ${lngStr}` : `LAT ${latStr}, LONG ${lngStr}`;
-          try {
-            const ok = await writeToClipboard(text);
-            if (!ok) throw new Error('clipboard unavailable');
-            footerAddress.classList.add('copied');
-            setTimeout(() => footerAddress.classList.remove('copied'), 1200);
-            showToast(t('messages.addressCopied', 'Address copied to clipboard'));
-          } catch (err) {
-            console.error('Copy address failed', err);
-            showToast(t('messages.copyFailed', 'Copy failed'), 'error');
-          }
+          const ok = await writeToClipboard(text);
+          if (!ok) throw new Error('clipboard unavailable');
+          footerAddress.classList.add('copied');
+          setTimeout(() => footerAddress.classList.remove('copied'), 1200);
+          showToast(t('messages.addressCopied', 'Address copied to clipboard'));
         } catch (err) {
-          console.error('Copy address wrapper failed', err);
+          console.error('Copy address failed', err);
           showToast(t('messages.copyFailed', 'Copy failed'), 'error');
         }
       });
