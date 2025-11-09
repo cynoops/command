@@ -1383,6 +1383,60 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
   font-weight: 600;
 }
 
+.push-live-body{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  min-height: 320px;
+}
+.push-live-preview{
+  width: 100%;
+  max-width: min(600px, 90vw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.push-live-preview img{
+  width: 100%;
+  max-width: min(600px, 90vw);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.3);
+}
+.push-live-preview[hidden]{
+  display: none !important;
+}
+.push-live-loading{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.push-live-loading[hidden]{
+  display: none !important;
+}
+.push-live-actions{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 24px;
+}
+.push-live-actions .btn{
+  min-width: 168px;
+}
+.btn-danger{
+  background: linear-gradient(180deg, var(--danger) 0%, color-mix(in oklab, var(--danger) 72%, #000 28%) 100%);
+  color: #fff;
+  border-color: transparent;
+}
+.btn-danger:hover{
+  border-color: color-mix(in oklab, var(--danger) 65%, transparent 35%);
+}
+
 /* ---------------- Footer ---------------- */
 .app-footer{
   display: grid;

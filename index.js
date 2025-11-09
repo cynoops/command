@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require("electron");
+const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 // Modularized main process pieces
@@ -32,6 +33,15 @@ try {
 } catch (err) {
   console.warn('Failed to prime app name', err);
 }
+
+const cleanServiceWorkerStorage = async () => {
+  try {
+    const serviceWorkerPath = path.join(app.getPath('userData'), 'Service Worker');
+    await fsp.rm(serviceWorkerPath, { recursive: true, force: true });
+  } catch (err) {
+    console.warn('Failed to clean service worker storage', err);
+  }
+};
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -70,7 +80,8 @@ const createWindow = () => {
   });
 };
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await cleanServiceWorkerStorage();
   createWindow();
   // Register IPC using modular handlers
   registerFileIPC({ ipcMain, dialog, fsp }, state);

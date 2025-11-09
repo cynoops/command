@@ -35,7 +35,12 @@ function main() {
     const dst = path.join(outDir, f);
     if (fs.existsSync(src)) copy(src, dst);
   });
+
+  const qrSrc = path.join(root, 'vendor', 'qrcode-generator.js');
+  if (fs.existsSync(qrSrc)) {
+    const qrDst = path.join(root, 'dist', 'vendor', 'qrcode-generator.js');
+    copy(qrSrc, qrDst);
+  }
 }
 
 main();
-

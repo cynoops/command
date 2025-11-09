@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com; worker-src 'self' blob:;"
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://cynoops.com https://cynoops.com/api https://cynoops.com/live https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com https://firestore.googleapis.com; worker-src 'self' blob:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Command - CYNOOPS</title>
@@ -31,7 +31,7 @@
         <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false" data-tooltip="Go to coordinates">
           <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
         </button>
-        <div class="tool-divider" aria-hidden="true"></div>
+        <div id="toolPushLiveDivider" class="tool-divider" aria-hidden="true" hidden></div>
         <!-- View controls -->
         <button id="toolZoomIn" class="tool-btn" title="Zoom in" data-tooltip="Zoom in">
           <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
@@ -74,6 +74,10 @@
         </button>
         <button id="toolSetScale" class="tool-btn" title="Set scale" aria-pressed="false" data-tooltip="Set scale">
           <img class="icon" src="./assets/icons/regular/ruler.svg" alt="" aria-hidden="true" />
+        </button>
+        <div class="tool-divider" aria-hidden="true"></div>
+        <button id="toolPushLive" class="tool-btn" title="Push LIVE Updates" aria-pressed="false" data-tooltip="Push LIVE Updates" hidden>
+          <img class="icon" src="./assets/icons/regular/cloud-arrow-up.svg" alt="" aria-hidden="true" />
         </button>
         <button id="toolPrint" class="tool-btn" title="Save snapshot" aria-pressed="false" data-tooltip="Save snapshot">
           <img class="icon" src="./assets/icons/regular/printer.svg" alt="" aria-hidden="true" />
@@ -318,6 +322,12 @@
                   </span>
                   <input id="settingOpenAIKey" type="password" autocomplete="off" placeholder="sk-•••" />
                 </label>
+                <label class="field">
+                  <span class="label label-with-help">CYNOOPS Live API Key
+                    <button type="button" class="label-help" aria-label="Where to find your CYNOOPS Live API key" data-tooltip="Open your CynoOps dashboard, create a Live API key, and paste it here.">info</button>
+                  </span>
+                  <input id="settingCynoopsLiveKey" type="password" autocomplete="off" placeholder="live_•••" />
+                </label>
               </div>
             </div>
 
@@ -428,7 +438,7 @@
   <!-- Coordinates Modal -->
   <div id="coordModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="coordTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
-    <div class="modal-panel" style="width:min(420px, 92vw);">
+    <div class="modal-panel" style="width:min(800px, 96vw);">
       <div class="modal-header">
         <h3 id="coordTitle" data-i18n="coordModal.title">Coordinates</h3>
         <button id="coordClose" class="btn-icon" title="Close">×</button>
@@ -535,6 +545,31 @@
     </div>
   </div>
 
+  <!-- Push LIVE Updates Modal -->
+  <div id="pushLiveModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="pushLiveTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(800px, 96vw);">
+      <div class="modal-header">
+        <h3 id="pushLiveTitle">Push LIVE Updates</h3>
+        <button id="pushLiveClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body push-live-body">
+        <div id="pushLiveStatus" class="muted" role="status" aria-live="polite" data-i18n="pushLiveModal.idle">Start a LIVE session to generate a QR code.</div>
+        <div id="pushLiveLoading" class="push-live-loading" hidden aria-hidden="true">
+          <span class="trackers-spinner"></span>
+        </div>
+        <div id="pushLivePreview" class="push-live-preview" hidden>
+          <img id="pushLiveQr" src="" data-i18n-alt="pushLiveModal.imageAlt" alt="CYNOOPS LIVE QR code" style="max-width:100%; height:auto;" />
+        </div>
+      </div>
+      <div class="modal-footer push-live-actions">
+        <button id="pushLiveStart" class="btn btn-primary" type="button" data-i18n="pushLiveModal.startButton">START LIVE SESSION</button>
+        <button id="pushLiveEnd" class="btn btn-danger" type="button" data-i18n="pushLiveModal.endButton" hidden>END LIVE SESSION</button>
+        <button id="pushLiveCancel" class="btn" type="button" data-i18n="pushLiveModal.closeButton">CLOSE</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Keyboard Shortcuts Modal -->
   <div id="shortcutsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
@@ -635,6 +670,7 @@
 
   <!-- Mapbox GL JS (CSP build) -->
   <script src="./dist/vendor/mapbox-gl/mapbox-gl-csp.js"></script>
+  <script src="./dist/vendor/qrcode-generator.js"></script>
   <!-- Your renderer bundle goes here -->
   <script src="./renderer.js"></script>
 </body>
