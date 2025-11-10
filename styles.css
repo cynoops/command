@@ -1027,7 +1027,7 @@ body:not(.sidebar-ready) .trackers-sidebar{
 }
 .drawing-row:last-child{ border-bottom: none; }
 .drawing-main{ display: contents; }
-.drawing-name{ display: block; }
+.drawing-name{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .drawing-actions{ grid-row: 1; grid-column: 2; display: inline-flex; gap: 6px; align-items: center; }
 .drawing-color{
   width: 18px; height: 18px;
@@ -1063,6 +1063,24 @@ body:not(.sidebar-ready) .trackers-sidebar{
 }
 .drawing-title:focus{ outline: none; text-decoration: underline; text-underline-offset: 2px; }
 .drawing-title:empty:before{ content: attr(data-placeholder); color: var(--muted); }
+.drawing-badge{
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: color-mix(in oklab, var(--line) 80%, transparent);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-weight: 600;
+  border: 1px solid color-mix(in oklab, var(--line) 60%, transparent);
+}
+.drawing-badge--gpx{
+  background: #315cf6;
+  border-color: #315cf6;
+  color: #fff;
+  margin-right: 6px;
+  font-size: 8px;
+}
 .drawing-meta{ display: flex; gap: 8px; align-items: baseline; min-width: 0; grid-column: 1 / span 2; }
 .drawing-type{ font-size: 11px; color: var(--muted); opacity: .8; }
 .drawing-size{ font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }

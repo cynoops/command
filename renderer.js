@@ -23,6 +23,37 @@
     ai: './assets/icons/regular/sparkle.svg',
     delete: './assets/icons/regular/x.svg'
   };
+  const FEATURE_NAME_MAX = 26;
+  const FEATURE_IMPORT_BASE = 24;
+  const FEATURE_NAME_ELLIPSIS = '...';
+  const FEATURE_IMPORT_MAX = FEATURE_IMPORT_BASE + FEATURE_NAME_ELLIPSIS.length;
+
+  const sanitizeFeatureName = (value, { allowImportEllipsis = false } = {}) => {
+    if (value == null) return '';
+    let str = String(value);
+    str = str.trim();
+    if (!str) return '';
+    const baseLimit = FEATURE_NAME_MAX;
+    if (str.length > baseLimit) {
+      if (allowImportEllipsis && str.endsWith(FEATURE_NAME_ELLIPSIS)) {
+        const ellipsisLimit = Math.max(baseLimit, FEATURE_IMPORT_MAX);
+        if (str.length > ellipsisLimit) str = str.slice(0, ellipsisLimit);
+      } else {
+        str = str.slice(0, baseLimit);
+      }
+    }
+    return str;
+  };
+
+  const formatImportedFeatureName = (value) => {
+    const trimmed = sanitizeFeatureName(value, { allowImportEllipsis: false });
+    if (!trimmed) return '';
+    if (trimmed.length > FEATURE_NAME_MAX) {
+      const base = trimmed.slice(0, FEATURE_IMPORT_BASE);
+      return sanitizeFeatureName(`${base}${FEATURE_NAME_ELLIPSIS}`, { allowImportEllipsis: true });
+    }
+    return trimmed;
+  };
   const makeButtonIcon = (src) => {
     const img = document.createElement('img');
     img.className = 'icon';
@@ -104,6 +135,19 @@
   const bindTextAuto = (el, key) => bindText(el, key, el?.textContent || '');
   const bindHtmlAuto = (el, key) => bindHtml(el, key, el?.innerHTML || '');
   const bindAttrAuto = (el, attr, key) => bindAttr(el, attr, key, el?.getAttribute?.(attr) || '');
+
+  const placeCaretAtEnd = (el) => {
+    if (!el) return;
+    try {
+      const selection = window.getSelection();
+      if (!selection) return;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch {}
+  };
 
   const DEG_TO_RAD = Math.PI / 180;
   const RAD_TO_DEG = 180 / Math.PI;
@@ -479,6 +523,7 @@
   const featuresActionsMenu = q('#featuresActionsMenu');
   const featuresSaveBtn = q('#featuresSaveBtn');
   const featuresLoadBtn = q('#featuresLoadBtn');
+  const featuresLoadGpxBtn = q('#featuresLoadGpxBtn');
   const featuresClearBtn = q('#featuresClearBtn');
   const toolPin = q('#toolPin');
   const settingLanguage = q('#settingLanguage');
@@ -775,6 +820,7 @@
     bindTextAuto(featuresActionsToggleBtn?.querySelector('.visually-hidden'), 'features.menu.open');
     bindTextAuto(featuresSaveBtn?.querySelector('span'), 'features.menu.save');
     bindTextAuto(featuresLoadBtn?.querySelector('span'), 'features.menu.load');
+    bindTextAuto(featuresLoadGpxBtn?.querySelector('span'), 'features.menu.loadGpx');
     bindTextAuto(featuresClearBtn?.querySelector('span'), 'features.menu.clear');
     bindAttrAuto(featuresResizer, 'title', 'sidebar.dragResize');
 
@@ -5023,6 +5069,9 @@
         drawStore.features = Array.isArray(fc.features) ? fc.features.map(f => {
           if (!f.properties) f.properties = {};
           if (!f.properties.id) f.properties.id = `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
+          if (typeof f.properties.name === 'string' && f.properties.name) {
+            f.properties.name = formatImportedFeatureName(f.properties.name);
+          }
           return f;
         }) : [];
         refreshDraw();
@@ -5201,6 +5250,7 @@
         if (!Array.isArray(start) || !Array.isArray(end)) return;
         const color = lineFeature.properties?.color || '#64b5f6';
         const lineId = lineFeature.properties?.id;
+        const hidden = !!lineFeature.properties?._featureHidden;
         const makePoint = (coord, kind, { opacity = 1, hasInnerDot = false } = {}) => ({
           type: 'Feature',
           properties: {
@@ -5210,7 +5260,8 @@
             pointOpacity: opacity,
             hasInnerDot,
             relatedLineId: lineId,
-            isLineEndpoint: true
+            isLineEndpoint: true,
+            _featureHidden: hidden
           },
           geometry: { type: 'Point', coordinates: [coord[0], coord[1]] }
         });
@@ -5218,6 +5269,27 @@
         drawStore.features.push(makePoint(end, 'line-end', { opacity: 1 }));
       } catch (err) {
         console.error('addLineEndpoints failed', err);
+      }
+    };
+
+    const syncLineEndpointVisibility = (lineFeature) => {
+      try {
+        const lineId = lineFeature?.properties?.id;
+        if (!lineId) return false;
+        const hidden = !!lineFeature.properties?._featureHidden;
+        let changed = false;
+        drawStore.features.forEach((feat) => {
+          if (feat?.properties?.isLineEndpoint && feat.properties?.relatedLineId === lineId) {
+            if (!!feat.properties._featureHidden !== hidden) {
+              feat.properties._featureHidden = hidden;
+              changed = true;
+            }
+          }
+        });
+        return changed;
+      } catch (err) {
+        console.error('syncLineEndpointVisibility failed', err);
+        return false;
       }
     };
     function syncLineEndpoints(lineFeature) {
@@ -5519,6 +5591,7 @@
 
     const renderRow = (f) => {
       if (f?.properties?.isLineEndpoint) return null;
+      f.properties = f.properties || {};
       const row = document.createElement('div');
       row.className = 'drawing-row';
       row.dataset.id = f.properties.id;
@@ -5528,10 +5601,22 @@
       nameWrap.className = 'drawing-name';
       const nameEl = document.createElement('div');
       nameEl.className = 'drawing-title';
+      const isReadOnlyFeature = !!f.properties?.isReadOnly;
       nameEl.contentEditable = 'true';
       nameEl.setAttribute('data-placeholder', 'Untitled');
-      nameEl.textContent = f.properties?.name || '';
+      const initialName = sanitizeFeatureName(f.properties?.name || '', { allowImportEllipsis: true });
+      if (initialName !== (f.properties?.name || '')) f.properties.name = initialName;
+      nameEl.textContent = initialName;
       nameWrap.appendChild(nameEl);
+      const importBadgeText = (f.properties?.importBadge || (f.properties?.importSource === 'gpx' ? 'GPX' : '') || '').toString().trim();
+      if (importBadgeText) {
+        const badge = document.createElement('span');
+        badge.className = 'drawing-badge';
+        if (f.properties?.importSource === 'gpx') badge.classList.add('drawing-badge--gpx');
+        badge.textContent = importBadgeText;
+        badge.title = importBadgeText;
+        nameWrap.appendChild(badge);
+      }
       const meta = document.createElement('div');
       meta.className = 'drawing-meta';
       const typeEl = document.createElement('div');
@@ -5546,7 +5631,9 @@
       const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#2196F3';
       const applyColorToWrap = () => { try { colorWrap.style.backgroundColor = getColor(); } catch {} };
       applyColorToWrap();
-      colorWrap.title = 'Change color';
+      const changeColorLabel = t('messages.changeColor', 'Change color');
+      colorWrap.title = changeColorLabel;
+      colorWrap.setAttribute('aria-label', changeColorLabel);
       colorWrap.addEventListener('click', () => {
         openColorModal(getColor(), (hex) => {
           f.properties = f.properties || {};
@@ -5573,7 +5660,7 @@
       let updateEditBtnState = () => {};
       let startEdit = () => {};
       let stopEdit = () => {};
-      if (!disableEditAi) {
+      if (!disableEditAi && !isReadOnlyFeature) {
         editBtn = document.createElement('button');
         editBtn.type = 'button';
         editBtn.className = 'drawing-edit';
@@ -5614,7 +5701,7 @@
       const toggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.show);
       toggleBtn.appendChild(toggleIcon);
       let aiBtn = null;
-      if (!disableEditAi) {
+      if (!disableEditAi && !isReadOnlyFeature) {
         aiBtn = document.createElement('button');
         aiBtn.type = 'button';
         aiBtn.className = 'drawing-ai'; aiBtn.title = 'AI…'; aiBtn.setAttribute('aria-label','AI suggestions');
@@ -5660,9 +5747,20 @@
       row.appendChild(meta);
       row.addEventListener('mouseenter', () => setHighlight(f.properties.id));
       row.addEventListener('mouseleave', () => setHighlight(null));
+      const clampNameInNode = () => {
+        const current = nameEl.textContent || '';
+        const sanitized = sanitizeFeatureName(current, { allowImportEllipsis: true });
+        if (sanitized !== current) {
+          nameEl.textContent = sanitized;
+          placeCaretAtEnd(nameEl);
+        }
+        return sanitized;
+      };
       const commitName = () => {
+        const value = clampNameInNode();
         f.properties = f.properties || {};
-        f.properties.name = (nameEl.textContent || '').trim();
+        f.properties.name = value;
+        return value;
       };
       nameEl.addEventListener('blur', () => {
         commitName();
@@ -5734,6 +5832,7 @@
         if (hidden && hoveredId === f.properties?.id) setHighlight(null);
       };
       applyToggleState();
+      if (g.type === 'LineString') syncLineEndpointVisibility(f);
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         f.properties = f.properties || {};
@@ -5748,7 +5847,8 @@
           finally { suppressFeatureToasts = prevSuppress; }
         }
         applyToggleState();
-        if (!stoppedEditing) {
+        const endpointsChanged = g.type === 'LineString' ? syncLineEndpointVisibility(f) : false;
+        if (!stoppedEditing || endpointsChanged) {
           setDirty(true);
           refreshDraw();
         }
@@ -5866,7 +5966,7 @@
       }
     };
 
-    const normalizeImportedFeature = (feature, existingIds) => {
+    const normalizeImportedFeature = (feature, existingIds, options = {}) => {
       if (!feature || feature.type !== 'Feature' || !feature.geometry) return null;
       let clone;
       try {
@@ -5876,6 +5976,8 @@
         return null;
       }
       clone.properties = { ...(clone.properties || {}) };
+      const opts = options && typeof options === 'object' ? options : {};
+      const idRegistry = existingIds instanceof Set ? existingIds : new Set();
       const geomType = clone.geometry?.type;
       if (!clone.properties.kind) {
         if (geomType === 'Polygon') clone.properties.kind = 'polygon';
@@ -5883,15 +5985,168 @@
         else if (geomType === 'Point') clone.properties.kind = 'poi';
       }
       if (!clone.properties.color) clone.properties.color = nextColor();
-      if (!clone.properties.id || existingIds.has(clone.properties.id)) {
+      if (typeof opts.setName === 'string') {
+        clone.properties.name = formatImportedFeatureName(opts.setName);
+      } else if (typeof clone.properties.name === 'string' && clone.properties.name.trim()) {
+        clone.properties.name = formatImportedFeatureName(clone.properties.name);
+      } else if (typeof opts.forceName === 'string') {
+        clone.properties.name = formatImportedFeatureName(opts.forceName);
+      } else {
+        clone.properties.name = '';
+      }
+      if (opts.readOnly) clone.properties.isReadOnly = true;
+      if (opts.importSource) clone.properties.importSource = opts.importSource;
+      if (opts.badgeLabel) clone.properties.importBadge = opts.badgeLabel;
+      if (opts.extraProps && typeof opts.extraProps === 'object') {
+        clone.properties = { ...clone.properties, ...opts.extraProps };
+      }
+      if (!clone.properties.id || idRegistry.has(clone.properties.id)) {
         let candidate;
         do {
           candidate = newId();
-        } while (existingIds.has(candidate));
+        } while (idRegistry.has(candidate));
         clone.properties.id = candidate;
       }
-      existingIds.add(clone.properties.id);
+      idRegistry.add(clone.properties.id);
       return clone;
+    };
+
+    const deriveNameFromFilePath = (pathString) => {
+      if (typeof pathString !== 'string' || !pathString.trim()) return 'Untitled';
+      const parts = pathString.split(/[\\/]+/).filter(Boolean);
+      if (!parts.length) return 'Untitled';
+      const base = parts[parts.length - 1];
+      const dot = base.lastIndexOf('.');
+      const trimmed = (dot > 0 ? base.slice(0, dot) : base).trim();
+      return trimmed || 'Untitled';
+    };
+
+    const elementsByTag = (root, tagName) => {
+      if (!root || typeof tagName !== 'string' || !tagName) return [];
+      const results = [];
+      const pushList = (list) => {
+        if (!list || typeof list.length !== 'number') return;
+        for (let i = 0; i < list.length; i += 1) {
+          const node = list[i];
+          if (node && !results.includes(node)) results.push(node);
+        }
+      };
+      try { pushList(root.getElementsByTagName(tagName)); } catch {}
+      if (typeof root.getElementsByTagNameNS === 'function') {
+        try { pushList(root.getElementsByTagNameNS('*', tagName)); } catch {}
+      }
+      return results;
+    };
+
+    const sanitizeSequentialCoords = (coords) => {
+      const filtered = [];
+      if (!Array.isArray(coords)) return filtered;
+      coords.forEach((pt) => {
+        if (!Array.isArray(pt) || pt.length < 2) return;
+        const lng = Number(pt[0]);
+        const lat = Number(pt[1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        const clampedLat = Math.max(Math.min(lat, 90), -90);
+        let normalizedLng = lng;
+        while (normalizedLng < -180) normalizedLng += 360;
+        while (normalizedLng > 180) normalizedLng -= 360;
+        const next = [normalizedLng, clampedLat];
+        if (!filtered.length) {
+          filtered.push(next);
+          return;
+        }
+        const prev = filtered[filtered.length - 1];
+        if (Math.abs(prev[0] - next[0]) < 1e-9 && Math.abs(prev[1] - next[1]) < 1e-9) return;
+        filtered.push(next);
+      });
+      return filtered;
+    };
+
+    const coordsFromElements = (elements, attrLat = 'lat', attrLon = 'lon') => {
+      const coords = [];
+      if (!Array.isArray(elements)) return coords;
+      elements.forEach((el) => {
+        if (!el || typeof el.getAttribute !== 'function') return;
+        const latRaw = el.getAttribute(attrLat) ?? el.getAttribute(attrLat.toUpperCase());
+        const lonRaw = el.getAttribute(attrLon) ?? el.getAttribute(attrLon.toUpperCase());
+        const lat = parseFloat(latRaw);
+        const lon = parseFloat(lonRaw);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        coords.push([lon, lat]);
+      });
+      return coords;
+    };
+
+    const coordsFromTrack = (doc) => {
+      const tracks = elementsByTag(doc, 'trk');
+      for (let i = 0; i < tracks.length; i += 1) {
+        const track = tracks[i];
+        const segments = elementsByTag(track, 'trkseg');
+        let coords = [];
+        if (segments.length) {
+          segments.forEach((seg) => {
+            coords = coords.concat(coordsFromElements(elementsByTag(seg, 'trkpt')));
+          });
+        } else {
+          coords = coordsFromElements(elementsByTag(track, 'trkpt'));
+        }
+        const sanitized = sanitizeSequentialCoords(coords);
+        if (sanitized.length) return sanitized;
+      }
+      return [];
+    };
+
+    const coordsFromRoute = (doc) => {
+      const routes = elementsByTag(doc, 'rte');
+      for (let i = 0; i < routes.length; i += 1) {
+        const route = routes[i];
+        const coords = sanitizeSequentialCoords(coordsFromElements(elementsByTag(route, 'rtept')));
+        if (coords.length) return coords;
+      }
+      return [];
+    };
+
+    const coordsFromWaypoints = (doc) => sanitizeSequentialCoords(coordsFromElements(elementsByTag(doc, 'wpt')));
+
+    const coordsToGeometry = (coords) => {
+      if (!Array.isArray(coords) || !coords.length) return null;
+      if (coords.length >= 2) return { type: 'LineString', coordinates: coords };
+      return { type: 'Point', coordinates: coords[0] };
+    };
+
+    const parseGpxToFeature = (gpxText) => {
+      if (typeof gpxText !== 'string' || !gpxText.trim()) return null;
+      if (typeof DOMParser !== 'function') {
+        console.warn('DOMParser unavailable; cannot parse GPX.');
+        return null;
+      }
+      let doc;
+      try {
+        const parser = new DOMParser();
+        doc = parser.parseFromString(gpxText, 'application/xml');
+      } catch (err) {
+        console.error('parseGpxToFeature failed', err);
+        return null;
+      }
+      if (!doc) return null;
+      try {
+        const parseErrors = doc.getElementsByTagName('parsererror');
+        if (parseErrors && parseErrors.length) {
+          console.error('GPX parse error', parseErrors[0]?.textContent || '');
+          return null;
+        }
+      } catch {}
+      let geometry = coordsToGeometry(coordsFromTrack(doc));
+      if (!geometry) geometry = coordsToGeometry(coordsFromRoute(doc));
+      if (!geometry) {
+        const waypointGeom = coordsToGeometry(coordsFromWaypoints(doc));
+        if (waypointGeom) geometry = waypointGeom;
+      }
+      if (!geometry) return null;
+      const properties = {};
+      if (geometry.type === 'LineString') properties.kind = 'line';
+      else if (geometry.type === 'Point') properties.kind = 'poi';
+      return { type: 'Feature', properties, geometry };
     };
 
     const handleFeaturesLoad = async () => {
@@ -5961,6 +6216,57 @@
       }
     };
 
+    const handleFeaturesLoadGpx = async () => {
+      closeFeaturesActionsMenu();
+      if (!window.file || typeof window.file.openGpx !== 'function') {
+        console.warn('GPX open bridge is not available.');
+        return;
+      }
+      try {
+        const result = await window.file.openGpx(currentFilePath || undefined);
+        if (!result || result.canceled) return;
+        if (!result.ok) {
+          if (result.error) alert(result.error);
+          showToast(t('messages.loadFailed', 'Load failed'), 'error');
+          return;
+        }
+        const feature = parseGpxToFeature(result.data);
+        if (!feature) {
+          alert(t('messages.invalidGpx', 'The GPX file did not contain a usable track or waypoint.'));
+          showToast(t('messages.loadFailed', 'Load failed'), 'error');
+          return;
+        }
+        const rawFriendlyName = deriveNameFromFilePath(result.filePath || '');
+        const friendlyName = formatImportedFeatureName(rawFriendlyName) || 'Untitled';
+        const existingIds = new Set((drawStore.features || []).map((f) => f?.properties?.id).filter(Boolean));
+        const normalized = normalizeImportedFeature(feature, existingIds, {
+          setName: friendlyName,
+          readOnly: true,
+          importSource: 'gpx',
+          badgeLabel: 'GPX'
+        });
+        suppressFeatureToasts = true;
+        try {
+          drawStore.features.push(normalized);
+          if (normalized?.geometry?.type === 'LineString' && Array.isArray(normalized.geometry.coordinates)) {
+            addLineEndpoints(normalized, normalized.geometry.coordinates);
+          }
+        } finally {
+          suppressFeatureToasts = false;
+        }
+        refreshDraw();
+        setDirty(true);
+        requestLiveFeaturesSync(0);
+        try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+        focusMapOnBounds(computeFeatureBounds([normalized]));
+        showToast(t('messages.gpxImported', 'GPX feature added'));
+      } catch (err) {
+        console.error('Loading GPX failed', err);
+        alert(t('messages.gpxLoadError', 'Unable to load the GPX file.'));
+        showToast(t('messages.loadFailed', 'Load failed'), 'error');
+      }
+    };
+
     const handleFeaturesClear = () => {
       closeFeaturesActionsMenu();
       if (!Array.isArray(drawStore.features) || drawStore.features.length === 0) return;
@@ -5993,6 +6299,7 @@
     };
     featuresSaveBtn?.addEventListener('click', handleFeaturesSave);
     featuresLoadBtn?.addEventListener('click', handleFeaturesLoad);
+    featuresLoadGpxBtn?.addEventListener('click', handleFeaturesLoadGpx);
     featuresClearBtn?.addEventListener('click', handleFeaturesClear);
     updateFeaturesActionsState();
     updateDrawingsPanel();

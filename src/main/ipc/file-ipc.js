@@ -116,6 +116,26 @@ function registerFileIPC({ ipcMain, dialog, fsp }, state) {
     }
   });
 
+  ipcMain.handle('file:open-gpx', async (_e, { defaultPath } = {}) => {
+    const mainWindow = state.mainWindow;
+    if (!mainWindow) return { ok: false, canceled: true };
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Open GPX Track',
+        defaultPath: defaultPath || state.currentFilePath || undefined,
+        properties: ['openFile'],
+        filters: [{ name: 'GPX', extensions: ['gpx'] }]
+      });
+      if (canceled || !filePaths || !filePaths[0]) return { ok: false, canceled: true };
+      const filePath = filePaths[0];
+      const raw = await fsp.readFile(filePath, 'utf8');
+      return { ok: true, canceled: false, filePath, data: raw };
+    } catch (e) {
+      dialog.showErrorBox('Open GPX Failed', String(e));
+      return { ok: false, error: String(e) };
+    }
+  });
+
   ipcMain.handle('file:open-trackers', async (_e, { defaultPath } = {}) => {
     const mainWindow = state.mainWindow;
     if (!mainWindow) return { ok: false, canceled: true };
