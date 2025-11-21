@@ -264,7 +264,8 @@
     "alerts.snapshotCancelled": "Save cancelled.",
     "toolbar.setScale": "Set scale",
     "alerts.scaleApplied": "Scale applied.",
-    "alerts.scaleFailed": "Could not set scale."
+    "alerts.scaleFailed": "Could not set scale.",
+    "print.notesTitle": "Notes"
   },
   "de": {
     "nav.map": "KARTE",
@@ -531,7 +532,8 @@
     "alerts.snapshotCancelled": "Speichern abgebrochen.",
     "toolbar.setScale": "Maßstab einstellen",
     "alerts.scaleApplied": "Maßstab angewendet.",
-    "alerts.scaleFailed": "Maßstab konnte nicht gesetzt werden."
+    "alerts.scaleFailed": "Maßstab konnte nicht gesetzt werden.",
+    "print.notesTitle": "Notizen"
   },
   "fr": {
     "nav.map": "CARTE",
@@ -798,7 +800,8 @@
     "alerts.snapshotCancelled": "Enregistrement annulé.",
     "toolbar.setScale": "Définir l’échelle",
     "alerts.scaleApplied": "Échelle appliquée.",
-    "alerts.scaleFailed": "Impossible de définir l’échelle."
+    "alerts.scaleFailed": "Impossible de définir l’échelle.",
+    "print.notesTitle": "Notes"
   },
   "es": {
     "nav.map": "MAPA",
@@ -1065,7 +1068,8 @@
     "alerts.snapshotCancelled": "Guardado cancelado.",
     "toolbar.setScale": "Definir escala",
     "alerts.scaleApplied": "Escala aplicada.",
-    "alerts.scaleFailed": "No se pudo establecer la escala."
+    "alerts.scaleFailed": "No se pudo establecer la escala.",
+    "print.notesTitle": "Notas"
   },
   "it": {
     "nav.map": "MAPPA",
@@ -1332,6 +1336,7 @@
     "alerts.snapshotCancelled": "Salvataggio annullato.",
     "toolbar.setScale": "Imposta scala",
     "alerts.scaleApplied": "Scala applicata.",
-    "alerts.scaleFailed": "Impossibile impostare la scala."
+    "alerts.scaleFailed": "Impossibile impostare la scala.",
+    "print.notesTitle": "Note"
   }
 }

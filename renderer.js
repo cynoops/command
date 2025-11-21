@@ -1673,6 +1673,11 @@
     el.appendChild(temp);
     const label = entry.description || weatherDescription(entry.code);
     el.title = `${label} · ${Math.round(entry.temperature)}°C`;
+    try {
+      el.dataset.weatherIcon = iconSrc || '';
+      el.dataset.weatherTemp = temp.textContent || '';
+      el.dataset.weatherLabel = label || '';
+    } catch {}
     return new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([entry.lng, entry.lat]).addTo(map);
   }
 
@@ -1692,6 +1697,169 @@
       }
     });
   }
+
+  const weatherMarkerImageCache = new Map();
+  const loadWeatherMarkerImage = (src) => {
+    if (!src) return Promise.resolve(null);
+    if (weatherMarkerImageCache.has(src)) return weatherMarkerImageCache.get(src);
+    const promise = new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      } catch (err) {
+        console.warn('Failed to prepare weather icon for snapshot', err);
+        resolve(null);
+      }
+    });
+    weatherMarkerImageCache.set(src, promise);
+    return promise;
+  };
+
+  const collectWeatherMarkerSnapshotEntries = (map) => {
+    if (!map) return [];
+    const lists = [weatherOverlayMarkers, weatherManualMarkers];
+    const collected = [];
+    lists.forEach((list) => {
+      list.forEach((marker) => {
+        try {
+          if (!marker || typeof marker.getLngLat !== 'function' || typeof map.project !== 'function') return;
+          const lngLat = marker.getLngLat();
+          if (!lngLat) return;
+          const projected = map.project(lngLat);
+          if (!projected || !Number.isFinite(projected.x) || !Number.isFinite(projected.y)) return;
+          const element = marker.getElement?.();
+          const dataset = element?.dataset || {};
+          const iconSrc = dataset.weatherIcon || element?.querySelector?.('.weather-marker__icon')?.src || '';
+          const tempLabel = dataset.weatherTemp || element?.querySelector?.('.weather-marker__temp')?.textContent?.trim() || '';
+          const description = dataset.weatherLabel || element?.getAttribute?.('title') || '';
+          if (!iconSrc && !tempLabel) return;
+          collected.push({
+            point: projected,
+            iconSrc,
+            tempLabel,
+            description
+          });
+        } catch (err) {
+          console.warn('collectWeatherMarkerSnapshotEntries failed', err);
+        }
+      });
+    });
+    return collected;
+  };
+
+  const WEATHER_MARKER_FONT = '"Inter", "Segoe UI", "Helvetica Neue", sans-serif';
+
+  const drawRoundedRectPath = (ctx, x, y, width, height, radius) => {
+    if (!ctx) return;
+    const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  };
+
+  const drawWeatherMarkerBubble = (ctx, entry, metrics) => {
+    if (!ctx || !entry || !metrics) return;
+    const { ratioX, ratioY, scale, canvasWidth, canvasHeight } = metrics;
+    const pxRatioX = Number.isFinite(ratioX) && ratioX > 0 ? ratioX : 1;
+    const pxRatioY = Number.isFinite(ratioY) && ratioY > 0 ? ratioY : pxRatioX;
+    const pxScale = Number.isFinite(scale) && scale > 0 ? scale : Math.max(pxRatioX, pxRatioY, 1);
+    const pt = entry.point || {};
+    if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+    const deviceX = pt.x * pxRatioX;
+    const deviceY = pt.y * pxRatioY;
+    const boundary = Math.max(48 * pxScale, 24);
+    if (deviceX < -boundary || deviceY < -boundary || deviceX > canvasWidth + boundary || deviceY > canvasHeight + boundary) return;
+
+    const label = entry.tempLabel || '';
+    const hasLabel = !!label;
+    const hasIcon = !!entry.image;
+    const fontSize = Math.max(12 * pxScale, 9);
+    const paddingX = Math.max(8 * pxScale, 5);
+    const paddingY = Math.max(5 * pxScale, 3);
+    const iconSize = hasIcon ? Math.max(18 * pxScale, 12) : 0;
+    const gap = hasIcon && hasLabel ? Math.max(6 * pxScale, 3) : 0;
+
+    ctx.save();
+    ctx.font = `600 ${fontSize}px ${WEATHER_MARKER_FONT}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const textWidth = hasLabel ? ctx.measureText(label).width : 0;
+    const innerWidth = (hasIcon ? iconSize : 0) + (hasIcon && hasLabel ? gap : 0) + textWidth;
+    const width = Math.max(innerWidth + paddingX * 2, hasIcon ? iconSize + paddingX * 2 : 0);
+    const height = Math.max(Math.max(iconSize, hasLabel ? fontSize : 0) + paddingY * 2, iconSize + paddingY * 2);
+    const left = deviceX - width / 2;
+    const top = deviceY - height / 2;
+    const cornerRadius = Math.min(height / 2, Math.max(12 * pxScale, 8));
+
+    ctx.shadowColor = 'rgba(8, 15, 26, 0.5)';
+    ctx.shadowBlur = 12 * pxScale;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 6 * pxScale;
+    ctx.fillStyle = 'rgba(8, 12, 18, 0.9)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.lineWidth = Math.max(1, pxScale);
+    drawRoundedRectPath(ctx, left, top, width, height, cornerRadius);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.stroke();
+
+    let cursorX = left + paddingX;
+    if (hasIcon && entry.image) {
+      const iconY = top + (height - iconSize) / 2;
+      try {
+        ctx.drawImage(entry.image, cursorX, iconY, iconSize, iconSize);
+      } catch {}
+      cursorX += iconSize + (hasLabel ? gap : 0);
+    }
+    if (hasLabel) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, cursorX, top + height / 2);
+    }
+    ctx.restore();
+  };
+
+  const drawWeatherMarkersForSnapshot = async ({ ctx, canvas, rect, map }) => {
+    if (!ctx || !canvas || !map) return;
+    const entries = collectWeatherMarkerSnapshotEntries(map);
+    if (!entries.length) return;
+    const fallbackRatio = (typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio))
+      ? window.devicePixelRatio
+      : 1;
+    const ratioX = rect && rect.width ? canvas.width / rect.width : fallbackRatio;
+    const ratioY = rect && rect.height ? canvas.height / rect.height : fallbackRatio;
+    const pxScale = Math.max((ratioX + ratioY) / 2, 1);
+    const resolvedEntries = await Promise.all(entries.map(async (entry) => ({
+      ...entry,
+      image: entry.iconSrc ? await loadWeatherMarkerImage(entry.iconSrc) : null
+    })));
+    resolvedEntries.forEach((entry) => {
+      try {
+        drawWeatherMarkerBubble(ctx, entry, {
+          ratioX,
+          ratioY,
+          scale: pxScale,
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height
+        });
+      } catch (err) {
+        console.warn('Failed to draw weather marker snapshot', err);
+      }
+    });
+  };
 
   let buildFeatureLabelFeatures = () => [];
   let updateFeatureLabels = () => {};
@@ -7401,12 +7569,62 @@
         : null;
       const dpr = window.devicePixelRatio || 1;
 
+      const mapWidth = canvas.width;
+      const mapHeight = canvas.height;
+      const mapCanvas = document.createElement('canvas');
+      mapCanvas.width = mapWidth;
+      mapCanvas.height = mapHeight;
+      const mapCtx = mapCanvas.getContext('2d');
+      if (!mapCtx) throw new Error('Unable to prepare snapshot canvas');
+      mapCtx.drawImage(canvas, 0, 0);
+      try {
+        await drawWeatherMarkersForSnapshot({ ctx: mapCtx, canvas: mapCanvas, rect, map });
+      } catch (err) {
+        console.warn('drawWeatherMarkersForSnapshot failed', err);
+      }
+
+      const targetAspect = 297 / 210;
+      const safeMapHeight = mapHeight || 1;
+      const mapAspect = mapWidth / safeMapHeight;
+      let mapCropWidth = mapWidth;
+      let mapCropHeight = mapHeight;
+      let mapCropX = 0;
+      let mapCropY = 0;
+      if (mapAspect > targetAspect && safeMapHeight > 0) {
+        mapCropWidth = Math.round(safeMapHeight * targetAspect);
+        mapCropWidth = Math.max(1, Math.min(mapCropWidth, mapWidth));
+        mapCropX = Math.round((mapWidth - mapCropWidth) / 2);
+      } else if (mapAspect < targetAspect && mapWidth > 0) {
+        mapCropHeight = Math.round(mapWidth / targetAspect);
+        mapCropHeight = Math.max(1, Math.min(mapCropHeight, mapHeight));
+        mapCropY = Math.round((mapHeight - mapCropHeight) / 2);
+      }
+      const mapRenderWidth = mapCropWidth;
+      const mapRenderHeight = mapCropHeight;
+
+      const cssWidth = rect?.width;
+      const pxScaleRaw = (cssWidth && cssWidth > 0)
+        ? mapWidth / cssWidth
+        : (Number.isFinite(dpr) && dpr > 0 ? dpr : 1);
+      const pxScale = Math.max(1, pxScaleRaw || 1);
+      const sidebarWidthPx = Math.max(1, Math.round(300 * pxScale));
+
       const exportCanvas = document.createElement('canvas');
-      exportCanvas.width = canvas.width;
-      exportCanvas.height = canvas.height;
+      exportCanvas.width = mapRenderWidth + sidebarWidthPx;
+      exportCanvas.height = mapRenderHeight;
       const ctx = exportCanvas.getContext('2d');
-      if (!ctx) throw new Error('Unable to prepare snapshot canvas');
-      ctx.drawImage(canvas, 0, 0);
+      if (!ctx) throw new Error('Unable to prepare export canvas');
+      ctx.drawImage(
+        mapCanvas,
+        mapCropX,
+        mapCropY,
+        mapRenderWidth,
+        mapRenderHeight,
+        0,
+        0,
+        mapRenderWidth,
+        mapRenderHeight
+      );
 
       const center = map.getCenter?.() || null;
       const zoom = typeof map.getZoom === 'function' ? map.getZoom() : null;
@@ -7496,323 +7714,258 @@
         ctx.restore();
       };
 
-      const drawSnapshotPanel = () => {
-        const padding = Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.015);
+      const drawPrintSidebar = () => {
+        const sidebarWidth = sidebarWidthPx;
+        const panelX = mapRenderWidth;
+        const panelHeight = exportCanvas.height;
+        const padding = Math.round(24 * pxScale);
+        const textX = panelX + padding;
+        const contentWidth = Math.max(60, sidebarWidth - padding * 2);
         const baseFont = '"Inter", "Segoe UI", "Helvetica Neue", sans-serif';
-        const valueFontSize = Math.max(9, Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.01));
-        const labelFontSize = Math.max(7, Math.round(valueFontSize * 0.65));
-        const lineHeight = valueFontSize + 1;
-        const labelSpacing = Math.round(labelFontSize * 0.2);
-        const metricSpacing = Math.round(lineHeight * 0.3);
-
-        const metrics = [
-          { label: 'Latitude', lines: [formatDegrees(center?.lat)] },
-          { label: 'Longitude', lines: [formatDegrees(center?.lng)] },
-          { label: 'UTM', lines: formatUTMLines(utm) },
-          { label: 'Zoom', lines: [formatZoom(zoom)] },
-          { label: 'Heading', lines: [formatBearing(normalizedBearing)] },
-          { label: 'Pitch', lines: [formatPitch(pitch)] },
-          { label: 'Scale', lines: [formatScale(scaleDenominator)] }
-        ];
-
+        const labelFontSize = Math.max(11, Math.round(12 * pxScale));
+        const valueFontSize = Math.max(14, Math.round(16 * pxScale));
+        const secondaryFontSize = Math.max(12, Math.round(14 * pxScale));
+        const notesTitleFontSize = Math.max(13, Math.round(15 * pxScale));
         const labelFont = `600 ${labelFontSize}px ${baseFont}`;
         const valueFont = `500 ${valueFontSize}px ${baseFont}`;
+        const smallValueFont = `500 ${secondaryFontSize}px ${baseFont}`;
+        const notesFont = `600 ${notesTitleFontSize}px ${baseFont}`;
+        const lineGap = Math.round(6 * pxScale);
+        const blockGap = Math.round(14 * pxScale);
+        const separatorHeight = Math.max(1, Math.round(pxScale));
+        const separatorGap = Math.round(18 * pxScale);
+        const notesLineGap = Math.round(32 * pxScale);
+        const notesLineThickness = Math.max(1, Math.round(pxScale));
+        const notesTitle = t('print.notesTitle', 'Notes');
 
-        const wrapValueLines = (lines, width) => {
-          ctx.font = valueFont;
-          const result = [];
-          const parts = Array.isArray(lines) ? lines : [lines];
+        let cursorY = padding;
+
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(panelX, 0, sidebarWidth, panelHeight);
+        if (panelX > 0) {
+          const dividerWidth = Math.max(1, Math.round(pxScale));
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.12)';
+          ctx.fillRect(panelX - dividerWidth, 0, dividerWidth, panelHeight);
+        }
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+        ctx.lineWidth = Math.max(1, Math.round(pxScale));
+        ctx.strokeRect(panelX + ctx.lineWidth / 2, ctx.lineWidth / 2, sidebarWidth - ctx.lineWidth, panelHeight - ctx.lineWidth);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const wrapLines = (value, font) => {
+          const rows = Array.isArray(value) ? value : [value ?? ''];
+          const output = [];
+          ctx.save();
+          ctx.font = font;
           const measure = (text) => ctx.measureText(text).width;
-          parts.forEach((textValue) => {
-            const words = String(textValue).split(/\s+/);
+          rows.forEach((row) => {
+            const text = String(row ?? '');
+            if (!text.trim()) {
+              output.push('');
+              return;
+            }
+            const words = text.split(/\s+/);
             let current = '';
+            const pushCurrent = () => {
+              if (current) {
+                output.push(current);
+                current = '';
+              }
+            };
             words.forEach((word) => {
               const candidate = current ? `${current} ${word}` : word;
-              if (measure(candidate) <= width) {
+              if (measure(candidate) <= contentWidth) {
                 current = candidate;
               } else {
-                if (current) result.push(current);
-                if (measure(word) <= width) {
+                pushCurrent();
+                if (measure(word) <= contentWidth) {
                   current = word;
                 } else {
                   let fragment = '';
                   for (const char of word) {
                     const next = fragment ? `${fragment}${char}` : char;
-                    if (measure(next) > width && fragment) {
-                      result.push(fragment);
+                    if (measure(next) > contentWidth && fragment) {
+                      output.push(fragment);
                       fragment = char;
                     } else {
                       fragment = next;
                     }
                   }
-                  current = fragment;
+                  if (fragment) {
+                    output.push(fragment);
+                    fragment = '';
+                  }
+                  current = '';
                 }
               }
             });
-            if (current) {
-              result.push(current);
-              current = '';
-            }
+            pushCurrent();
           });
-          if (!result.length) result.push('');
-          return result;
+          ctx.restore();
+          return output.length ? output : [''];
         };
 
-        const compassRadiusBase = Math.min(Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.055), 56);
-        const compassDiameter = compassRadiusBase * 2;
-        const maxPanelWidth = exportCanvas.width - padding * 2;
-        const minTextWidth = Math.max(150, Math.round(valueFontSize * 6));
-
-        const measureMetrics = (textWidth) => {
-          let maxWidth = 0;
-          let totalHeight = 0;
-          const wrappedMetrics = metrics.map((metric) => {
-            ctx.font = labelFont;
-            const labelText = metric.label.toUpperCase();
-            const labelWidth = ctx.measureText(labelText).width;
-            if (labelWidth > maxWidth) maxWidth = labelWidth;
-            totalHeight += labelFontSize + labelSpacing;
-
-            ctx.font = valueFont;
-            const wrappedLines = wrapValueLines(metric.lines, textWidth);
-            wrappedLines.forEach((line) => {
-              const w = ctx.measureText(line).width;
-              if (w > maxWidth) maxWidth = w;
-            });
-            totalHeight += wrappedLines.length * lineHeight + metricSpacing;
-            return { label: metric.label, lines: wrappedLines };
-          });
-          if (wrappedMetrics.length) totalHeight -= metricSpacing;
-          return { wrappedMetrics, maxWidth, totalHeight };
+        const drawSeparator = () => {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.55)';
+          ctx.fillRect(textX, cursorY, contentWidth, separatorHeight);
+          cursorY += separatorHeight + separatorGap;
         };
 
-        let textWidth = Math.max(minTextWidth, maxPanelWidth - (compassDiameter + padding * 3));
-        if (textWidth < minTextWidth) textWidth = minTextWidth;
-
-        let { wrappedMetrics, maxWidth, totalHeight } = measureMetrics(textWidth);
-        textWidth = Math.max(minTextWidth, Math.min(textWidth, maxWidth));
-        let panelWidth = compassDiameter + padding * 3 + textWidth;
-        if (panelWidth > maxPanelWidth) {
-          textWidth = Math.max(minTextWidth, maxPanelWidth - (compassDiameter + padding * 3));
-          ({ wrappedMetrics, maxWidth, totalHeight } = measureMetrics(textWidth));
-          textWidth = Math.max(minTextWidth, Math.min(textWidth, maxWidth));
-          panelWidth = Math.min(maxPanelWidth, compassDiameter + padding * 3 + textWidth);
-        }
-
-        const innerHeight = Math.max(totalHeight, compassDiameter);
-        const panelHeight = Math.min(exportCanvas.height - padding * 2, innerHeight + padding * 2);
-        const x = exportCanvas.width - panelWidth - padding;
-        const y = padding;
-
-        ctx.save();
-
-        const cornerRadius = Math.max(12, Math.round(panelWidth * 0.08));
-        ctx.shadowColor = 'rgba(15, 23, 42, 0.55)';
-        ctx.shadowBlur = Math.max(8, Math.round(panelWidth * 0.04));
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = Math.round(panelWidth * 0.015);
-
-        const gradient = ctx.createLinearGradient(x, y, x, y + panelHeight);
-        gradient.addColorStop(0, 'rgba(30, 41, 59, 0.95)');
-        gradient.addColorStop(1, 'rgba(17, 24, 39, 0.9)');
-        ctx.fillStyle = gradient;
-
-        ctx.beginPath();
-        ctx.moveTo(x + cornerRadius, y);
-        ctx.lineTo(x + panelWidth - cornerRadius, y);
-        ctx.quadraticCurveTo(x + panelWidth, y, x + panelWidth, y + cornerRadius);
-        ctx.lineTo(x + panelWidth, y + panelHeight - cornerRadius);
-        ctx.quadraticCurveTo(x + panelWidth, y + panelHeight, x + panelWidth - cornerRadius, y + panelHeight);
-        ctx.lineTo(x + cornerRadius, y + panelHeight);
-        ctx.quadraticCurveTo(x, y + panelHeight, x, y + panelHeight - cornerRadius);
-        ctx.lineTo(x, y + cornerRadius);
-        ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        const compassRadius = Math.min(compassRadiusBase, (panelHeight - padding * 2) / 2);
-        const compassCx = x + panelWidth - padding - compassRadius;
-        const compassCy = y + padding + compassRadius;
-        drawCompass(ctx, compassCx, compassCy, compassRadius, normalizedBearing);
-
-        const textLeft = x + padding;
-        const textRightLimit = compassCx - compassRadius - Math.round(padding * 0.6);
-        const availableTextWidth = Math.max(60, Math.min(textWidth, textRightLimit - textLeft));
-
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-
-        let textY = y + padding;
-        wrappedMetrics.forEach((metric, idx) => {
+        const drawLabelValueBlock = (label, value, { font = valueFont, fontSize = valueFontSize } = {}) => {
           ctx.font = labelFont;
-          ctx.fillStyle = 'rgba(203, 213, 225, 0.88)';
-          ctx.fillText(metric.label.toUpperCase(), textLeft, textY);
-          textY += labelFontSize + labelSpacing;
-
-          ctx.font = valueFont;
-          ctx.fillStyle = '#f8fafc';
-          const lines = wrapValueLines(metric.lines, availableTextWidth);
-          lines.forEach((line) => {
-            ctx.fillText(line, textLeft, textY);
-            textY += lineHeight;
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(label.toUpperCase(), textX, cursorY);
+          cursorY += labelFontSize + Math.round(4 * pxScale);
+          const lines = wrapLines(value, font);
+          ctx.font = font;
+          ctx.fillStyle = '#0f172a';
+          lines.forEach((line, idx) => {
+            ctx.fillText(line, textX, cursorY);
+            cursorY += fontSize + (idx === lines.length - 1 ? 0 : lineGap);
           });
+          cursorY += blockGap;
+        };
 
-          if (idx !== wrappedMetrics.length - 1) {
-            textY += metricSpacing;
-          }
-        });
+        const drawCompassSection = () => {
+          const compassRadius = Math.min(contentWidth * 0.35, Math.max(40 * pxScale, Math.round(sidebarWidth * 0.16)));
+          const compassCx = panelX + sidebarWidth / 2;
+          const compassCy = cursorY + compassRadius;
+          drawCompass(ctx, compassCx, compassCy, compassRadius, normalizedBearing);
+          cursorY = compassCy + compassRadius + blockGap;
+        };
 
-        ctx.restore();
-      };
+        const drawInlineScaleBar = () => {
+          if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return;
+          ctx.font = labelFont;
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText('SCALE', textX, cursorY);
+          cursorY += labelFontSize + Math.round(4 * pxScale);
 
-      drawSnapshotPanel();
-
-      const drawScaleBar = () => {
-        if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return;
-        const maxBarWidthPx = Math.min(exportCanvas.width * 0.28, 220);
-        const niceSteps = [1, 2, 5];
-        let bestMeters = null;
-        let bestWidthPx = 0;
-        const targetMeters = metersPerPixel * maxBarWidthPx;
-        for (let exp = -3; exp <= 6; exp++) {
-          const base = Math.pow(10, exp);
-          niceSteps.forEach((step) => {
-            const lengthMeters = step * base;
-            const widthPx = lengthMeters / metersPerPixel;
-            if (widthPx <= maxBarWidthPx) {
-              if (widthPx > bestWidthPx) {
-                bestWidthPx = widthPx;
-                bestMeters = lengthMeters;
-              }
-            }
-          });
-        }
-        if (!bestMeters) {
-          // fallback: choose the smallest candidate greater than target
-          let minOverflow = Infinity;
-          let minLength = null;
+          const maxBarWidthPx = contentWidth;
+          const niceSteps = [1, 2, 5];
+          let bestMeters = null;
+          let bestWidthPx = 0;
+          const targetMeters = metersPerPixel * maxBarWidthPx;
           for (let exp = -3; exp <= 6; exp++) {
             const base = Math.pow(10, exp);
             niceSteps.forEach((step) => {
               const lengthMeters = step * base;
               const widthPx = lengthMeters / metersPerPixel;
-              if (widthPx > maxBarWidthPx && widthPx < minOverflow) {
-                minOverflow = widthPx;
-                minLength = lengthMeters;
+              if (widthPx <= maxBarWidthPx && widthPx > bestWidthPx) {
+                bestWidthPx = widthPx;
+                bestMeters = lengthMeters;
               }
             });
           }
-          bestMeters = minLength || targetMeters || 1000;
-          bestWidthPx = bestMeters / metersPerPixel;
-        }
-        if (!Number.isFinite(bestMeters) || !Number.isFinite(bestWidthPx) || bestWidthPx <= 0) return;
-
-        const segments = 4;
-        const segmentWidth = bestWidthPx / segments;
-        const barHeight = Math.max(8, Math.round(exportCanvas.height * 0.015));
-        const margin = Math.round(Math.max(exportCanvas.width, exportCanvas.height) * 0.02);
-        const labelHeight = barHeight * 1.8;
-        const panelPadding = Math.round(barHeight * 0.9);
-        const contentWidth = bestWidthPx + panelPadding * 2 + 50;
-        const contentHeight = barHeight + panelPadding * 2 + labelHeight;
-        const panelWidth = Math.max(contentWidth, 160);
-        const panelHeight = Math.max(contentHeight, barHeight + panelPadding * 2 + labelHeight);
-        const panelX = exportCanvas.width - margin - panelWidth;
-        const panelY = exportCanvas.height - margin - panelHeight;
-        const barX = panelX + panelPadding;
-        const barY = panelY + panelPadding + labelHeight;
-        ctx.save();
-
-        ctx.shadowColor = 'rgba(15, 23, 42, 0.45)';
-        ctx.shadowBlur = Math.max(6, Math.round(panelWidth * 0.04));
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = Math.round(panelWidth * 0.015);
-        const gradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelHeight);
-        gradient.addColorStop(0, 'rgba(15, 23, 42, 0.92)');
-        gradient.addColorStop(1, 'rgba(15, 23, 42, 0.88)');
-        const cornerRadius = Math.max(10, Math.round(panelWidth * 0.08));
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.moveTo(panelX + cornerRadius, panelY);
-        ctx.lineTo(panelX + panelWidth - cornerRadius, panelY);
-        ctx.quadraticCurveTo(panelX + panelWidth, panelY, panelX + panelWidth, panelY + cornerRadius);
-        ctx.lineTo(panelX + panelWidth, panelY + panelHeight - cornerRadius);
-        ctx.quadraticCurveTo(panelX + panelWidth, panelY + panelHeight, panelX + panelWidth - cornerRadius, panelY + panelHeight);
-        ctx.lineTo(panelX + cornerRadius, panelY + panelHeight);
-        ctx.quadraticCurveTo(panelX, panelY + panelHeight, panelX, panelY + panelHeight - cornerRadius);
-        ctx.lineTo(panelX, panelY + cornerRadius);
-        ctx.quadraticCurveTo(panelX, panelY, panelX + cornerRadius, panelY);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.translate(barX, barY);
-
-        for (let i = 0; i < segments; i++) {
-          ctx.fillStyle = i % 2 === 0 ? '#0f172a' : '#f8fafc';
-          ctx.fillRect(segmentWidth * i, 0, segmentWidth, barHeight);
-          ctx.strokeStyle = '#0f172a';
-          ctx.lineWidth = 0.8;
-          ctx.strokeRect(segmentWidth * i + 0.4, 0.4, segmentWidth - 0.8, barHeight - 0.8);
-        }
-        ctx.strokeStyle = '#f8fafc';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(-0.5, -0.5, bestWidthPx + 1, barHeight + 1);
-
-        const useKilometers = bestMeters >= 1000;
-        const unitLabel = useKilometers ? 'km' : 'm';
-        const formatter = (meters) => {
-          if (useKilometers) {
-            const km = meters / 1000;
-            return Math.abs(km - Math.round(km)) < 1e-6 ? `${Math.round(km)}` : km.toFixed(1);
+          if (!bestMeters) {
+            let minOverflow = Infinity;
+            let minLength = null;
+            for (let exp = -3; exp <= 6; exp++) {
+              const base = Math.pow(10, exp);
+              niceSteps.forEach((step) => {
+                const lengthMeters = step * base;
+                const widthPx = lengthMeters / metersPerPixel;
+                if (widthPx > maxBarWidthPx && widthPx < minOverflow) {
+                  minOverflow = widthPx;
+                  minLength = lengthMeters;
+                }
+              });
+            }
+            bestMeters = minLength || targetMeters || 1000;
+            bestWidthPx = bestMeters / metersPerPixel;
           }
-          return Math.round(meters).toLocaleString();
+          if (!Number.isFinite(bestMeters) || !Number.isFinite(bestWidthPx) || bestWidthPx <= 0) {
+            cursorY += blockGap;
+            return;
+          }
+
+          const barHeight = Math.max(10, Math.round(12 * pxScale));
+          const segments = 4;
+          const segmentWidth = bestWidthPx / segments;
+          ctx.save();
+          ctx.translate(textX, cursorY);
+          for (let i = 0; i < segments; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#0f172a' : '#ffffff';
+            ctx.fillRect(segmentWidth * i, 0, segmentWidth, barHeight);
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = Math.max(1, Math.round(pxScale * 0.9));
+            ctx.strokeRect(segmentWidth * i, 0, segmentWidth, barHeight);
+          }
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = Math.max(1, Math.round(pxScale));
+          ctx.strokeRect(0, 0, bestWidthPx, barHeight);
+
+          const useKilometers = bestMeters >= 1000;
+          const unitLabel = useKilometers ? 'km' : 'm';
+          const formatter = (meters) => {
+            if (useKilometers) {
+              const km = meters / 1000;
+              return Math.abs(km - Math.round(km)) < 1e-6 ? `${Math.round(km)}` : km.toFixed(1);
+            }
+            return Math.round(meters).toLocaleString();
+          };
+
+          const labelOffset = Math.round(6 * pxScale);
+          const labelY = barHeight + labelOffset;
+          ctx.font = smallValueFont;
+          ctx.fillStyle = '#0f172a';
+          ctx.textBaseline = 'top';
+          [
+            { align: 'left', x: 0, value: 0 },
+            { align: 'center', x: bestWidthPx / 2, value: bestMeters / 2 },
+            { align: 'right', x: bestWidthPx, value: bestMeters }
+          ].forEach(({ align, x, value }) => {
+            ctx.textAlign = align;
+            ctx.fillText(formatter(value), x, labelY);
+          });
+
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(unitLabel.toUpperCase(), bestWidthPx + Math.round(10 * pxScale), barHeight / 2);
+          ctx.restore();
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+
+          const totalHeight = barHeight + labelOffset + secondaryFontSize;
+          cursorY += totalHeight + blockGap;
         };
 
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = `600 ${Math.max(9, Math.round(barHeight * 0.85))}px "Inter", "Segoe UI", sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        for (let i = 0; i <= segments; i++) {
-          const valueMeters = bestMeters * (i / segments);
-          const label = formatter(valueMeters);
-          ctx.fillText(label, segmentWidth * i, -6);
-        }
+        const drawNotesSection = () => {
+          ctx.font = notesFont;
+          ctx.fillStyle = '#0f172a';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillText(notesTitle, textX, cursorY);
+          cursorY += notesTitleFontSize + Math.round(8 * pxScale);
+          const lineCount = 4;
+          for (let i = 0; i < lineCount; i++) {
+            const lineY = cursorY + notesLineGap * i;
+            ctx.fillStyle = '#cbd5f5';
+            ctx.fillRect(textX, lineY, contentWidth, notesLineThickness);
+          }
+          cursorY += notesLineGap * lineCount;
+        };
 
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = `500 ${Math.max(8, Math.round(barHeight * 0.75))}px "Inter", "Segoe UI", sans-serif`;
-        ctx.fillText(unitLabel.toUpperCase(), bestWidthPx + 10, barHeight / 2);
-
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.font = `600 ${Math.max(9, Math.round(barHeight * 0.72))}px "Inter", "Segoe UI", sans-serif`;
-        ctx.fillStyle = 'rgba(203, 213, 225, 0.9)';
-        const title = 'SCALE';
-        ctx.fillText(title, -panelPadding, -labelHeight + Math.max(2, Math.round(barHeight * 0.2)));
-        ctx.font = `500 ${Math.max(9, Math.round(barHeight * 0.78))}px "Inter", "Segoe UI", sans-serif`;
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(`1 : ${Math.round(bestMeters / (segmentWidth / segments * metersPerPixel)).toLocaleString()}`, -panelPadding, -Math.max(4, Math.round(barHeight * 0.15)));
+        drawCompassSection();
+        drawLabelValueBlock('Heading', formatBearing(normalizedBearing));
+        drawLabelValueBlock('Pitch', formatPitch(pitch));
+        drawLabelValueBlock('Zoom', formatZoom(zoom));
+        drawLabelValueBlock('Scale', formatScale(scaleDenominator));
+        drawSeparator();
+        const latLonLines = [`Lat ${formatDegrees(center?.lat)}`, `Lon ${formatDegrees(center?.lng)}`];
+        drawLabelValueBlock('Lat / Lon', latLonLines, { font: smallValueFont, fontSize: secondaryFontSize });
+        drawLabelValueBlock('UTM', formatUTMLines(utm), { font: smallValueFont, fontSize: secondaryFontSize });
+        drawSeparator();
+        drawInlineScaleBar();
+        drawSeparator();
+        drawNotesSection();
 
         ctx.restore();
       };
 
-      drawScaleBar();
+      drawPrintSidebar();
 
       let dataUrl = '';
       try {
