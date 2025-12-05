@@ -6,23 +6,31 @@
     "productName": "Command",
     "appId": "com.cynoops.command",
     "files": [
-      "dist/**",
       "index.js",
       "preload.js",
+      "renderer.js",
       "index.html",
-      "styles.css"
+      "styles.css",
+      "scale-dialog.css",
+      "translations.json",
+      "assets/**",
+      "src/**",
+      "dist/vendor/**"
     ],
     "mac": {
+      "icon": "build/icons/mac/icon.icns",
       "target": [
         "dmg"
       ]
     },
     "win": {
+      "icon": "build/icons/win/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "linux": {
+      "icon": "build/icons/png",
       "target": [
         "AppImage"
       ]
@@ -34,10 +42,11 @@
     ]
   },
   "scripts": {
+    "icons": "npx electron-icon-maker --input ./cynoops_app_icon.png --output ./build",
     "prestart": "npm run assets",
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "predist": "npm run assets",
+    "predist": "npm run icons && npm run assets",
     "dist": "electron-builder",
     "release": "electron-builder --publish always",
     "postinstall": "npm-run-all assets install:*",
