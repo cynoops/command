@@ -41,6 +41,18 @@ function main() {
     const qrDst = path.join(root, 'dist', 'vendor', 'qrcode-generator.js');
     copy(qrSrc, qrDst);
   }
+
+  const firebaseSrcDir = path.join(root, 'node_modules', 'firebase');
+  const firebaseOutDir = path.join(root, 'dist', 'vendor', 'firebase');
+  const firebaseFiles = ['firebase-app-compat.js', 'firebase-firestore-compat.js'];
+  if (fs.existsSync(firebaseSrcDir)) {
+    ensureDir(firebaseOutDir);
+    firebaseFiles.forEach((f) => {
+      const src = path.join(firebaseSrcDir, f);
+      const dst = path.join(firebaseOutDir, f);
+      if (fs.existsSync(src)) copy(src, dst);
+    });
+  }
 }
 
 main();

@@ -46,3 +46,6 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+/assets/symbols/**
+!/assets/symbols/.gitkeep

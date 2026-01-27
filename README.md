@@ -1,6 +1,6 @@
 # Command
 
-Cross‑platform desktop app for planning and annotating maps, built with Electron and Mapbox GL. Command lets you browse a map, search places, draw shapes/lines/POIs, measure distance/area, and save your work as a portable GeoJSON FeatureCollection. It also includes a simple serial monitor for field devices.
+Cross‑platform desktop app for planning and annotating maps, built with Electron and Mapbox GL. Command lets you browse a map, search places, draw shapes/lines/POIs, measure distance/area, and save your work as a portable GeoJSON FeatureCollection.
 
 [![Build & Release](https://github.com/cynoops/command/actions/workflows/release.yml/badge.svg)](https://github.com/cynoops/command/actions/workflows/release.yml)
 
@@ -14,8 +14,7 @@ Cross‑platform desktop app for planning and annotating maps, built with Electr
 - Drawings panel: editable names, hover highlight on map, one‑click delete.
 - Save/Open drawings as JSON (GeoJSON FeatureCollection) with Save/Save As, and unsaved‑changes prompts on Open/New/Close.
 - Suggested filenames using country/city from reverse geocoding plus date.
-- Floating panels (coordinates, drawings, serial monitor) that you can drag, collapse, and persist across sessions; one‑click layout reset.
-- Serial monitor: list/open/close serial ports, live line‑by‑line logging, and RX rate indicator.
+- Floating panels (coordinates, drawings) that you can drag, collapse, and persist across sessions; one‑click layout reset.
 - Full‑screen toggle and sensible keyboard shortcuts (New/Open/Save/Save As).
 - CSP‑friendly Mapbox setup (local `mapbox-gl-csp.js` + worker) for packaging.
 - Cross‑platform builds via electron‑builder (macOS DMG, Windows NSIS, Linux AppImage).
@@ -46,7 +45,6 @@ Open the Settings tab inside the app and fill in:
 - Google Maps API Key
 - Home Address (used by File → New to fly home)
 - Start Position (lng,lat) and Start Zoom
-- Serial Baud Rate
 
 Settings persist in `localStorage` on your machine. Tokens are not synced anywhere.
 
@@ -77,15 +75,6 @@ Example skeleton:
   ]
 }
 ```
-
-## Serial Monitor
-
-- Click “Connect” to list available serial ports.
-- Choose a port and baud, then Connect; incoming data lines stream into the Serial panel.
-- RX/s shows an approximate receive throughput.
-- Use the chevron to collapse/expand the panel; its position persists.
-
-Note: The current monitor is receive‑only; it does not send data back to the device.
 
 ## Keyboard Shortcuts
 

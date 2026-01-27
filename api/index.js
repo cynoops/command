@@ -260,7 +260,7 @@ exports.apiLive = onRequest(
           );
         }
 
-        const targetDocRef = liveApiDocRef.collection("updates").doc(liveType);
+        const targetDocRef = liveApiDocRef.collection("trackers").doc(liveType);
 
         await targetDocRef.set(
           {
@@ -320,7 +320,7 @@ exports.apiLive = onRequest(
 
       const authToken = crypto.randomBytes(32).toString("hex");
       const liveApiDocRef = db.collection("live-api").doc();
-      const updatesCollectionPath = `${liveApiDocRef.path}/updates`;
+      const updatesCollectionPath = `${liveApiDocRef.path}/trackers`;
 
       await db.runTransaction(async (transaction) => {
         transaction.set(liveApiDocRef, {
@@ -330,7 +330,7 @@ exports.apiLive = onRequest(
           updatesCollectionPath,
         });
 
-        const updatesCollectionRef = liveApiDocRef.collection("updates");
+        const updatesCollectionRef = liveApiDocRef.collection("trackers");
         transaction.set(updatesCollectionRef.doc("trackers"), {
           initializedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -418,7 +418,7 @@ exports.cleanupExpiredLiveSessions = onSchedule(
 
     for (const doc of snapshot.docs) {
       const sessionId = doc.id;
-      const updatesRef = doc.ref.collection("updates");
+      const updatesRef = doc.ref.collection("trackers");
 
       try {
         updatesDeleted += await deleteCollectionDocuments(updatesRef);

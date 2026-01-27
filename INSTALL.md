@@ -13,7 +13,6 @@ Before you begin, make sure the following tools are installed:
 Optional but recommended:
 
 - A Mapbox access token and Google Maps API key (required to unlock all map features inside the app).
-- Access to any serial devices you plan to use with Command.
 
 ## 2. Clone the Repository
 
@@ -66,10 +65,6 @@ npm run dist
 ```
 
 Artifacts will be generated in the `dist/` folder for your platform.
-
-## 7. Working with Serial Devices
-
-The app can auto-detect serial devices. Connect your device before or while the app is running and monitor the tracker panel for updates.
 
 ---
 

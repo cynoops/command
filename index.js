@@ -6,7 +6,6 @@ const fsp = fs.promises;
 const state = require('./src/main/state');
 const { setupMenu: setupAppMenu } = require('./src/main/menu');
 const { registerFileIPC } = require('./src/main/ipc/file-ipc');
-const { registerSerialIPC } = require('./src/main/ipc/serial-ipc');
 const { registerAppIPC } = require('./src/main/ipc/app-ipc');
 const { registerAIIPC } = require('./src/main/ipc/ai-ipc');
 const { registerSettingsIPC } = require('./src/main/ipc/settings-ipc');
@@ -85,7 +84,6 @@ app.whenReady().then(async () => {
   createWindow();
   // Register IPC using modular handlers
   registerFileIPC({ ipcMain, dialog, fsp }, state);
-  registerSerialIPC({ ipcMain }, state);
   registerAppIPC({ ipcMain, shell }, state);
   registerAIIPC({ ipcMain }, state);
   registerSettingsIPC({ ipcMain }, state);
@@ -146,12 +144,6 @@ ipcMain.on('app:confirm-close-result', (_e, payload) => {
 
 // Ask Save / Discard / Cancel
 // file:ask-sdc handled in src/main/ipc/file-ipc.js
-
-// --- Serial helpers ---
-// Serial moved to src/main/ipc/serial-ipc.js
-
-// --- IPC handlers ---
-// Serial IPC moved to modules
 
 // Toggle full screen
 // app:toggleFullScreen handled in src/main/ipc/app-ipc.js

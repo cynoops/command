@@ -1,0 +1,187 @@
+{
+  "Einsatz": [
+    {
+      "label": "Einsatz 1",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_1.png"
+    },
+    {
+      "label": "Einsatz 2",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_2.png"
+    },
+    {
+      "label": "Einsatz 3",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_3.png"
+    },
+    {
+      "label": "Einsatz 4",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_4.png"
+    },
+    {
+      "label": "Einsatz 5",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_5.png"
+    },
+    {
+      "label": "Einsatz 6",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_6.png"
+    },
+    {
+      "label": "Einsatz 7",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_7.png"
+    },
+    {
+      "label": "Einsatz 8",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_8.png"
+    },
+    {
+      "label": "Einsatz 9",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_9.png"
+    },
+    {
+      "label": "Einsatz 10",
+      "top": "assets/symbols/512/Schadenskonten/gelb/Schadenskonto_10.png"
+    }
+  ],
+  "Einheiten": [
+    {
+      "label": "RHS Team 1",
+      "top": {
+        "type": "label",
+        "text": "1",
+        "position": "center, center"
+      },
+      "bottom": "assets/symbols/512/Einheiten/Gruppe.png"
+    },
+    {
+      "label": "RHS Team 2",
+      "top": {
+        "type": "label",
+        "text": "2",
+        "position": "center, center"
+      },
+      "bottom": "assets/symbols/512/Einheiten/Gruppe.png"
+    },
+    {
+      "label": "RHS Team 3",
+      "top": {
+        "type": "label",
+        "text": "3",
+        "position": "center, center"
+      },
+      "bottom": "assets/symbols/512/Einheiten/Gruppe.png"
+    },
+    {
+      "label": "RHS Team 4",
+      "top": {
+        "type": "label",
+        "text": "4",
+        "position": "center, center"
+      },
+      "bottom": "assets/symbols/512/Einheiten/Gruppe.png"
+    },
+    {
+      "label": "RHS Team 5",
+      "top": {
+        "type": "label",
+        "text": "5",
+        "position": "center, center"
+      },
+      "bottom": "assets/symbols/512/Einheiten/Gruppe.png"
+    }
+  ],
+  "Personen": [
+    {
+      "label": "Einsatzleiter",
+      "top": "assets/symbols/512/Personen/Einsatzleiter.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Einsatzabschnittsleiter",
+      "top": "assets/symbols/512/Personen/Einsatzabschnittsleiter.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Untereinsatzabschnittsleiter",
+      "top": "assets/symbols/512/Personen/Untereinsatzabschnittsleiter.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Zugführer",
+      "top": "assets/symbols/512/Personen/Zugführer.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Truppführer",
+      "top": "assets/symbols/512/Personen/Truppführer.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Gruppenführer",
+      "top": "assets/symbols/512/Personen/Gruppenführer.png",
+      "transform": {
+        "scale": 1.2
+      }
+    },
+    {
+      "label": "Person",
+      "top": "assets/symbols/512/Personen/Person.png",
+      "transform": {
+        "scale": 1.2
+      }
+    }
+  ],
+  "Fahrzeuge": [
+    {
+      "label": "Fahrzeug",
+      "top": "assets/symbols/512/Fahrzeuge/Fahrzeug.png"
+    },
+    {
+      "label": "Kraftfahrzeug",
+      "top": "assets/symbols/512/Fahrzeuge/Kraftfahrzeug.png"
+    },
+    {
+      "label": "Hubschrauber",
+      "top": "assets/symbols/512/Fahrzeuge/Hubschrauber.png"
+    },
+    {
+      "label": "Wasserfahrzeug",
+      "top": "assets/symbols/512/Fahrzeuge/Wasserfahrzeug.png"
+    },
+    {
+      "label": "Wasserfahrzeug",
+      "top": "assets/symbols/512/Fahrzeuge/Wasserfahrzeug.png"
+    },
+    {
+      "label": "Schienenfahrzeug",
+      "top": "assets/symbols/512/Fahrzeuge/Schienenfahrzeug.png"
+    },
+    {
+      "label": "MTW",
+      "top": "assets/symbols/512/Fahrzeuge/MTW.png"
+    },
+    {
+      "label": "PKW",
+      "top": "assets/symbols/512/Fahrzeuge/PKW.png"
+    }
+  ],
+  "Sonstiges": [
+    {
+      "label": "Rettungshund",
+      "top": "assets/symbols/512/Sonstiges/Rettungshund.png"
+    },
+    {
+      "label": "Rettungshundestaffel",
+      "top": "assets/symbols/512/Sonstiges/Rettungshund.png",
+      "bottom": "assets/symbols/512/Einheiten/Staffel.png"
+    }
+  ]
+}

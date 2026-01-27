@@ -1,0 +1,39 @@
+# Changelog
+
+## Unreleased
+- Add a map session overlay for start/resume/stop actions with editable session titles.
+- Refresh feature and team layers after map style changes.
+- Restore session features from Firestore when resuming a session so drawings reappear.
+- Normalize session feature payloads to avoid nested `features` objects in stored documents.
+- Allow clicking the footer scale value to open the Set scale dialog.
+- Include the Mapbox API key in team member QR payloads.
+- Include Firebase config JSON strings in team member QR payloads.
+- Subscribe to team member tracker documents by tracker ID when sessions start or members are added.
+- Create Firestore LIVE session documents with start time and visible map features.
+- Added Teams session start/resume flow with Firestore-backed session metadata.
+- Persist tracker IDs in team session documents when members are added.
+- Added team member go-to target selection with map lines and session document storage.
+- Auto-clear team member go-to targets when trackers reach within 5 meters.
+- When a team member already has a go-to location, the first map click clears it and the next click sets a new one.
+- Remove cleared team member go-to targets from the session document.
+- Center the map on the combined feature and tracker locations when resuming a session.
+- Added a script to generate combined symbol PNGs from assets/symbolsCombine.json.
+- Added label position support for the combined symbol generator.
+- Added image transform (scale/rotate) support for the combined symbol generator.
+- Scaled POI icon background boxes to 1.2x the symbol size.
+- Added a dark grey border to POI icon background boxes.
+- Increased POI symbols and background boxes by 1.2x.
+- Added a dark grey border to feature label backgrounds.
+- Added keyboard shortcut E to toggle the Edit tool.
+- Added a script to generate assets/symbols.json from assets/symbols/png/256.
+- Use selected POI symbols in place of the default point marker.
+- Increased POI symbol size and added a light grey background box.
+- Centered POI symbols and ensured the background box is slightly larger.
+- Upscaled POI symbols and expanded their light grey background box.
+- Set POI label text to black.
+- Added POI icon dropdowns in the features panel with map icon rendering.
+- Replaced the POI icon dropdown with a symbol picker modal launched from a new POI icon button.
+- Grouped POI symbols by catalog key in the picker and switched the icon grid background to light grey.
+- Adjusted the Features actions menu spacing and stacked action icons above labels.
+- Replaced the team member symbol dropdown with a symbol picker button in the teams panel.
+- Hide POI and team color controls in sidebars when a symbol is selected.

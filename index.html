@@ -46,6 +46,9 @@
           <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
         </button>
         <div class="tool-divider" aria-hidden="true"></div>
+        <button id="toolEdit" class="tool-btn" title="Edit features" aria-pressed="false" data-tooltip="Edit features">
+          <img class="icon" src="./assets/icons/regular/arrows-out-cardinal.svg" alt="" aria-hidden="true" />
+        </button>
         <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false" data-tooltip="Draw rectangle">
           <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
         </button>
@@ -76,6 +79,13 @@
           <img class="icon" src="./assets/icons/regular/ruler.svg" alt="" aria-hidden="true" />
         </button>
         <div class="tool-divider" aria-hidden="true"></div>
+        <button id="toolLabelIncrease" class="tool-btn" title="Increase label & symbol size" aria-pressed="false" data-tooltip="Increase label & symbol size">
+          <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="toolLabelDecrease" class="tool-btn" title="Decrease label & symbol size" aria-pressed="false" data-tooltip="Decrease label & symbol size">
+          <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
+        </button>
+        <div class="tool-divider" aria-hidden="true"></div>
         <button id="toolPushLive" class="tool-btn" title="Push LIVE Updates" aria-pressed="false" data-tooltip="Push LIVE Updates" hidden>
           <img class="icon" src="./assets/icons/regular/cloud-arrow-up.svg" alt="" aria-hidden="true" />
         </button>
@@ -97,6 +107,7 @@
             </button>
           </header>
           <div class="scale-dialog__grid">
+            <button type="button" class="scale-option" data-scale="2500">1:2,500</button>
             <button type="button" class="scale-option" data-scale="5000">1:5,000</button>
             <button type="button" class="scale-option" data-scale="10000">1:10,000</button>
             <button type="button" class="scale-option" data-scale="15000">1:15,000</button>
@@ -111,13 +122,6 @@
       </dialog>
 
       <div class="actions">
-        <button id="serialConnectBtn" class="serial-btn" title="Connect to serial port" aria-label="Connect to serial port">
-          <img class="icon" src="./assets/icons/regular/usb.svg" alt="" aria-hidden="true" />
-          <span id="serialStatusDot" class="status-dot" data-state="disconnected" aria-live="polite"></span>
-        </button>
-        <button id="serialMonitorBtn" class="serial-btn" title="Open serial monitor" aria-label="Open serial monitor" hidden>
-          <img class="icon" src="./assets/icons/regular/monitor.svg" alt="" aria-hidden="true" />
-        </button>
         <div class="lang-dropdown" id="languageDropdown">
           <button class="btn-icon" id="languageToggle" type="button" aria-haspopup="true" aria-expanded="false" title="Change language" aria-label="Change language">
             <img class="icon" src="./assets/icons/regular/globe.svg" alt="" aria-hidden="true" />
@@ -130,7 +134,7 @@
           <button class="lang-menu-item" type="button" role="menuitem" data-lang="it">Italiano</button>
           </div>
         </div>
-        <button id="fullscreenBtn" class="serial-btn" title="Toggle full screen" aria-label="Toggle full screen">
+        <button id="fullscreenBtn" class="action-btn" title="Toggle full screen" aria-label="Toggle full screen">
           <img class="icon" src="./assets/icons/regular/corners-out.svg" alt="" aria-hidden="true" />
         </button>
       </div>
@@ -164,23 +168,55 @@
           <!-- Crosshair overlay (placed inside container so it's always centered) -->
           <div id="mapCrosshair" class="map-crosshair" aria-hidden="false"></div>
         </div>
-        <div id="mapUtilityToolbar" class="map-utility-toolbar" aria-label="Map utilities">
-          <button class="map-utility-btn is-active" type="button" data-tool="features" aria-pressed="true" data-tooltip="Features">
-            <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
-            <span class="visually-hidden">Toggle features</span>
-          </button>
-          <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="cloud-sun" data-tooltip="Weather">
-            <img src="./assets/icons/regular/cloud-sun.svg" alt="" class="icon" aria-hidden="true" />
-            <span class="visually-hidden">Toggle weather overlay</span>
-          </button>
-          <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="satellite" data-tooltip="Satellite">
-            <img src="./assets/icons/regular/map-trifold.svg" alt="" class="icon" aria-hidden="true" />
-            <span class="visually-hidden">Toggle satellite map style</span>
-          </button>
-          <button class="map-utility-btn is-active" type="button" data-tool="trackers" aria-pressed="true" data-tooltip="Trackers">
-            <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
-            <span class="visually-hidden">Toggle trackers</span>
-          </button>
+        <div class="map-overlay-menus" aria-label="Map overlays">
+          <div class="map-overlay-combined">
+            <div id="mapUtilityToolbar" class="map-utility-toolbar map-utility-toolbar--inline" aria-label="Map utilities">
+              <button class="map-utility-btn is-active" type="button" data-tool="features" aria-pressed="true" data-tooltip="Features">
+                <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle features</span>
+              </button>
+              <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="cloud-sun" data-tooltip="Weather">
+                <img src="./assets/icons/regular/cloud-sun.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle weather overlay</span>
+              </button>
+              <button class="map-utility-btn is-active" type="button" data-tool="trackers" aria-pressed="true" data-tooltip="Teams">
+                <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle teams</span>
+              </button>
+            </div>
+            <div class="map-overlay-separator" aria-hidden="true"></div>
+            <div id="mapSessionOverlay" class="map-session-overlay map-session-overlay--inline" aria-live="polite">
+              <div class="map-session-info">
+                <div id="mapSessionEmpty" class="map-session-empty" data-i18n="teams.noActiveSession">No active session</div>
+                <div id="mapSessionActive" class="map-session-active" hidden>
+                  <h3 id="mapSessionTitle" class="map-session-title" contenteditable="true" role="textbox" data-i18n-aria-label="sessionOverlay.titleAria" aria-label="Session title" spellcheck="false"></h3>
+                  <div id="mapSessionId" class="map-session-id" data-i18n-aria-label="sessionOverlay.idAria" aria-label="Session ID">—</div>
+                </div>
+              </div>
+              <div class="map-session-actions">
+                <button id="mapSessionStartBtn" class="btn btn-primary map-session-action" type="button" data-i18n="sessionOverlay.startNew">New</button>
+                <button id="mapSessionResumeBtn" class="btn map-session-action" type="button" data-i18n="sessionOverlay.resume">Load</button>
+                <button id="mapSessionStopBtn" class="btn btn-danger map-session-action map-session-action--icon" type="button" data-i18n-aria-label="sessionOverlay.stop" data-i18n-data-tooltip="sessionOverlay.stop" aria-label="Stop" data-tooltip="Stop" hidden>
+                  <img src="./assets/icons/regular/stop.svg" alt="" class="icon" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <div class="map-overlay-separator" aria-hidden="true"></div>
+            <div id="mapStyleToolbar" class="map-utility-toolbar map-style-toolbar map-utility-toolbar--inline" aria-label="Map styles">
+              <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="street" data-tooltip="Street">
+                <img src="./assets/icons/regular/road-horizon.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle street map style</span>
+              </button>
+              <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="terrain" data-tooltip="Terrain">
+                <img src="./assets/icons/regular/mountains.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle terrain map style</span>
+              </button>
+              <button class="map-utility-btn" type="button" aria-pressed="false" data-tool="satellite" data-tooltip="Satellite">
+                <img src="./assets/icons/regular/map-trifold.svg" alt="" class="icon" aria-hidden="true" />
+                <span class="visually-hidden">Toggle satellite map style</span>
+              </button>
+            </div>
+          </div>
         </div>
         <!-- Location inputs panel removed -->
         <!-- Sidebar: Features -->
@@ -227,60 +263,24 @@
           <img src="./assets/icons/regular/polygon.svg" alt="" class="icon" aria-hidden="true" />
           <span class="visually-hidden">Show features panel</span>
         </button>
-        <aside id="trackersSidebar" class="trackers-sidebar" aria-label="Trackers panel" hidden>
+        <aside id="trackersSidebar" class="trackers-sidebar" aria-label="Teams panel" hidden>
           <div class="trackers-header">
-            <span class="trackers-title">Trackers</span>
+            <span class="trackers-title">Teams</span>
             <div class="trackers-header-actions">
-              <span id="trackersRecordIndicator" class="trackers-record-indicator" hidden aria-hidden="true">
-                <img src="./assets/icons/regular/record.svg" alt="" class="icon" aria-hidden="true" />
-              </span>
-              <button id="trackersCollapse" class="btn-icon" title="Hide tracker sidebar" aria-label="Hide tracker sidebar">⟩</button>
+              <button id="trackersCollapse" class="btn-icon" title="Hide teams panel" aria-label="Hide teams panel">⟩</button>
             </div>
           </div>
           <div id="trackersList" class="trackers-list" aria-live="polite">
-            <div id="trackersEmpty" class="trackers-empty">
-              <div>No trackers connected yet.</div>
-              <button id="trackersConnectBtn" class="btn btn-primary trackers-connect" type="button">
-                <img src="./assets/icons/regular/usb.svg" alt="" class="icon" aria-hidden="true" />
-                <span>Connect</span>
-              </button>
-            </div>
-            <div id="trackersWaiting" class="trackers-waiting" hidden>
-              <span class="trackers-spinner" aria-hidden="true"></span>
-              <span>Waiting for trackers…</span>
-            </div>
+            <button id="teamsAddBtn" class="btn btn-primary btn-compact" type="button" data-i18n="teams.addMember" hidden>Add member</button>
             <div id="trackersItems" class="trackers-items"></div>
-          </div>
-          <div id="trackersControls" class="trackers-controls" hidden>
-            <button id="trackersRecordBtn" class="btn trackers-record-btn" type="button">
-              <img id="trackersRecordIcon" src="./assets/icons/regular/record.svg" alt="" class="icon" aria-hidden="true" />
-              <span id="trackersRecordText">Record</span>
-            </button>
-            <div id="trackersMenuWrapper" class="trackers-menu-wrapper">
-              <button id="trackersMenuToggle" class="trackers-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
-                <img src="./assets/icons/regular/dots-three-circle-vertical.svg" alt="" class="icon" aria-hidden="true" />
-                <span class="visually-hidden">Open tracker menu</span>
-              </button>
-              <div id="trackersMenu" class="trackers-menu" role="menu" hidden>
-                <button id="trackersSaveBtn" class="trackers-menu-btn" type="button" role="menuitem" disabled>
-                  <img src="./assets/icons/regular/file-text.svg" alt="" class="icon" aria-hidden="true" />
-                  <span>Save</span>
-                </button>
-                <button id="trackersOpenBtn" class="trackers-menu-btn" type="button" role="menuitem">
-                  <img src="./assets/icons/regular/folder-open.svg" alt="" class="icon" aria-hidden="true" />
-                  <span>Open</span>
-                </button>
-              </div>
-            </div>
           </div>
         </aside>
         <button id="trackersToggleBtn" class="sidebar-toggle sidebar-toggle-right" type="button" aria-controls="trackersSidebar" aria-expanded="false">
           <img src="./assets/icons/regular/caret-left.svg" alt="" class="icon icon-chevron" aria-hidden="true" />
-          <span class="sidebar-toggle-label">TRACKERS</span>
+          <span class="sidebar-toggle-label">TEAMS</span>
           <img src="./assets/icons/regular/air-traffic-control.svg" alt="" class="icon" aria-hidden="true" />
-          <span class="visually-hidden">Show trackers panel</span>
+          <span class="visually-hidden">Show teams panel</span>
         </button>
-        <!-- Serial monitor moved to modal -->
         <!-- You’ll initialize the map in your preload/renderer JS and update footer stats by ID -->
       </section>
 
@@ -332,6 +332,10 @@
                   </span>
                   <input id="settingCynoopsLiveKey" type="password" autocomplete="off" placeholder="live_•••" />
                 </label>
+                <label class="field">
+                  <span class="label" data-i18n="settings.firebaseConfig">Firebase Settings (JSON)</span>
+                  <textarea id="settingFirebaseConfig" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'></textarea>
+                </label>
               </div>
             </div>
 
@@ -339,12 +343,16 @@
               <h3 data-i18n="settings.section.map">Map Settings</h3>
               <div class="settings-fields">
                 <label class="field">
-                  <span class="label" data-i18n="settings.mapStyleUrl">Map Style URL</span>
+                  <span class="label" data-i18n="settings.streetStyleUrl">Street Map Style URL</span>
                   <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
                 </label>
                 <label class="field">
                   <span class="label" data-i18n="settings.satelliteStyleUrl">Satellite Map Style URL</span>
                   <input id="settingSatelliteStyleUrl" type="text" placeholder="mapbox://styles/mapbox/standard-satellite" value="mapbox://styles/mapbox/standard-satellite" />
+                </label>
+                <label class="field">
+                  <span class="label" data-i18n="settings.terrainStyleUrl">Terrain Map Style URL</span>
+                  <input id="settingTerrainStyleUrl" type="text" placeholder="mapbox://styles/mapbox/outdoors-v12" value="mapbox://styles/mapbox/outdoors-v12" />
                 </label>
                 <label class="field">
                   <span class="label" data-i18n="settings.homeAddress">Home Address</span>
@@ -373,23 +381,6 @@
               </div>
             </div>
 
-            <div class="settings-group">
-              <h3>Serial Connections</h3>
-              <div class="settings-fields">
-                <label class="field">
-                  <span class="label">Serial Baud Rate</span>
-                  <input id="settingBaud" type="number" step="1" placeholder="115200" />
-                </label>
-                <label class="field">
-                  <span class="label">Auto-reconnect Serial</span>
-                  <select id="settingAutoReconnect">
-                    <option value="off">Off</option>
-                    <option value="on">On</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
             <div class="settings-actions">
               <span class="settings-status" aria-live="polite"></span>
               <button id="settingsSaveBtn" class="btn btn-primary" type="submit" disabled>Save Settings</button>
@@ -412,31 +403,6 @@
       </div>
     </footer>
     <div id="toastContainer" class="toast-container" aria-live="polite"></div>
-  </div>
-
-  <!-- Connect Modal -->
-  <div id="connectModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="connectTitle" hidden>
-    <div class="modal-backdrop" data-action="close"></div>
-    <div class="modal-panel">
-      <div class="modal-header">
-        <h3 id="connectTitle">Connect to Serial Port</h3>
-        <button id="connectClose" class="btn-icon" title="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <div id="portsContainer" class="ports-list" role="listbox" aria-label="Available serial ports">
-          <div class="muted">Scanning ports…</div>
-        </div>
-        <div class="modal-row">
-          <label class="field small">
-            <span class="label">Baud</span>
-            <input id="connectBaud" type="number" value="115200" />
-          </label>
-          <div class="spacer"></div>
-          <button id="refreshPorts" class="btn">Refresh</button>
-          <button id="connectBtnAction" class="btn btn-primary">Connect to port</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Coordinates Modal -->
@@ -549,6 +515,68 @@
     </div>
   </div>
 
+  <!-- Add Team Member Modal -->
+  <div id="teamMemberModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamMemberTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(520px, 92vw);">
+      <div class="modal-header">
+        <h3 id="teamMemberTitle" data-i18n="teams.memberModal.title">Add team member</h3>
+        <button id="teamMemberClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <div class="modal-body team-member-body">
+        <div id="teamMemberStatus" class="muted" data-i18n="teams.memberModal.subtitle">Scan this QR code to join the team.</div>
+        <div class="team-member-preview">
+          <img id="teamMemberQr" src="" alt="Team member QR code" />
+        </div>
+        <button id="teamMemberStart" class="btn btn-primary" type="button" data-i18n="teams.memberModal.startTracking">Start tracking</button>
+      </div>
+      <div class="modal-footer team-member-actions">
+        <button id="teamMemberDone" class="btn" type="button" data-i18n="common.close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Start Team Session Modal -->
+  <div id="teamsStartSessionModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamsStartSessionTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(520px, 92vw);">
+      <div class="modal-header">
+        <h3 id="teamsStartSessionTitle" data-i18n="teams.startSessionModal.title">Start Session</h3>
+        <button id="teamsStartSessionClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <form id="teamsStartSessionForm" class="modal-body">
+        <label class="field">
+          <span class="label" data-i18n="teams.startSessionModal.label">Session title</span>
+          <input id="teamsStartSessionTitleInput" type="text" autocomplete="off" data-i18n-placeholder="teams.startSessionModal.placeholder" placeholder="e.g., Mountain Rescue A" />
+        </label>
+        <div class="modal-row">
+          <div class="spacer"></div>
+          <button id="teamsStartSessionCancel" class="btn" type="button" data-i18n="teams.startSessionModal.cancel">Cancel</button>
+          <button id="teamsStartSessionSubmit" class="btn btn-primary" type="submit" data-i18n="teams.startSessionModal.submit">Create Session</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Load Team Session Modal -->
+  <div id="teamsResumeSessionModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamsResumeSessionTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(720px, 94vw);">
+      <div class="modal-header">
+        <h3 id="teamsResumeSessionTitle" data-i18n="teams.loadSessionModal.title">Load Session</h3>
+        <button id="teamsResumeSessionClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="teamsLoadSessionStatus" class="muted" role="status" aria-live="polite" data-i18n="teams.loadSessionModal.loading">Loading sessions...</div>
+        <div id="teamsLoadSessionList" class="session-list" role="list" aria-live="polite"></div>
+        <div class="modal-row">
+          <div class="spacer"></div>
+          <button id="teamsResumeSessionCancel" class="btn" type="button" data-i18n="common.close">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Push LIVE Updates Modal -->
   <div id="pushLiveModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="pushLiveTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
@@ -560,7 +588,7 @@
       <div class="modal-body push-live-body">
         <div id="pushLiveStatus" class="muted" role="status" aria-live="polite" data-i18n="pushLiveModal.idle">Start a LIVE session to generate a QR code.</div>
         <div id="pushLiveLoading" class="push-live-loading" hidden aria-hidden="true">
-          <span class="trackers-spinner"></span>
+          <span class="loading-spinner"></span>
         </div>
         <div id="pushLivePreview" class="push-live-preview" hidden>
           <img id="pushLiveQr" src="" data-i18n-alt="pushLiveModal.imageAlt" alt="CYNOOPS LIVE QR code" style="max-width:100%; height:auto;" />
@@ -598,6 +626,21 @@
       </div>
       <div class="modal-body">
         <div id="colorGrid" class="color-grid" role="grid" aria-label="Colors"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POI Icon Modal -->
+  <div id="poiIconModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="poiIconTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="poiIconTitle">POI Symbol</h3>
+        <button id="poiIconClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="poiIconStatus" class="muted" role="status" aria-live="polite"></div>
+        <div id="poiIconGrid" class="poi-icon-grid" role="grid" aria-label="POI symbols"></div>
       </div>
     </div>
   </div>
@@ -651,30 +694,11 @@
     </div>
   </div>
 
-  <!-- Serial Monitor Modal -->
-  <div id="serialMonitorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="serialMonTitle" hidden>
-    <div class="modal-backdrop" data-action="close"></div>
-    <div class="modal-panel" style="width:min(820px,92vw);">
-      <div class="modal-header">
-        <h3 id="serialMonTitle">Serial Monitor</h3>
-        <button id="serialMonitorClose" class="btn-icon" title="Close">×</button>
-      </div>
-      <div class="modal-body">
-        <div class="modal-row" style="gap:12px; align-items:center;">
-          <div class="muted">Connected:</div>
-          <div id="serialConnPath" class="v">—</div>
-          <div class="spacer"></div>
-          <button id="serialMonitorClear" class="btn" type="button">Clear</button>
-          <button id="serialDisconnectBtn" class="btn">Disconnect</button>
-        </div>
-        <pre id="serialMonitorBody" class="serial-float-body" aria-live="polite" style="height:40vh; border:1px solid var(--line); border-radius:8px; background: var(--bg);"></pre>
-      </div>
-    </div>
-  </div>
-
   <!-- Mapbox GL JS (CSP build) -->
   <script src="./dist/vendor/mapbox-gl/mapbox-gl-csp.js"></script>
   <script src="./dist/vendor/qrcode-generator.js"></script>
+  <script src="./dist/vendor/firebase/firebase-app-compat.js"></script>
+  <script src="./dist/vendor/firebase/firebase-firestore-compat.js"></script>
   <!-- Your renderer bundle goes here -->
   <script src="./renderer.js"></script>
 </body>

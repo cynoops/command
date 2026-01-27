@@ -3,10 +3,8 @@
   const ce = (tag, cls) => { const el = document.createElement(tag); if (cls) el.className = cls; return el; };
   const DEFAULT_HOME_CENTER = [6.3729914, 49.5658574];
   const DEFAULT_MAP_START = [6.13, 49.61];
-  const DEFAULT_STYLE_URL = 'mapbox://styles/mapbox/outdoors-v12';
+  const DEFAULT_STYLE_URL = 'mapbox://mapbox.mapbox-terrain-v2';
   const DEFAULT_START_ZOOM = 12;
-  const DEFAULT_SERIAL_BAUD = '115200';
-  const DEFAULT_AUTO_RECONNECT = 'on';
   const DEFAULT_APP_LANGUAGE = 'en';
   const LANGUAGE_CODES = ['en','de','fr','es','it'];
   const LANGUAGE_LABELS = {
@@ -16,23 +14,82 @@
     es: { en: 'Inglés', de: 'Alemán', fr: 'Francés', es: 'Español', it: 'Italiano' },
     it: { en: 'Inglese', de: 'Tedesco', fr: 'Francese', es: 'Spagnolo', it: 'Italiano' },
   };
+  const generateSessionId = () => {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        const bytes = new Uint8Array(5);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+    } catch {}
+    const fallback = Math.floor(Math.random() * 0xffffffffff)
+      .toString(16)
+      .padStart(10, '0');
+    return fallback.slice(0, 10);
+  };
+  let teamsSessionId = null;
+  let teamsSessionInfo = null;
+  let teamsSessionTrackerIds = new Set();
+  let teamsSessionSubscriptionId = null;
+  let teamsSessionSubscription = null;
+  let teamsSessionTitleUpdateInFlight = false;
+  let teamsSessionEndInFlight = false;
+  let mapSessionTitleBeforeEdit = '';
+  const generateTrackerId = () => generateSessionId();
   const DRAWING_ICON_PATHS = {
     edit: './assets/icons/regular/pencil-simple.svg',
-    hide: './assets/icons/regular/eye.svg',
-    show: './assets/icons/regular/eye-slash.svg',
+    hide: './assets/icons/regular/eye-slash.svg',
+    show: './assets/icons/regular/eye.svg',
+    labelShow: './assets/icons/regular/text-t.svg',
+    labelHide: './assets/icons/regular/text-t-slash.svg',
+    size: './assets/icons/regular/ruler.svg',
     ai: './assets/icons/regular/sparkle.svg',
-    delete: './assets/icons/regular/x.svg'
+    delete: './assets/icons/regular/x.svg',
+    poiIcon: './assets/icons/regular/image-square.svg'
   };
   const FEATURE_NAME_MAX = 26;
   const FEATURE_IMPORT_BASE = 24;
   const FEATURE_NAME_ELLIPSIS = '...';
   const FEATURE_IMPORT_MAX = FEATURE_IMPORT_BASE + FEATURE_NAME_ELLIPSIS.length;
+  const SYMBOLS_JSON_PATH = './assets/symbolsCombine.json';
+  const SYMBOLS_ICON_ROOT = './assets/symbols/final';
+  const SYMBOLS_ICON_FALLBACK_ROOT = '';
 
+  const normalizeLineBreaks = (value) => {
+    if (value == null) return '';
+    return String(value).replace(/\r\n?/g, '\n');
+  };
+  const parseFirebaseSettingsText = (rawText) => {
+    const normalized = normalizeLineBreaks(rawText || '');
+    if (!normalized.trim()) return { value: null, raw: normalized };
+    try {
+      const parsed = JSON.parse(normalized);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { error: new Error('Firebase settings must be a JSON object.'), raw: normalized };
+      }
+      return { value: parsed, raw: normalized };
+    } catch (error) {
+      return { error, raw: normalized };
+    }
+  };
   const sanitizeFeatureName = (value, { allowImportEllipsis = false } = {}) => {
     if (value == null) return '';
-    let str = String(value);
+    let str = normalizeLineBreaks(value);
     str = str.trim();
     if (!str) return '';
+    const lines = str.split('\n');
+    if (lines.length > 1) {
+      const maxPerLine = FEATURE_NAME_MAX;
+      return lines
+        .map((line) => {
+          let cleaned = line.trim();
+          if (cleaned.length > maxPerLine) cleaned = cleaned.slice(0, maxPerLine);
+          return cleaned;
+        })
+        .join('\n');
+    }
     const baseLimit = FEATURE_NAME_MAX;
     if (str.length > baseLimit) {
       if (allowImportEllipsis && str.endsWith(FEATURE_NAME_ELLIPSIS)) {
@@ -44,10 +101,23 @@
     }
     return str;
   };
+  const sanitizeFeatureNameDraft = (value) => {
+    if (value == null) return '';
+    const str = normalizeLineBreaks(value);
+    if (!str) return '';
+    const lines = str.split('\n');
+    return lines
+      .map((line) => {
+        if (line.length > FEATURE_NAME_MAX) return line.slice(0, FEATURE_NAME_MAX);
+        return line;
+      })
+      .join('\n');
+  };
 
   const formatImportedFeatureName = (value) => {
     const trimmed = sanitizeFeatureName(value, { allowImportEllipsis: false });
     if (!trimmed) return '';
+    if (trimmed.includes('\n')) return trimmed;
     if (trimmed.length > FEATURE_NAME_MAX) {
       const base = trimmed.slice(0, FEATURE_IMPORT_BASE);
       return sanitizeFeatureName(`${base}${FEATURE_NAME_ELLIPSIS}`, { allowImportEllipsis: true });
@@ -136,6 +206,271 @@
   const bindHtmlAuto = (el, key) => bindHtml(el, key, el?.innerHTML || '');
   const bindAttrAuto = (el, attr, key) => bindAttr(el, attr, key, el?.getAttribute?.(attr) || '');
 
+  const symbolCatalogState = {
+    data: null,
+    list: [],
+    groups: [],
+    byId: new Map(),
+    promise: null
+  };
+  const poiIconImageCache = new Map();
+  const normalizeSymbolFile = (value) => {
+    if (value == null) return '';
+    const str = String(value).trim();
+    return str ? str.replace(/\\/g, '/') : '';
+  };
+  const normalizeSymbolLabel = (value, fallback) => {
+    const trimmed = String(value ?? '').trim();
+    if (trimmed) return trimmed;
+    return fallback;
+  };
+  const safeSymbolName = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'symbol';
+    let normalized = raw;
+    if (typeof normalized.normalize === 'function') normalized = normalized.normalize('NFKD');
+    normalized = normalized
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9._-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return normalized || 'symbol';
+  };
+  const makeUniqueSymbolName = (base, used) => {
+    let name = base || 'symbol';
+    let counter = 1;
+    while (used.has(name)) {
+      counter += 1;
+      name = `${base}_${counter}`;
+    }
+    used.add(name);
+    return name;
+  };
+  const formatSymbolLabel = (group, base) => {
+    const name = (base || '').replace(/_/g, ' ').trim();
+    if (!group) return name || base || '';
+    if (!name) return String(group);
+    return `${group} / ${name}`;
+  };
+  const buildSymbolCatalog = (json) => {
+    const list = [];
+    const groups = [];
+    const byId = new Map();
+    if (!json || typeof json !== 'object') return { list, groups, byId };
+    const groupEntries = Object.entries(json);
+    const hasOnlyLegacyEntries = groupEntries.every(([, entries]) =>
+      Array.isArray(entries) && entries.every((entry) => typeof entry === 'string'),
+    );
+    groupEntries.forEach(([group, entries]) => {
+      if (!Array.isArray(entries) || !entries.length) return;
+      const isLegacy = entries.every((entry) => typeof entry === 'string');
+      const groupKey = isLegacy ? group : safeSymbolName(group);
+      const groupList = [];
+      const usedNames = new Set();
+
+      entries.forEach((entry, index) => {
+        if (isLegacy) {
+          const cleaned = normalizeSymbolFile(entry);
+          if (!cleaned) return;
+          const base = cleaned.replace(/\.[^/.]+$/i, '');
+          if (!base) return;
+          const filename = cleaned.toLowerCase().endsWith('.png') ? cleaned : `${base}.png`;
+          const id = `${groupKey}/${base}`;
+          const entryData = {
+            id,
+            group,
+            base,
+            label: formatSymbolLabel(group, base),
+            src: `${SYMBOLS_ICON_ROOT}/${groupKey}/${filename}`,
+            fallbackSrc: SYMBOLS_ICON_FALLBACK_ROOT
+              ? `${SYMBOLS_ICON_FALLBACK_ROOT}/${groupKey}/${base}.svg`
+              : ''
+          };
+          list.push(entryData);
+          groupList.push(entryData);
+          byId.set(id, entryData);
+          return;
+        }
+
+        if (!entry || typeof entry !== 'object') return;
+        if (!entry.top && !entry.bottom) return;
+        const fallbackLabel = `entry_${index + 1}`;
+        const label = normalizeSymbolLabel(entry.label || entry.name, fallbackLabel);
+        const base = makeUniqueSymbolName(safeSymbolName(label), usedNames);
+        const id = `${groupKey}/${base}`;
+        const entryData = {
+          id,
+          group,
+          base,
+          label,
+          src: `${SYMBOLS_ICON_ROOT}/${groupKey}/${base}.png`,
+          fallbackSrc: SYMBOLS_ICON_FALLBACK_ROOT
+            ? `${SYMBOLS_ICON_FALLBACK_ROOT}/${groupKey}/${base}.png`
+            : ''
+        };
+        list.push(entryData);
+        groupList.push(entryData);
+        byId.set(id, entryData);
+      });
+
+      if (!groupList.length) return;
+      if (isLegacy) {
+        groupList.sort((a, b) => a.base.localeCompare(b.base));
+      }
+      groups.push({ label: group, entries: groupList });
+    });
+
+    if (hasOnlyLegacyEntries) {
+      groups.sort((a, b) => a.label.localeCompare(b.label));
+    }
+    return { list, groups, byId };
+  };
+  const ensureSymbolsLoaded = () => {
+    if (symbolCatalogState.promise) return symbolCatalogState.promise;
+    symbolCatalogState.promise = fetch(SYMBOLS_JSON_PATH)
+      .then((resp) => (resp && resp.ok) ? resp.json() : null)
+      .then((json) => {
+        if (!json || typeof json !== 'object') {
+          symbolCatalogState.data = null;
+          symbolCatalogState.list = [];
+          symbolCatalogState.groups = [];
+          symbolCatalogState.byId = new Map();
+          return symbolCatalogState.list;
+        }
+        const { list, groups, byId } = buildSymbolCatalog(json);
+        symbolCatalogState.data = json;
+        symbolCatalogState.list = list;
+        symbolCatalogState.groups = groups;
+        symbolCatalogState.byId = byId;
+        return list;
+      })
+      .catch((err) => {
+        console.error('Failed to load symbols catalog', err);
+        symbolCatalogState.data = null;
+        symbolCatalogState.list = [];
+        symbolCatalogState.groups = [];
+        symbolCatalogState.byId = new Map();
+        return symbolCatalogState.list;
+      });
+    return symbolCatalogState.promise;
+  };
+  const loadPoiIconImage = (entry) => {
+    if (!entry) return Promise.resolve(null);
+    if (poiIconImageCache.has(entry.id)) return poiIconImageCache.get(entry.id);
+    const loadImage = (src) => new Promise((resolve) => {
+      if (!src) { resolve(null); return; }
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      } catch (err) {
+        console.warn('Failed to prepare POI icon', err);
+        resolve(null);
+      }
+    });
+    const promise = (async () => {
+      const primary = await loadImage(entry.src);
+      if (primary) return primary;
+      return loadImage(entry.fallbackSrc);
+    })();
+    poiIconImageCache.set(entry.id, promise);
+    return promise;
+  };
+  const ensurePoiIconImageOnMap = async (map, entry) => {
+    if (!map || !entry || typeof map.hasImage !== 'function' || typeof map.addImage !== 'function') return false;
+    if (map.hasImage(entry.id)) return true;
+    const img = await loadPoiIconImage(entry);
+    if (!img) return false;
+    try {
+      if (!map.hasImage(entry.id)) {
+        map.addImage(entry.id, img);
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed adding POI icon to map', err);
+      return false;
+    }
+  };
+  const ensurePoiIconsLoaded = async (map, features) => {
+    if (!map) return;
+    await ensureSymbolsLoaded();
+    const list = Array.isArray(features) ? features : [];
+    const ids = new Set();
+    list.forEach((f) => {
+      const id = typeof f?.properties?.poiIcon === 'string' ? f.properties.poiIcon.trim() : '';
+      if (id) ids.add(id);
+    });
+    if (!ids.size) return;
+    await Promise.all([...ids].map((id) => ensurePoiIconImageOnMap(map, symbolCatalogState.byId.get(id))));
+  };
+
+  const POI_ICON_NONE_LABEL = 'No icon';
+  const POI_ICON_LOADING_LABEL = 'Loading icons...';
+  const POI_ICON_EMPTY_LABEL = 'No icons available';
+  const updatePoiIconPreview = (previewEl, entry) => {
+    if (!previewEl) return;
+    if (!entry || !entry.src) {
+      previewEl.hidden = true;
+      previewEl.removeAttribute('src');
+      previewEl.alt = '';
+      return;
+    }
+    previewEl.hidden = false;
+    previewEl.src = entry.src;
+    previewEl.alt = '';
+  };
+  const populatePoiIconPreview = (previewEl, currentId) => {
+    if (!previewEl) return;
+    const selected = typeof currentId === 'string' ? currentId : '';
+    updatePoiIconPreview(previewEl, symbolCatalogState.byId.get(selected));
+    if (!symbolCatalogState.list.length) {
+      ensureSymbolsLoaded()
+        .then(() => updatePoiIconPreview(previewEl, symbolCatalogState.byId.get(selected)))
+        .catch(() => {});
+    }
+  };
+  const fillPoiIconSelect = (selectEl, previewEl, currentId) => {
+    if (!selectEl) return;
+    selectEl.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = POI_ICON_NONE_LABEL;
+    selectEl.appendChild(noneOpt);
+    if (!symbolCatalogState.groups.length) {
+      const placeholder = document.createElement('option');
+      placeholder.disabled = true;
+      placeholder.textContent = symbolCatalogState.promise ? POI_ICON_LOADING_LABEL : POI_ICON_EMPTY_LABEL;
+      selectEl.appendChild(placeholder);
+    } else {
+      symbolCatalogState.groups.forEach((group) => {
+        const optGroup = document.createElement('optgroup');
+        optGroup.label = group.label;
+        group.entries.forEach((entry) => {
+          const opt = document.createElement('option');
+          opt.value = entry.id;
+          opt.textContent = entry.label;
+          optGroup.appendChild(opt);
+        });
+        selectEl.appendChild(optGroup);
+      });
+    }
+    const selected = typeof currentId === 'string' ? currentId : '';
+    selectEl.value = selected;
+    updatePoiIconPreview(previewEl, symbolCatalogState.byId.get(selected));
+  };
+  const populatePoiIconSelect = (selectEl, previewEl, currentId) => {
+    if (!selectEl) return;
+    if (symbolCatalogState.list.length) {
+      fillPoiIconSelect(selectEl, previewEl, currentId);
+      return;
+    }
+    fillPoiIconSelect(selectEl, previewEl, currentId);
+    ensureSymbolsLoaded().then(() => {
+      fillPoiIconSelect(selectEl, previewEl, currentId);
+    }).catch(() => {});
+  };
+
   const placeCaretAtEnd = (el) => {
     if (!el) return;
     try {
@@ -148,10 +483,48 @@
       selection.addRange(range);
     } catch {}
   };
+  const insertEditableText = (el, text) => {
+    if (!el || !text) return;
+    try {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) {
+        el.textContent = (el.textContent || '') + text;
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch {}
+  };
 
   const DEG_TO_RAD = Math.PI / 180;
   const RAD_TO_DEG = 180 / Math.PI;
   const clampLatForMercator = (lat) => Math.max(Math.min(lat, 89.999999), -89.999999);
+  const EARTH_CIRCUMFERENCE_METERS = 40075016.68557849;
+  const DEFAULT_MAP_TILE_SIZE = 512;
+  const getMapTileSize = (mapInstance) => {
+    const tileSize = mapInstance?.transform?.tileSize;
+    return Number.isFinite(tileSize) && tileSize > 0 ? tileSize : DEFAULT_MAP_TILE_SIZE;
+  };
+  const getMetersPerPixelAtLatitude = (mapInstance, lat, zoom) => {
+    if (!Number.isFinite(lat) || !Number.isFinite(zoom)) return null;
+    const mapboxHelper = (window).mapboxgl?.getMetersPerPixelAtLatitude;
+    if (typeof mapboxHelper === 'function') {
+      try {
+        return mapboxHelper(lat, zoom);
+      } catch {}
+    }
+    const safeLat = clampLatForMercator(lat);
+    const tileSize = getMapTileSize(mapInstance);
+    const worldSize = tileSize * Math.pow(2, zoom);
+    if (!Number.isFinite(worldSize) || worldSize <= 0) return null;
+    return Math.cos(safeLat * DEG_TO_RAD) * EARTH_CIRCUMFERENCE_METERS / worldSize;
+  };
   const normalizeLongitude = (lng) => {
     if (!Number.isFinite(lng)) return lng;
     let value = lng;
@@ -454,6 +827,7 @@
       console.error('applyTranslations error', err);
     }
   };
+  const FEATURES_PANEL_WIDTH = 320;
   const TRACKERS_PANEL_WIDTH = 320;
   const TRACKERS_RECORD_ICON = './assets/icons/regular/record.svg';
   const TRACKERS_PAUSE_ICON = './assets/icons/regular/pause.svg';
@@ -465,8 +839,6 @@
   const statBearing = q('#statBearing');
   const statPitch = q('#statPitch');
   const footerAddress = q('#footerAddress');
-  const serialConnectBtn = q('#serialConnectBtn');
-  const serialStatusDot = q('#serialStatusDot');
   const fullscreenBtn = q('#fullscreenBtn');
   const tabMapInput = q('#tab-map');
   const tabSettingsInput = q('#tab-settings');
@@ -477,25 +849,10 @@
   const scaleDialog = q('#scaleDialog');
   const scaleDialogClose = scaleDialog?.querySelector('[data-action="close"]') || null;
   const scaleOptionButtons = scaleDialog ? Array.from(scaleDialog.querySelectorAll('.scale-option')) : [];
-
-  const connectModal = q('#connectModal');
-  const portsContainer = q('#portsContainer');
-  const connectClose = q('#connectClose');
-  const refreshPorts = q('#refreshPorts');
-  const connectBtnAction = q('#connectBtnAction');
-  const connectBaud = q('#connectBaud');
-
-  // New serial monitor modal
-  const serialMonitorBtn = q('#serialMonitorBtn');
   const languageDropdown = q('#languageDropdown');
   const languageToggle = q('#languageToggle');
   const languageMenu = q('#languageMenu');
-  const serialMonitorModal = q('#serialMonitorModal');
-  const serialMonitorClose = q('#serialMonitorClose');
-  const serialMonitorBody = q('#serialMonitorBody');
-  const serialConnPath = q('#serialConnPath');
-  const serialDisconnectBtn = q('#serialDisconnectBtn');
-  const serialMonitorClearBtn = q('#serialMonitorClear');
+  const toolEdit = q('#toolEdit');
   const toolRect = q('#toolRect');
   const toolPoly = q('#toolPoly');
   const toolCircle = q('#toolCircle');
@@ -505,14 +862,27 @@
   const toolWeather = q('#toolWeather');
   const toolCrosshair = q('#toolCrosshair');
   const toolSetScale = q('#toolSetScale');
+  const toolLabelIncrease = q('#toolLabelIncrease');
+  const toolLabelDecrease = q('#toolLabelDecrease');
   const toolPrint = q('#toolPrint');
   const toolPushLive = q('#toolPushLive');
   const toolPushLiveDivider = q('#toolPushLiveDivider');
   const toolShortcuts = q('#toolShortcuts');
   const mapUtilityToolbar = q('#mapUtilityToolbar');
-  const mapUtilityButtons = mapUtilityToolbar ? Array.from(mapUtilityToolbar.querySelectorAll('.map-utility-btn')) : [];
+  const mapStyleToolbar = q('#mapStyleToolbar');
+  const mapSessionOverlay = q('#mapSessionOverlay');
+  const mapSessionEmpty = q('#mapSessionEmpty');
+  const mapSessionActive = q('#mapSessionActive');
+  const mapSessionTitleEl = q('#mapSessionTitle');
+  const mapSessionIdEl = q('#mapSessionId');
+  const mapSessionStartBtn = q('#mapSessionStartBtn');
+  const mapSessionResumeBtn = q('#mapSessionResumeBtn');
+  const mapSessionStopBtn = q('#mapSessionStopBtn');
+  const mapUtilityButtons = Array.from(document.querySelectorAll('.map-utility-btn'));
   const weatherUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'cloud-sun');
   const satelliteUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'satellite');
+  const terrainUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'terrain');
+  const streetUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'street');
   const mapCrosshair = q('#mapCrosshair');
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
@@ -532,13 +902,13 @@
   const settingGoogleKey = q('#settingGoogleKey');
   const settingOpenAIKey = q('#settingOpenAIKey');
   const settingCynoopsLiveKey = q('#settingCynoopsLiveKey');
+  const settingFirebaseConfig = q('#settingFirebaseConfig');
   const settingStyleUrl = q('#settingStyleUrl');
   const settingSatelliteStyleUrl = q('#settingSatelliteStyleUrl');
+  const settingTerrainStyleUrl = q('#settingTerrainStyleUrl');
   const settingStartLng = q('#settingStartLng');
   const settingStartLat = q('#settingStartLat');
   const settingStartZoom = q('#settingStartZoom');
-  const settingBaud = q('#settingBaud');
-  const settingAutoReconnect = q('#settingAutoReconnect');
   const settingsForm = q('#settingsForm');
   const settingsSaveBtn = q('#settingsSaveBtn');
   const settingsStatus = q('.settings-status');
@@ -546,10 +916,27 @@
   const defaultGoogleKey = settingGoogleKey?.defaultValue || '';
   const defaultOpenAIKey = settingOpenAIKey?.defaultValue || '';
   const defaultCynoopsLiveKey = settingCynoopsLiveKey?.defaultValue || '';
+  const FIREBASE_SETTINGS_STORAGE_KEY = 'firebase.settingsRaw';
   const DEFAULT_SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/standard-satellite';
-  let satelliteStyleActive = localStorage.getItem('map.satelliteEnabled') === '1';
+  const DEFAULT_TERRAIN_STYLE_URL = 'mapbox://styles/mapbox/outdoors-v12';
+  const MAP_STYLE_KEYS = ['street', 'satellite', 'terrain'];
+  const normalizeMapStyleKey = (value) => {
+    const key = typeof value === 'string' ? value.toLowerCase() : '';
+    return MAP_STYLE_KEYS.includes(key) ? key : null;
+  };
+  const getStoredMapStyleKey = () => {
+    const stored = normalizeMapStyleKey(localStorage.getItem('map.activeStyle'));
+    if (stored) return stored;
+    if (localStorage.getItem('map.satelliteEnabled') === '1') return 'satellite';
+    return 'street';
+  };
+  let activeMapStyle = getStoredMapStyleKey();
   const defaultStyleUrl = settingStyleUrl?.defaultValue || DEFAULT_STYLE_URL;
   const defaultSatelliteStyleUrl = settingSatelliteStyleUrl?.defaultValue || DEFAULT_SATELLITE_STYLE_URL;
+  const defaultTerrainStyleUrl = settingTerrainStyleUrl?.defaultValue || DEFAULT_TERRAIN_STYLE_URL;
+  let firebaseSettings = null;
+  let firebaseAppInstance = null;
+  let firestoreInstance = null;
   let defaultAppLanguage = DEFAULT_APP_LANGUAGE;
   const defaultHomeAddress = settingHomeAddress?.defaultValue || '';
   const defaultStartLng = Number(settingStartLng?.defaultValue || DEFAULT_MAP_START[0]);
@@ -610,9 +997,10 @@
     }
   };
   const getBaseMapStyleUrl = () => {
-    const stored = localStorage.getItem('map.styleUrl');
+    const stored = localStorage.getItem('map.streetStyleUrl');
+    const legacyStored = stored === null ? localStorage.getItem('map.styleUrl') : stored;
     const fallback = defaultStyleUrl || DEFAULT_STYLE_URL;
-    const value = (typeof stored === 'string' && stored.trim()) ? stored.trim() : (fallback || DEFAULT_STYLE_URL);
+    const value = (typeof legacyStored === 'string' && legacyStored.trim()) ? legacyStored.trim() : (fallback || DEFAULT_STYLE_URL);
     return value || DEFAULT_STYLE_URL;
   };
   const populateAiPresetOptions = (geometryType) => {
@@ -651,7 +1039,27 @@
     const value = (typeof stored === 'string' && stored.trim()) ? stored.trim() : (fallback || DEFAULT_SATELLITE_STYLE_URL);
     return value || DEFAULT_SATELLITE_STYLE_URL;
   };
-  const getTargetMapStyleUrl = () => (satelliteStyleActive ? getSatelliteMapStyleUrl() : getBaseMapStyleUrl());
+  const getTerrainMapStyleUrl = () => {
+    const stored = localStorage.getItem('map.terrainStyleUrl');
+    const fallback = defaultTerrainStyleUrl || DEFAULT_TERRAIN_STYLE_URL;
+    const value = (typeof stored === 'string' && stored.trim()) ? stored.trim() : (fallback || DEFAULT_TERRAIN_STYLE_URL);
+    return value || DEFAULT_TERRAIN_STYLE_URL;
+  };
+  const getMapStyleUrlForKey = (key, { street, satellite, terrain }) => {
+    switch (key) {
+      case 'satellite':
+        return satellite;
+      case 'terrain':
+        return terrain;
+      default:
+        return street;
+    }
+  };
+  const getTargetMapStyleUrl = () => getMapStyleUrlForKey(activeMapStyle, {
+    street: getBaseMapStyleUrl(),
+    satellite: getSatelliteMapStyleUrl(),
+    terrain: getTerrainMapStyleUrl(),
+  });
   function applyMapStyle(styleUrl) {
     if (!styleUrl) return;
     const map = getMap();
@@ -675,12 +1083,107 @@
     weatherUtilityBtn.classList.toggle('is-active', !!active);
     weatherUtilityBtn.setAttribute('aria-pressed', String(!!active));
   };
-  const setSatelliteButtonState = (active) => {
-    if (!satelliteUtilityBtn) return;
-    satelliteUtilityBtn.classList.toggle('is-active', !!active);
-    satelliteUtilityBtn.setAttribute('aria-pressed', String(!!active));
+  const mapStyleButtons = {
+    street: streetUtilityBtn,
+    satellite: satelliteUtilityBtn,
+    terrain: terrainUtilityBtn,
   };
-  setSatelliteButtonState(satelliteStyleActive);
+  const updateMapStyleButtons = () => {
+    Object.entries(mapStyleButtons).forEach(([key, btn]) => {
+      if (!btn) return;
+      const isActive = activeMapStyle === key;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
+    });
+  };
+  const setActiveMapStyle = (style, { persist = true } = {}) => {
+    const next = normalizeMapStyleKey(style) || 'street';
+    activeMapStyle = next;
+    if (persist) {
+      try {
+        localStorage.setItem('map.activeStyle', next);
+        localStorage.setItem('map.satelliteEnabled', next === 'satellite' ? '1' : '0');
+      } catch {}
+    }
+    updateMapStyleButtons();
+  };
+  setActiveMapStyle(activeMapStyle, { persist: false });
+  const loadFirebaseSettingsFromStorage = ({ syncInput = false, warnOnError = false } = {}) => {
+    let storedFirebaseRaw = null;
+    try {
+      storedFirebaseRaw = localStorage.getItem(FIREBASE_SETTINGS_STORAGE_KEY);
+    } catch (err) {
+      if (warnOnError) console.warn('Failed reading Firebase settings', err);
+      firebaseSettings = null;
+      return { ok: false, error: err, raw: '' };
+    }
+    if (syncInput && settingFirebaseConfig) {
+      settingFirebaseConfig.value = storedFirebaseRaw !== null ? storedFirebaseRaw : '';
+    }
+    const parsedFirebase = parseFirebaseSettingsText(storedFirebaseRaw || '');
+    if (parsedFirebase.error) {
+      if (warnOnError) console.warn('Invalid Firebase settings JSON', parsedFirebase.error);
+      firebaseSettings = null;
+      return { ok: false, error: parsedFirebase.error, raw: parsedFirebase.raw };
+    }
+    firebaseSettings = parsedFirebase.value;
+    return { ok: !!firebaseSettings, raw: parsedFirebase.raw };
+  };
+  const resolveFirebaseSdk = () => {
+    if (window.firebaseSdk && typeof window.firebaseSdk === 'object') {
+      return { type: 'modular', sdk: window.firebaseSdk };
+    }
+    if (window.firebase && typeof window.firebase.initializeApp === 'function') {
+      return { type: 'compat', sdk: window.firebase };
+    }
+    return null;
+  };
+  const exposeFirebaseState = () => {
+    window.firebaseSettings = firebaseSettings;
+    window.firebaseApp = firebaseAppInstance;
+    window.firestoreDb = firestoreInstance;
+    window.getFirebaseSettings = () => firebaseSettings;
+    window.getFirestoreDb = () => firestoreInstance;
+  };
+  const initFirestoreConnection = () => {
+    firestoreInstance = null;
+    firebaseAppInstance = null;
+    if (!firebaseSettings) {
+      loadFirebaseSettingsFromStorage();
+    }
+    if (!firebaseSettings) {
+      exposeFirebaseState();
+      return null;
+    }
+    const sdkInfo = resolveFirebaseSdk();
+    if (!sdkInfo) {
+      console.warn('Firebase SDK not available; Firestore not initialized.');
+      exposeFirebaseState();
+      return null;
+    }
+    try {
+      if (sdkInfo.type === 'compat') {
+        const sdk = sdkInfo.sdk;
+        firebaseAppInstance = sdk.apps?.length ? sdk.app() : sdk.initializeApp(firebaseSettings);
+        firestoreInstance = typeof sdk.firestore === 'function' ? sdk.firestore() : null;
+      } else {
+        const sdk = sdkInfo.sdk;
+        if (sdk && sdk.__bridge) {
+          firebaseAppInstance = sdk.initializeApp(firebaseSettings);
+        } else {
+          const apps = typeof sdk.getApps === 'function' ? sdk.getApps() : [];
+          firebaseAppInstance = apps && apps.length ? sdk.getApp() : sdk.initializeApp(firebaseSettings);
+        }
+        firestoreInstance = typeof sdk.getFirestore === 'function' ? sdk.getFirestore(firebaseAppInstance) : null;
+      }
+    } catch (err) {
+      console.warn('Failed to initialize Firestore', err);
+    }
+    exposeFirebaseState();
+    return firestoreInstance;
+  };
+  window.initFirestore = initFirestoreConnection;
+  exposeFirebaseState();
   const getLanguageLabels = (lang) => LANGUAGE_LABELS[lang] || LANGUAGE_LABELS[DEFAULT_APP_LANGUAGE];
   const populateLanguageOptions = (activeLanguage) => {
     if (!settingLanguage) return;
@@ -735,6 +1238,7 @@
       [toolZoomOut, 'toolbar.zoomOut'],
       [toolResetView, 'toolbar.resetView'],
       [toolPin, 'toolbar.pin'],
+      [toolEdit, 'toolbar.editFeatures'],
       [toolRect, 'toolbar.drawRectangle'],
       [toolPoly, 'toolbar.drawPolygon'],
       [toolCircle, 'toolbar.drawCircle'],
@@ -744,6 +1248,8 @@
       [toolWeather, 'map.utilities.weather'],
       [toolCrosshair, 'toolbar.showCoordinates'],
       [toolSetScale, 'toolbar.setScale'],
+      [toolLabelIncrease, 'toolbar.increaseLabelSize'],
+      [toolLabelDecrease, 'toolbar.decreaseLabelSize'],
       [toolPrint, 'toolbar.saveSnapshot'],
       [toolPushLive, 'toolbar.pushLiveUpdates'],
       [toolShortcuts, 'toolbar.shortcuts']
@@ -754,10 +1260,6 @@
       bindAttrAuto(btn, 'data-tooltip', key);
     });
 
-    bindAttrAuto(serialConnectBtn, 'title', 'serial.connectAria');
-    bindAttrAuto(serialConnectBtn, 'aria-label', 'serial.connectAria');
-    bindAttrAuto(serialMonitorBtn, 'title', 'serial.openMonitorAria');
-    bindAttrAuto(serialMonitorBtn, 'aria-label', 'serial.openMonitorAria');
     bindAttrAuto(fullscreenBtn, 'title', 'toolbar.fullscreen');
     bindAttrAuto(fullscreenBtn, 'aria-label', 'toolbar.fullscreen');
     bindAttrAuto(coordClose, 'title', 'common.close');
@@ -784,6 +1286,7 @@
     bindTextAuto(mapWelcomeSettings, 'map.welcomeAction');
 
     bindAttrAuto(mapUtilityToolbar, 'aria-label', 'map.utilities');
+    bindAttrAuto(mapStyleToolbar, 'aria-label', 'map.utilities.styles');
 
     const featuresUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'features');
     if (featuresUtilityBtn) {
@@ -800,6 +1303,16 @@
       bindAttrAuto(satelliteUtilityBtn, 'data-tooltip', 'map.utilities.satellite');
       bindAttrAuto(satelliteUtilityBtn, 'aria-label', 'map.utilities.toggleSatellite');
       bindTextAuto(satelliteUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleSatellite');
+    }
+    if (terrainUtilityBtn) {
+      bindAttrAuto(terrainUtilityBtn, 'data-tooltip', 'map.utilities.terrain');
+      bindAttrAuto(terrainUtilityBtn, 'aria-label', 'map.utilities.toggleTerrain');
+      bindTextAuto(terrainUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleTerrain');
+    }
+    if (streetUtilityBtn) {
+      bindAttrAuto(streetUtilityBtn, 'data-tooltip', 'map.utilities.street');
+      bindAttrAuto(streetUtilityBtn, 'aria-label', 'map.utilities.toggleStreet');
+      bindTextAuto(streetUtilityBtn.querySelector('.visually-hidden'), 'map.utilities.toggleStreet');
     }
     const trackersUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'trackers');
     if (trackersUtilityBtn) {
@@ -832,9 +1345,6 @@
     const trackersToggleHidden = trackersToggleBtn?.querySelector('.visually-hidden');
     bindTextAuto(trackersToggleLabel, 'sidebar.trackersToggleLabel');
     bindTextAuto(trackersToggleHidden, 'sidebar.trackersShow');
-    bindTextAuto(trackersEmpty?.querySelector('div'), 'trackers.empty');
-    bindTextAuto(trackersConnectBtn?.querySelector('span'), 'trackers.connect');
-    bindTextAuto(trackersWaiting?.querySelector('span:last-child'), 'trackers.waiting');
     bindTextAuto(document.getElementById('trackersRecordText'), 'trackers.record');
     bindTextAuto(trackersMenuToggle?.querySelector('.visually-hidden'), 'trackers.openMenu');
     bindTextAuto(trackersSaveBtn?.querySelector('span'), 'trackers.save');
@@ -845,7 +1355,6 @@
     if (settingsGroupHeadings?.[0]) bindTextAuto(settingsGroupHeadings[0], 'settings.section.general');
     if (settingsGroupHeadings?.[1]) bindTextAuto(settingsGroupHeadings[1], 'settings.section.apiKeys');
     if (settingsGroupHeadings?.[2]) bindTextAuto(settingsGroupHeadings[2], 'settings.section.map');
-    if (settingsGroupHeadings?.[3]) bindTextAuto(settingsGroupHeadings[3], 'settings.section.serial');
 
     bindText(labelOf(settingLanguage), 'settings.appLanguage', labelOf(settingLanguage)?.textContent || 'App Language');
     bindText(labelOf(settingAccessToken), 'settings.mapboxToken', labelOf(settingAccessToken)?.textContent || 'Mapbox Access Token');
@@ -864,26 +1373,15 @@
     const cynoopsHelp = helpOf(settingCynoopsLiveKey);
     bindAttr(cynoopsHelp, 'aria-label', 'settings.cynoopsLiveKey.help', cynoopsHelp?.getAttribute('aria-label') || '');
     bindAttr(cynoopsHelp, 'data-tooltip', 'settings.cynoopsLiveKey.help', cynoopsHelp?.getAttribute('data-tooltip') || '');
-    bindText(labelOf(settingStyleUrl), 'settings.mapStyleUrl', labelOf(settingStyleUrl)?.textContent || 'Map Style URL');
+    bindText(labelOf(settingFirebaseConfig), 'settings.firebaseConfig', labelOf(settingFirebaseConfig)?.textContent || 'Firebase Settings (JSON)');
+    bindText(labelOf(settingStyleUrl), 'settings.streetStyleUrl', labelOf(settingStyleUrl)?.textContent || 'Street Map Style URL');
     bindText(labelOf(settingSatelliteStyleUrl), 'settings.satelliteStyleUrl', labelOf(settingSatelliteStyleUrl)?.textContent || 'Satellite Map Style URL');
+    bindText(labelOf(settingTerrainStyleUrl), 'settings.terrainStyleUrl', labelOf(settingTerrainStyleUrl)?.textContent || 'Terrain Map Style URL');
     bindText(labelOf(settingHomeAddress), 'settings.homeAddress', labelOf(settingHomeAddress)?.textContent || 'Home Address');
     bindText(labelOf(settingStartLat), 'settings.startLatitude', labelOf(settingStartLat)?.textContent || 'Start Latitude');
     bindText(labelOf(settingStartLng), 'settings.startLongitude', labelOf(settingStartLng)?.textContent || 'Start Longitude');
     bindText(labelOf(settingStartZoom), 'settings.startZoom', labelOf(settingStartZoom)?.textContent || 'Start Zoom');
-    bindText(labelOf(settingBaud), 'settings.serialBaud', labelOf(settingBaud)?.textContent || 'Serial Baud Rate');
-    bindText(labelOf(settingAutoReconnect), 'settings.autoReconnect', labelOf(settingAutoReconnect)?.textContent || 'Auto-reconnect Serial');
-    const autoReconnectOff = settingAutoReconnect?.querySelector('option[value="off"]');
-    const autoReconnectOn = settingAutoReconnect?.querySelector('option[value="on"]');
-    bindTextAuto(autoReconnectOff, 'settings.autoReconnect.off');
-    bindTextAuto(autoReconnectOn, 'settings.autoReconnect.on');
     bindTextAuto(settingsSaveBtn, 'settings.save');
-
-    bindTextAuto(document.getElementById('connectTitle'), 'connectModal.title');
-    bindAttrAuto(connectClose, 'title', 'common.close');
-    bindAttrAuto(portsContainer, 'aria-label', 'connectModal.availablePorts');
-    bindText(connectBaud?.closest('label')?.querySelector('.label'), 'connectModal.baud', connectBaud?.closest('label')?.querySelector('.label')?.textContent || 'Baud');
-    bindTextAuto(refreshPorts, 'connectModal.refresh');
-    bindTextAuto(connectBtnAction, 'connectModal.connect');
 
     bindTextAuto(document.getElementById('searchTitle'), 'searchModal.title');
     bindAttrAuto(searchClose, 'title', 'common.close');
@@ -943,11 +1441,6 @@
     bindAttrAuto(document.getElementById('aiInput'), 'placeholder', 'aiModal.placeholder');
     bindTextAuto(document.getElementById('aiSubmit'), 'aiModal.submit');
 
-    bindTextAuto(document.getElementById('serialMonTitle'), 'serialMonitor.title');
-    bindAttrAuto(serialMonitorClose, 'title', 'common.close');
-    bindTextAuto(serialMonitorModal?.querySelector('.modal-row .muted'), 'serialMonitor.connected');
-    bindTextAuto(serialMonitorClearBtn, 'serialMonitor.clear');
-    bindTextAuto(serialDisconnectBtn, 'serialMonitor.disconnect');
 
     if (footerStatLabels?.[1]) bindTextAuto(footerStatLabels[1], 'footer.zoom');
     if (footerStatLabels?.[2]) bindTextAuto(footerStatLabels[2], 'footer.scale');
@@ -979,6 +1472,23 @@
   const gotoSubmit = q('#gotoSubmit');
   const gotoPoiNameField = q('#gotoPoiNameField');
   const gotoPoiName = q('#gotoPoiName');
+  const teamMemberModal = q('#teamMemberModal');
+  const teamMemberClose = q('#teamMemberClose');
+  const teamMemberDone = q('#teamMemberDone');
+  const teamMemberStatus = q('#teamMemberStatus');
+  const teamMemberQr = q('#teamMemberQr');
+  const teamMemberStart = q('#teamMemberStart');
+  const teamsStartSessionModal = q('#teamsStartSessionModal');
+  const teamsStartSessionClose = q('#teamsStartSessionClose');
+  const teamsStartSessionForm = q('#teamsStartSessionForm');
+  const teamsStartSessionTitleInput = q('#teamsStartSessionTitleInput');
+  const teamsStartSessionSubmit = q('#teamsStartSessionSubmit');
+  const teamsStartSessionCancel = q('#teamsStartSessionCancel');
+  const teamsResumeSessionModal = q('#teamsResumeSessionModal');
+  const teamsResumeSessionClose = q('#teamsResumeSessionClose');
+  const teamsLoadSessionStatus = q('#teamsLoadSessionStatus');
+  const teamsLoadSessionList = q('#teamsLoadSessionList');
+  const teamsResumeSessionCancel = q('#teamsResumeSessionCancel');
   const pushLiveModal = q('#pushLiveModal');
   const pushLiveClose = q('#pushLiveClose');
   const pushLiveLoading = q('#pushLiveLoading');
@@ -991,6 +1501,9 @@
   const shortcutsModal = q('#shortcutsModal');
   const shortcutsClose = q('#shortcutsClose');
   const shortcutsList = q('#shortcutsList');
+  if (teamMemberModal) teamMemberModal.setAttribute('aria-hidden', 'true');
+  if (teamsStartSessionModal) teamsStartSessionModal.setAttribute('aria-hidden', 'true');
+  if (teamsResumeSessionModal) teamsResumeSessionModal.setAttribute('aria-hidden', 'true');
   if (pushLiveModal) pushLiveModal.setAttribute('aria-hidden', 'true');
   if (shortcutsModal) shortcutsModal.setAttribute('aria-hidden', 'true');
   // Sidebar elements
@@ -1001,11 +1514,17 @@
   const trackersSidebar = q('#trackersSidebar');
   const trackersToggleBtn = q('#trackersToggleBtn');
   const trackersCollapse = q('#trackersCollapse');
-  const trackersConnectBtn = q('#trackersConnectBtn');
+  const teamsSessionIdEl = q('#teamsSessionId');
+  const teamsSessionTitleEl = q('#teamsSessionTitle');
+  const teamsEmptyState = q('#teamsEmptyState');
+  const teamsEmptyTitle = q('#teamsEmptyTitle');
+  const teamsEmptySubtitle = q('#teamsEmptySubtitle');
+  const teamsEmptyActions = q('#teamsEmptyActions');
+  const teamsStartSessionBtn = q('#teamsStartSessionBtn');
+  const teamsResumeSessionBtn = q('#teamsResumeSessionBtn');
+  const teamsAddBtn = q('#teamsAddBtn');
   const trackersList = q('#trackersList');
   const trackersItems = q('#trackersItems');
-  const trackersEmpty = q('#trackersEmpty');
-  const trackersWaiting = q('#trackersWaiting');
   const trackersControls = q('#trackersControls');
   const trackersMenuWrapper = q('#trackersMenuWrapper');
   const trackersMenuToggle = q('#trackersMenuToggle');
@@ -1021,6 +1540,12 @@
   const colorClose = q('#colorClose');
   const colorGrid = q('#colorGrid');
   const colorState = { onPick: null, current: null };
+  // POI icon modal
+  const poiIconModal = q('#poiIconModal');
+  const poiIconClose = q('#poiIconClose');
+  const poiIconGrid = q('#poiIconGrid');
+  const poiIconStatus = q('#poiIconStatus');
+  const poiIconPickerState = { targetId: null, currentId: null, mode: null, trackerId: null };
   // AI modal
   const aiModal = q('#aiModal');
   const aiClose = q('#aiClose');
@@ -1136,6 +1661,7 @@
     { key: '4', labelKey: 'shortcuts.drawPolyline', fallback: 'Draw polyline' },
     { key: '5', labelKey: 'shortcuts.drawArrow', fallback: 'Draw arrow' },
     { key: '6', labelKey: 'shortcuts.addPoi', fallback: 'Add POI' },
+    { key: 'E', labelKey: 'shortcuts.edit', fallback: 'Edit features' },
     { key: '7', labelKey: 'shortcuts.weather', fallback: 'Weather' },
     { key: '8', labelKey: 'shortcuts.showCoordinates', fallback: 'Show coordinates' },
     { key: '9', labelKey: 'shortcuts.setScale', fallback: 'Set scale' },
@@ -1148,9 +1674,7 @@
     { key: '+', labelKey: 'shortcuts.zoomIn', fallback: 'Zoom in' },
     { key: '-', labelKey: 'shortcuts.zoomOut', fallback: 'Zoom out' },
     { key: 'F', labelKey: 'shortcuts.featuresPanel', fallback: 'Toggle features panel' },
-    { key: 'T', labelKey: 'shortcuts.trackersPanel', fallback: 'Toggle trackers panel' },
-    { key: 'Shift + S', labelKey: 'shortcuts.serialConnect', fallback: 'Open serial connection' },
-    { key: 'M', labelKey: 'shortcuts.serialMonitor', fallback: 'Open serial monitor' },
+    { key: 'T', labelKey: 'shortcuts.trackersPanel', fallback: 'Toggle teams panel' },
     { key: 'L', labelKey: 'shortcuts.pushLiveUpdates', fallback: 'Push LIVE updates' },
     { key: 'P', labelKey: 'shortcuts.saveSnapshot', fallback: 'Save snapshot' }
   ];
@@ -1472,9 +1996,82 @@
   let featuresLayersVisible = true;
   let featureLabelsVisible = true;
   let trackersLayersVisible = true;
-  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-fill-outline', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-line-start-inner', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
+  const FEATURE_LAYER_IDS = ['draw-fill', 'draw-fill-outline', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-line-start-inner', 'draw-point-icon-bg', 'draw-point-icon', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
   const LABEL_LAYER_IDS = ['draw-labels-polygon', 'draw-labels-line-name', 'draw-labels-line-length'];
-  const TRACKER_LAYER_IDS = ['tracker-dots', 'tracker-labels', 'tracker-paths'];
+  const TRACKER_LAYER_IDS = ['tracker-paths', 'tracker-goto', 'tracker-goto-end', 'tracker-dots', 'tracker-icon-bg', 'tracker-icon', 'tracker-labels'];
+  const FEATURE_LABEL_BG_IMAGE_ID = 'feature-label-bg';
+  const POI_ICON_BG_IMAGE_ID = 'poi-icon-bg';
+  const POI_ICON_SCALE = 1.2;
+  const POI_ICON_BASE_SIZE = 0.072;
+  const POI_ICON_SIZE = POI_ICON_BASE_SIZE * POI_ICON_SCALE;
+  const POI_ICON_BG_SCALE = 1.2;
+  const POI_ICON_BG_SIZE = POI_ICON_SIZE * POI_ICON_BG_SCALE;
+  const POI_ICON_BG_CANVAS_SIZE = 512;
+  const POI_ICON_BG_PIXEL_RATIO = 1;
+  const POI_ICON_BG_BORDER_COLOR = '#8a8a8a';
+  const POI_ICON_BG_BORDER_RATIO = 0.02;
+  const FEATURE_LABEL_BG_BORDER_COLOR = '#8a8a8a';
+  const FEATURE_LABEL_BG_BORDER_WIDTH = 1;
+  const FEATURE_LABEL_BG_PIXEL_RATIO = 1;
+  const LABEL_SCALE_STORAGE_KEY = 'map.labelScale';
+  const LABEL_SCALE_MIN = 0.7;
+  const LABEL_SCALE_MAX = 1.6;
+  const LABEL_SCALE_STEP = 0.1;
+  const BASE_FEATURE_LABEL_SIZE = 16;
+  const BASE_TRACKER_LABEL_SIZE = 17;
+  const clampNumber = (value, min, max) => Math.min(max, Math.max(min, value));
+  const normalizeLabelScale = (value) => {
+    if (!Number.isFinite(value)) return 1;
+    return clampNumber(value, LABEL_SCALE_MIN, LABEL_SCALE_MAX);
+  };
+  let labelScale = normalizeLabelScale(Number(localStorage.getItem(LABEL_SCALE_STORAGE_KEY)));
+  const scaleLabelValue = (value) => Math.round(value * labelScale * 1000) / 1000;
+  const applyMapLabelScale = (map = getMap()) => {
+    if (!map) return;
+    const textSize = scaleLabelValue(BASE_FEATURE_LABEL_SIZE);
+    const trackerTextSize = scaleLabelValue(BASE_TRACKER_LABEL_SIZE);
+    const poiIconSize = scaleLabelValue(POI_ICON_SIZE);
+    const poiIconBgSize = scaleLabelValue(POI_ICON_BG_SIZE);
+    const applyLayout = (layerId, prop, val) => {
+      if (!map.getLayer(layerId)) return;
+      try { map.setLayoutProperty(layerId, prop, val); } catch {}
+    };
+    applyLayout('draw-point', 'text-size', textSize);
+    applyLayout('draw-labels-polygon', 'text-size', textSize);
+    applyLayout('draw-labels-line-name', 'text-size', textSize);
+    applyLayout('draw-labels-line-length', 'text-size', textSize);
+    applyLayout('tracker-labels', 'text-size', trackerTextSize);
+    applyLayout('draw-point-icon', 'icon-size', poiIconSize);
+    applyLayout('draw-point-icon-bg', 'icon-size', poiIconBgSize);
+    applyLayout('tracker-icon', 'icon-size', poiIconSize);
+    applyLayout('tracker-icon-bg', 'icon-size', poiIconBgSize);
+  };
+  const updateLabelScaleButtons = () => {
+    const atMin = labelScale <= LABEL_SCALE_MIN + 1e-6;
+    const atMax = labelScale >= LABEL_SCALE_MAX - 1e-6;
+    if (toolLabelDecrease) {
+      toolLabelDecrease.disabled = atMin;
+      toolLabelDecrease.classList.toggle('is-disabled', atMin);
+      toolLabelDecrease.setAttribute('aria-disabled', String(atMin));
+    }
+    if (toolLabelIncrease) {
+      toolLabelIncrease.disabled = atMax;
+      toolLabelIncrease.classList.toggle('is-disabled', atMax);
+      toolLabelIncrease.setAttribute('aria-disabled', String(atMax));
+    }
+  };
+  const setLabelScale = (value) => {
+    const next = normalizeLabelScale(value);
+    if (next === labelScale) {
+      updateLabelScaleButtons();
+      return;
+    }
+    labelScale = next;
+    try { localStorage.setItem(LABEL_SCALE_STORAGE_KEY, String(labelScale)); } catch {}
+    applyMapLabelScale();
+    updateLabelScaleButtons();
+  };
+  updateLabelScaleButtons();
 
   const ensureTriangleMarkerImage = (map) => {
     try {
@@ -1500,13 +2097,72 @@
     }
   };
 
+  const ensureFeatureLabelBackgroundImage = (map) => {
+    try {
+      if (!map || typeof map.hasImage !== 'function' || map.hasImage(FEATURE_LABEL_BG_IMAGE_ID)) return;
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#e6e6e6';
+      ctx.fillRect(0, 0, size, size);
+      const borderWidth = FEATURE_LABEL_BG_BORDER_WIDTH;
+      ctx.imageSmoothingEnabled = false;
+      ctx.save();
+      ctx.translate(0.5, 0.5);
+      ctx.strokeStyle = FEATURE_LABEL_BG_BORDER_COLOR;
+      ctx.lineWidth = borderWidth;
+      ctx.lineJoin = 'miter';
+      ctx.lineCap = 'butt';
+      ctx.strokeRect(0, 0, size - borderWidth, size - borderWidth);
+      ctx.restore();
+      const imageData = ctx.getImageData(0, 0, size, size);
+      map.addImage(FEATURE_LABEL_BG_IMAGE_ID, imageData, { pixelRatio: FEATURE_LABEL_BG_PIXEL_RATIO });
+    } catch (err) {
+      console.warn('Failed adding feature label background image', err);
+    }
+  };
+
+  const ensurePoiIconBackgroundImage = (map) => {
+    try {
+      if (!map || typeof map.hasImage !== 'function' || map.hasImage(POI_ICON_BG_IMAGE_ID)) return;
+      const size = POI_ICON_BG_CANVAS_SIZE;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#e6e6e6';
+      ctx.fillRect(0, 0, size, size);
+      const borderWidth = Math.max(1, Math.round(size * POI_ICON_BG_BORDER_RATIO));
+      const inset = borderWidth / 2;
+      ctx.strokeStyle = POI_ICON_BG_BORDER_COLOR;
+      ctx.lineWidth = borderWidth;
+      ctx.strokeRect(inset, inset, size - borderWidth, size - borderWidth);
+      const imageData = ctx.getImageData(0, 0, size, size);
+      map.addImage(POI_ICON_BG_IMAGE_ID, imageData, { pixelRatio: POI_ICON_BG_PIXEL_RATIO });
+    } catch (err) {
+      console.warn('Failed adding POI icon background image', err);
+    }
+  };
+
   mapUtilityButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
+      const tool = btn.dataset.tool;
+      const map = getMap();
+      if (tool === 'satellite' || tool === 'terrain' || tool === 'street') {
+        setActiveMapStyle(tool);
+        applyCurrentMapStyle();
+        updateMapCursor();
+        return;
+      }
       const next = !btn.classList.contains('is-active');
       btn.classList.toggle('is-active', next);
       btn.setAttribute('aria-pressed', String(next));
-      const tool = btn.dataset.tool;
-      const map = getMap();
       switch (tool) {
         case 'cloud-sun':
           if (next) {
@@ -1520,12 +2176,6 @@
             disableWeatherOverlay();
             setWeatherButtonState(false);
           }
-          break;
-        case 'satellite':
-          satelliteStyleActive = next;
-          localStorage.setItem('map.satelliteEnabled', satelliteStyleActive ? '1' : '0');
-          setSatelliteButtonState(satelliteStyleActive);
-          applyCurrentMapStyle();
           break;
         case 'features':
           featuresLayersVisible = next;
@@ -2232,6 +2882,17 @@
   };
 
   const readMapboxToken = () => (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
+  const readFirebaseConfigString = () => {
+    if (firebaseSettings && typeof firebaseSettings === 'object') {
+      try { return JSON.stringify(firebaseSettings); } catch {}
+    }
+    let raw = '';
+    try { raw = localStorage.getItem(FIREBASE_SETTINGS_STORAGE_KEY) || ''; } catch {}
+    const parsed = parseFirebaseSettingsText(raw);
+    if (parsed.error || !parsed.value) return '';
+    try { return JSON.stringify(parsed.value); } catch {}
+    return '';
+  };
   const readGoogleKey = () => (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
   const readOpenAIKey = () => (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
   const readCynoopsLiveKey = () => (localStorage.getItem('cynoops.liveApiKey') || defaultCynoopsLiveKey || '').trim();
@@ -2239,9 +2900,6 @@
   let googleServicesEnabled = false;
   let aiEnabled = false;
   let liveUpdatesEnabled = false;
-  let serialConnected = false;
-  let serialConnecting = false;
-  let trackerDataSeen = false;
   let lastKnownCenter = null;
   let lastKnownAddress = '';
 
@@ -2503,12 +3161,16 @@
 
   const LIVE_FEATURES_UPLOAD_DELAY = 800;
   const LIVE_TRACKERS_UPLOAD_DELAY = 1500;
+  const FIRESTORE_FEATURES_UPLOAD_DELAY = LIVE_FEATURES_UPLOAD_DELAY;
   let liveSyncActive = false;
   let liveSyncSessionId = null;
   let liveSyncApiKey = null;
   let liveFeaturesUploadTimer = null;
   let liveFeaturesUploadInFlight = false;
   let liveFeaturesUploadPending = false;
+  let firestoreFeaturesUploadTimer = null;
+  let firestoreFeaturesUploadInFlight = false;
+  let firestoreFeaturesUploadPending = false;
   let liveTrackersUploadTimer = null;
   let liveTrackersUploadInFlight = false;
   let liveTrackersUploadPending = false;
@@ -2561,6 +3223,131 @@
     return cloneForLiveSync(storeRef);
   };
 
+  const filterSessionFeatures = (features) => {
+    if (!Array.isArray(features)) return [];
+    return features.filter((feature) => {
+      if (!feature || feature.type !== 'Feature' || !feature.geometry) return false;
+      const geomType = feature.geometry.type;
+      if (geomType !== 'Point' && geomType !== 'LineString' && geomType !== 'Polygon') return false;
+      const props = feature.properties || {};
+      if (props.isLineEndpoint === true) return false;
+      if (props.kind === 'line-start' || props.kind === 'line-end') return false;
+      return true;
+    });
+  };
+
+  const stringifyNestedArrays = (value) => {
+    if (Array.isArray(value)) {
+      const hasNestedArray = value.some(Array.isArray);
+      if (hasNestedArray) {
+        try { return JSON.stringify(value); } catch { return value; }
+      }
+      return value.map((entry) => stringifyNestedArrays(entry));
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach((key) => {
+        out[key] = stringifyNestedArrays(value[key]);
+      });
+      return out;
+    }
+    return value;
+  };
+
+  const reviveNestedArrayStrings = (value) => {
+    if (Array.isArray(value)) return value.map((entry) => reviveNestedArrayStrings(entry));
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach((key) => {
+        out[key] = reviveNestedArrayStrings(value[key]);
+      });
+      return out;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed) && parsed.some(Array.isArray)) {
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+    return value;
+  };
+
+  const buildSessionFeaturesPayload = () => {
+    const payload = buildFeaturesPayload();
+    let features = [];
+    if (payload && typeof payload === 'object') {
+      if (payload.type === 'FeatureCollection' && Array.isArray(payload.features)) {
+        features = payload.features;
+      } else if (payload.features && typeof payload.features === 'object') {
+        const nested = payload.features;
+        if (nested.type === 'FeatureCollection' && Array.isArray(nested.features)) {
+          features = nested.features;
+        } else if (Array.isArray(nested.features)) {
+          features = nested.features;
+        }
+      } else if (Array.isArray(payload.features)) {
+        features = payload.features;
+      }
+    }
+    const filtered = filterSessionFeatures(features);
+    return { type: 'FeatureCollection', features: filtered.map((feature) => stringifyNestedArrays(feature)) };
+  };
+
+  const getSessionIdsForFeatureSync = () => {
+    const ids = new Set();
+    const addId = (value) => {
+      const trimmed = String(value || '').trim();
+      if (trimmed) ids.add(trimmed);
+    };
+    addId(teamsSessionId);
+    addId(liveSyncSessionId);
+    addId(currentLiveSession?.id);
+    return Array.from(ids);
+  };
+
+  const writeLiveSessionDocument = async (sessionId, startedAt) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return false;
+    const sdkInfo = resolveFirebaseSdk();
+    const db = firestoreInstance || initFirestoreConnection();
+    if (!sdkInfo || !db) {
+      console.warn('Firestore not available for LIVE session document.');
+      return false;
+    }
+    const features = buildSessionFeaturesPayload();
+    const payload = {
+      startedAt: Number.isFinite(startedAt) ? Number(startedAt) : Date.now(),
+      features
+    };
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') {
+          console.warn('Firebase compat SDK missing doc().');
+          return false;
+        }
+        const docRef = db.doc(`sessions/${trimmed}`);
+        await docRef.set(payload, { merge: true });
+      } else {
+        const { doc, setDoc } = sdkInfo.sdk || {};
+        if (typeof doc !== 'function' || typeof setDoc !== 'function') {
+          console.warn('Firebase modular SDK missing doc/setDoc.');
+          return false;
+        }
+        const docRef = doc(db, 'sessions', trimmed);
+        await setDoc(docRef, payload, { merge: true });
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed to write LIVE session document', trimmed, err);
+      return false;
+    }
+  };
+
   const trackerMetadataEqual = (a, b) => {
     if (a === b) return true;
     if (!a || !b) return false;
@@ -2575,7 +3362,9 @@
     if (!tracker || typeof tracker !== 'object') return null;
     const metadata = {
       name: typeof tracker.name === 'string' ? tracker.name.trim() || null : null,
+      title: typeof tracker.title === 'string' ? tracker.title.trim() || null : null,
       color: typeof tracker.color === 'string' ? tracker.color.trim() || null : null,
+      poiIcon: typeof tracker.poiIcon === 'string' ? tracker.poiIcon.trim() || null : null,
       visible: tracker.visible === false ? false : true,
       battery: Number.isFinite(tracker.battery) ? Number(tracker.battery) : null,
       altitude: Number.isFinite(tracker.altitude) ? Number(tracker.altitude) : null,
@@ -2669,6 +3458,57 @@
     }
   };
 
+  const pushFirestoreFeatures = async () => {
+    const sessionIds = getSessionIdsForFeatureSync();
+    if (!sessionIds.length) return;
+    const sdkInfo = resolveFirebaseSdk();
+    const db = firestoreInstance || initFirestoreConnection();
+    if (!sdkInfo || !db) {
+      console.warn('Firestore not available for session features sync.');
+      return;
+    }
+    const features = buildSessionFeaturesPayload();
+    firestoreFeaturesUploadInFlight = true;
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') {
+          console.warn('Firebase compat SDK missing doc().');
+          return;
+        }
+        for (const sessionId of sessionIds) {
+          try {
+            const docRef = db.doc(`sessions/${sessionId}`);
+            await docRef.set({ features }, { merge: true });
+          } catch (err) {
+            console.warn('Failed to sync features to session document', sessionId, err);
+          }
+        }
+      } else {
+        const { doc, setDoc } = sdkInfo.sdk || {};
+        if (typeof doc !== 'function' || typeof setDoc !== 'function') {
+          console.warn('Firebase modular SDK missing doc/setDoc.');
+          return;
+        }
+        for (const sessionId of sessionIds) {
+          try {
+            const docRef = doc(db, 'sessions', sessionId);
+            await setDoc(docRef, { features }, { merge: true });
+          } catch (err) {
+            console.warn('Failed to sync features to session document', sessionId, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync session features', err);
+    } finally {
+      firestoreFeaturesUploadInFlight = false;
+      if (firestoreFeaturesUploadPending) {
+        firestoreFeaturesUploadPending = false;
+        scheduleFirestoreFeaturesUpload();
+      }
+    }
+  };
+
   const pushLiveTrackerUpdates = async () => {
     if (!ensureLiveSyncReady()) return;
     const payload = buildTrackerSyncPayload();
@@ -2715,6 +3555,20 @@
     }, Math.max(0, Number.isFinite(delay) ? delay : LIVE_FEATURES_UPLOAD_DELAY));
   };
 
+  const scheduleFirestoreFeaturesUpload = (delay = FIRESTORE_FEATURES_UPLOAD_DELAY) => {
+    if (firestoreFeaturesUploadInFlight) {
+      firestoreFeaturesUploadPending = true;
+      return;
+    }
+    const sessionIds = getSessionIdsForFeatureSync();
+    if (!sessionIds.length) return;
+    if (firestoreFeaturesUploadTimer) clearTimeout(firestoreFeaturesUploadTimer);
+    firestoreFeaturesUploadTimer = setTimeout(() => {
+      firestoreFeaturesUploadTimer = null;
+      pushFirestoreFeatures();
+    }, Math.max(0, Number.isFinite(delay) ? delay : FIRESTORE_FEATURES_UPLOAD_DELAY));
+  };
+
   const scheduleLiveTrackersUpload = (delay = LIVE_TRACKERS_UPLOAD_DELAY) => {
     if (!ensureLiveSyncReady()) return;
     if (liveTrackersUploadInFlight) {
@@ -2728,7 +3582,12 @@
     }, Math.max(0, Number.isFinite(delay) ? delay : LIVE_TRACKERS_UPLOAD_DELAY));
   };
 
+  const requestFirestoreFeaturesSync = (delay) => {
+    scheduleFirestoreFeaturesUpload(typeof delay === 'number' ? delay : FIRESTORE_FEATURES_UPLOAD_DELAY);
+  };
+
   const requestLiveFeaturesSync = (delay) => {
+    requestFirestoreFeaturesSync(delay);
     if (!ensureLiveSyncReady()) return;
     scheduleLiveFeaturesUpload(typeof delay === 'number' ? delay : LIVE_FEATURES_UPLOAD_DELAY);
   };
@@ -2880,6 +3739,7 @@
         requestLiveTrackersSync(200);
       } else {
         teardownLiveSync();
+        requestFirestoreFeaturesSync(0);
       }
       applyLiveSessionState();
       setPushLiveStatus('pushLiveModal.ready', 'Scan the QR code to start the LIVE connection.', 'success');
@@ -2933,8 +3793,10 @@
       const qrPayload = extractLiveQrPayload(payload) ?? (payloadData ? extractLiveQrPayload(payloadData) : null);
       if (!qrPayload) throw new Error('Missing LIVE QR payload');
 
-      currentLiveSession = { id: sessionId, payload, storedAt: Date.now(), qrPayload };
+      const sessionStartedAt = Date.now();
+      currentLiveSession = { id: sessionId, payload, storedAt: sessionStartedAt, qrPayload };
       storeLiveSession(currentLiveSession);
+      await writeLiveSessionDocument(sessionId, sessionStartedAt);
       activateLiveSync(currentLiveSession, apiKey);
       applyLiveSessionState({ skipStatus: true });
       setPushLiveStatus('pushLiveModal.ready', 'Scan the QR code to start the LIVE connection.', 'success');
@@ -3047,7 +3909,6 @@
     } catch {}
   };
 
-  let selectedPath = null;
   let isDirty = false;
   const setDirty = (v=true) => { isDirty = !!v; (window)._dirty = isDirty; };
   let settingsDirty = false;
@@ -3082,21 +3943,19 @@
     setTrackersMenu(false);
   };
   const toggleTrackersMenu = () => setTrackersMenu(!trackersMenuOpen);
-  const setSerialMonitorVisible = (visible) => {
-    if (!serialMonitorBtn) return;
-    const show = !!visible;
-    serialMonitorBtn.hidden = !show;
-    serialMonitorBtn.classList.toggle('is-hidden', !show);
-  };
 
   const trackerStore = new Map();
   const trackerBlinkQueue = new Set();
   const trackerPositionsStore = new Map();
+  const trackerGoToLocations = new Map();
   (window)._trackerPositions = trackerPositionsStore;
   (window)._trackerStore = trackerStore;
   (window).getTrackerData = () => Array.from(trackerStore.values());
   let trackerSourceReady = false;
   let trackerPathSourceReady = false;
+  let trackerGoToSourceReady = false;
+  let activeTrackerGoToId = null;
+  let activeTrackerGoToButton = null;
   const trackersRecordingState = {
     active: false,
     startedAt: null,
@@ -3116,11 +3975,12 @@
   }
 
   function refreshTrackersControlsState() {
-    const showControls = serialConnected || trackersRecordingHasData || trackersRecordingState.imported;
+    const hasTeams = trackerStore.size > 0;
+    const showControls = hasTeams || trackersRecordingHasData || trackersRecordingState.imported || trackersRecordingState.active;
     if (trackersControls) trackersControls.hidden = !showControls;
     if (!showControls) closeTrackersMenu();
     if (trackersRecordBtn) {
-      const canRecord = serialConnected && !serialConnecting;
+      const canRecord = hasTeams || trackersRecordingState.active;
       const hasPausedData = trackersRecordingHasData && !trackersRecordingState.active;
       trackersRecordBtn.disabled = !canRecord;
       trackersRecordBtn.setAttribute('aria-disabled', String(!canRecord));
@@ -3151,15 +4011,2008 @@
     if (trackersToggleBtn) trackersToggleBtn.classList.toggle('is-recording', trackersRecordingState.active);
   }
 
+  const trackerSubscriptions = new Map();
+  const trackerSubscriptionRetries = new Map();
+  const TRACKER_SUBSCRIPTION_RETRY_MS = 5000;
+  let pendingTeamMemberTrackerId = null;
+  let firestoreUnavailableToasted = false;
+  const trackerAutoReveal = new Set();
+  let lastTrackerUpdateTimestamp = 0;
+
+  const nextTrackerUpdateDocId = () => {
+    const now = Date.now();
+    if (!Number.isFinite(now)) return String(Date.now());
+    if (now <= lastTrackerUpdateTimestamp) {
+      lastTrackerUpdateTimestamp += 1;
+      return String(lastTrackerUpdateTimestamp);
+    }
+    lastTrackerUpdateTimestamp = now;
+    return String(now);
+  };
+
+  const writeTrackerUpdateDocument = async ({ trackerId, coords, sessionId, sdkInfo, db } = {}) => {
+    const trimmedTrackerId = String(trackerId || '').trim();
+    const trimmedSessionId = String(sessionId || '').trim();
+    if (!trimmedTrackerId || !trimmedSessionId || !coords) return false;
+    const lng = Number(coords.longitude);
+    const lat = Number(coords.latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+    const coordinates = Number.isFinite(coords.altitude)
+      ? [lng, lat, Number(coords.altitude)]
+      : [lng, lat];
+    const payload = { trackerId: trimmedTrackerId, coordinates };
+    const docId = nextTrackerUpdateDocId();
+    try {
+      if (sdkInfo?.type === 'compat') {
+        if (typeof db?.doc !== 'function') return false;
+        await db.doc(`sessions/${trimmedSessionId}/updates/${docId}`).set(payload);
+      } else {
+        const { doc, setDoc } = sdkInfo?.sdk || {};
+        if (typeof doc !== 'function' || typeof setDoc !== 'function') return false;
+        const docRef = doc(db, 'sessions', trimmedSessionId, 'updates', docId);
+        await setDoc(docRef, payload);
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed to write tracker update', trimmedSessionId, trimmedTrackerId, err);
+      return false;
+    }
+  };
+
+  const clearTrackerSubscriptionRetry = (trackerId) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return;
+    const entry = trackerSubscriptionRetries.get(trimmed);
+    if (entry?.timer) clearTimeout(entry.timer);
+    trackerSubscriptionRetries.delete(trimmed);
+  };
+
+  const scheduleTrackerSubscriptionRetry = (trackerId, reason) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return;
+    if (trackerSubscriptions.has(trimmed)) return;
+    if (trackerSubscriptionRetries.has(trimmed)) return;
+    if (reason) console.warn('Scheduling tracker subscription retry', trimmed, reason);
+    const timer = setTimeout(() => {
+      trackerSubscriptionRetries.delete(trimmed);
+      startTrackerSubscription(trimmed);
+    }, TRACKER_SUBSCRIPTION_RETRY_MS);
+    trackerSubscriptionRetries.set(trimmed, { timer });
+  };
+
+  const normalizeSessionDate = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (typeof value.toDate === 'function') {
+      try {
+        const parsed = value.toDate();
+        return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : null;
+      } catch {}
+    }
+    if (typeof value.seconds === 'number') {
+      const parsed = new Date(value.seconds * 1000);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (typeof value._seconds === 'number') {
+      const parsed = new Date(value._seconds * 1000);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  };
+
+  const normalizeSessionCoordinates = (value) => {
+    if (!value || typeof value !== 'object') return null;
+    const coords = extractCoordsPayload(value);
+    if (!coords) return null;
+    if (!Number.isFinite(coords.longitude) || !Number.isFinite(coords.latitude)) return null;
+    return {
+      longitude: coords.longitude,
+      latitude: coords.latitude,
+      altitude: Number.isFinite(coords.altitude) ? coords.altitude : null
+    };
+  };
+
+  const createBoundsTracker = () => ({
+    minLng: Infinity,
+    minLat: Infinity,
+    maxLng: -Infinity,
+    maxLat: -Infinity,
+    has: false
+  });
+
+  const extendBoundsWithCoord = (bounds, lng, lat) => {
+    if (!bounds) return;
+    const nextLng = Number(lng);
+    const nextLat = Number(lat);
+    if (!Number.isFinite(nextLng) || !Number.isFinite(nextLat)) return;
+    if (nextLng < bounds.minLng) bounds.minLng = nextLng;
+    if (nextLng > bounds.maxLng) bounds.maxLng = nextLng;
+    if (nextLat < bounds.minLat) bounds.minLat = nextLat;
+    if (nextLat > bounds.maxLat) bounds.maxLat = nextLat;
+    bounds.has = true;
+  };
+
+  const mergeBounds = (target, source) => {
+    if (!target || !source || !source.has) return;
+    if (!target.has) {
+      target.minLng = source.minLng;
+      target.minLat = source.minLat;
+      target.maxLng = source.maxLng;
+      target.maxLat = source.maxLat;
+      target.has = true;
+      return;
+    }
+    if (source.minLng < target.minLng) target.minLng = source.minLng;
+    if (source.minLat < target.minLat) target.minLat = source.minLat;
+    if (source.maxLng > target.maxLng) target.maxLng = source.maxLng;
+    if (source.maxLat > target.maxLat) target.maxLat = source.maxLat;
+    target.has = true;
+  };
+
+  const finalizeBounds = (bounds) => {
+    if (!bounds || !bounds.has) return null;
+    if (![bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat].every((v) => Number.isFinite(v))) return null;
+    return {
+      minLng: bounds.minLng,
+      minLat: bounds.minLat,
+      maxLng: bounds.maxLng,
+      maxLat: bounds.maxLat
+    };
+  };
+
+  const computeBoundsFromFeatures = (features) => {
+    if (!Array.isArray(features) || features.length === 0) return null;
+    const bounds = createBoundsTracker();
+    const walk = (geom) => {
+      if (!geom) return;
+      const type = geom.type;
+      const coords = geom.coordinates;
+      if (type === 'Point') {
+        if (Array.isArray(coords)) extendBoundsWithCoord(bounds, coords[0], coords[1]);
+      } else if (type === 'MultiPoint' || type === 'LineString') {
+        if (Array.isArray(coords)) coords.forEach((pt) => Array.isArray(pt) && extendBoundsWithCoord(bounds, pt[0], pt[1]));
+      } else if (type === 'Polygon' || type === 'MultiLineString') {
+        if (Array.isArray(coords)) {
+          coords.forEach((ring) => {
+            if (!Array.isArray(ring)) return;
+            ring.forEach((pt) => Array.isArray(pt) && extendBoundsWithCoord(bounds, pt[0], pt[1]));
+          });
+        }
+      } else if (type === 'MultiPolygon') {
+        if (Array.isArray(coords)) {
+          coords.forEach((poly) => {
+            if (!Array.isArray(poly)) return;
+            poly.forEach((ring) => {
+              if (!Array.isArray(ring)) return;
+              ring.forEach((pt) => Array.isArray(pt) && extendBoundsWithCoord(bounds, pt[0], pt[1]));
+            });
+          });
+        }
+      } else if (type === 'GeometryCollection' && Array.isArray(geom.geometries)) {
+        geom.geometries.forEach((child) => walk(child));
+      }
+    };
+    features.forEach((feature) => {
+      if (!feature || feature.type !== 'Feature' || !feature.geometry) return;
+      const revived = reviveNestedArrayStrings(feature.geometry);
+      walk(revived);
+    });
+    return bounds.has ? bounds : null;
+  };
+
+  const computeBoundsFromTrackerLocations = (locations) => {
+    if (!Array.isArray(locations) || locations.length === 0) return null;
+    const bounds = createBoundsTracker();
+    locations.forEach((coords) => {
+      if (!coords) return;
+      extendBoundsWithCoord(bounds, coords.longitude, coords.latitude);
+    });
+    return bounds.has ? bounds : null;
+  };
+
+  const computeCenterFromBounds = (bounds) => {
+    if (!bounds) return null;
+    const { minLng, minLat, maxLng, maxLat } = bounds;
+    if (![minLng, minLat, maxLng, maxLat].every((v) => Number.isFinite(v))) return null;
+    return {
+      longitude: (minLng + maxLng) / 2,
+      latitude: (minLat + maxLat) / 2
+    };
+  };
+
+  const getSessionCenterCoordinates = () => {
+    const map = getMap();
+    if (map && typeof map.getCenter === 'function') {
+      const center = map.getCenter();
+      const lng = Number(center?.lng ?? center?.longitude);
+      const lat = Number(center?.lat ?? center?.latitude);
+      if (Number.isFinite(lng) && Number.isFinite(lat)) return { longitude: lng, latitude: lat };
+    }
+    const fallbackLng = Number(defaultStartLng);
+    const fallbackLat = Number(defaultStartLat);
+    if (Number.isFinite(fallbackLng) && Number.isFinite(fallbackLat)) {
+      return { longitude: fallbackLng, latitude: fallbackLat };
+    }
+    return null;
+  };
+
+  const focusSessionCoordinates = (coords) => {
+    if (!coords) return;
+    const lng = Number(coords.longitude);
+    const lat = Number(coords.latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const map = getMap();
+    if (!map) return;
+    const zoom = Number(map.getZoom?.() ?? 0) || 12;
+    try {
+      map.flyTo({ center: [lng, lat], zoom: Math.max(zoom, 12), duration: 800, essential: true });
+    } catch (err) {
+      console.warn('Failed to center map on session coordinates', err);
+    }
+  };
+
+  const fetchSessionTrackerLocations = async (sessionId) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return [];
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return [];
+    const { sdkInfo, db } = handle;
+    try {
+      const locations = [];
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.collection !== 'function') return [];
+        const snap = await db.collection('sessions').doc(trimmed).collection('trackers').get();
+        snap.forEach((doc) => {
+          const data = typeof doc.data === 'function' ? doc.data() : doc.data;
+          const coords = extractCoordsPayload(data || {});
+          if (coords) locations.push(coords);
+        });
+      } else {
+        const { collection, getDocs } = sdkInfo.sdk || {};
+        if (typeof collection !== 'function' || typeof getDocs !== 'function') return [];
+        const colRef = collection(db, 'sessions', trimmed, 'trackers');
+        const snap = await getDocs(colRef);
+        snap.forEach((doc) => {
+          const data = typeof doc.data === 'function' ? doc.data() : doc.data;
+          const coords = extractCoordsPayload(data || {});
+          if (coords) locations.push(coords);
+        });
+      }
+      return locations;
+    } catch (err) {
+      console.warn('Failed to fetch tracker locations for session', trimmed, err);
+      return [];
+    }
+  };
+
+  const focusResumedSessionCenter = async (sessionId, data, fallbackCoords) => {
+    try {
+      const bounds = createBoundsTracker();
+      const featureBounds = computeBoundsFromFeatures(extractSessionFeatures(data));
+      if (featureBounds) mergeBounds(bounds, featureBounds);
+      const trackerLocations = await fetchSessionTrackerLocations(sessionId);
+      const trackerBounds = computeBoundsFromTrackerLocations(trackerLocations);
+      if (trackerBounds) mergeBounds(bounds, trackerBounds);
+      const resolved = computeCenterFromBounds(finalizeBounds(bounds));
+      if (resolved) {
+        focusSessionCoordinates(resolved);
+        return true;
+      }
+      if (fallbackCoords) {
+        focusSessionCoordinates(fallbackCoords);
+        return true;
+      }
+    } catch (err) {
+      console.warn('Failed to focus map on resumed session center', err);
+    }
+    return false;
+  };
+
+  const normalizeSessionTrackerIds = (value) => {
+    const raw = Array.isArray(value)
+      ? value
+      : Array.isArray(value?.trackerIds)
+        ? value.trackerIds
+        : Array.isArray(value?.trackers)
+          ? value.trackers
+          : [];
+    const ids = new Set();
+    raw.forEach((entry) => {
+      const trimmed = String(entry || '').trim();
+      if (trimmed) ids.add(trimmed);
+    });
+    return Array.from(ids);
+  };
+
+  const replaceTeamsSessionTrackerIds = (value) => {
+    const next = normalizeSessionTrackerIds(value);
+    teamsSessionTrackerIds.clear();
+    next.forEach((id) => registerTeamsSessionTrackerId(id, { updateUI: false }));
+    updateTeamsEmptyState();
+  };
+
+  const normalizeTeamsGoToMap = (value) => {
+    const result = new Map();
+    if (!value) return result;
+    if (value instanceof Map) {
+      value.forEach((coords, trackerId) => {
+        if (!coords) return;
+        const lng = Number(coords.longitude);
+        const lat = Number(coords.latitude);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        result.set(String(trackerId), { longitude: lng, latitude: lat });
+      });
+      return result;
+    }
+    const raw = unwrapFirestoreFields(value);
+    if (!raw || typeof raw !== 'object') return result;
+    Object.entries(raw).forEach(([trackerId, entry]) => {
+      const coords = extractCoordsPayload(entry);
+      if (!coords || !Number.isFinite(coords.longitude) || !Number.isFinite(coords.latitude)) return;
+      result.set(String(trackerId), { longitude: coords.longitude, latitude: coords.latitude });
+    });
+    return result;
+  };
+
+  const replaceTeamsSessionGoTo = (value) => {
+    trackerGoToLocations.clear();
+    const next = normalizeTeamsGoToMap(value);
+    next.forEach((coords, trackerId) => trackerGoToLocations.set(trackerId, coords));
+    updateTrackerGoToSource();
+  };
+
+  const clearTeamsSessionSubscription = () => {
+    if (!teamsSessionSubscription) {
+      teamsSessionSubscriptionId = null;
+      return;
+    }
+    const unsubscribe = teamsSessionSubscription;
+    teamsSessionSubscription = null;
+    teamsSessionSubscriptionId = null;
+    try {
+      if (typeof unsubscribe === 'function') unsubscribe();
+      else if (typeof unsubscribe === 'string') {
+        const sdkInfo = resolveFirebaseSdk();
+        if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+          sdkInfo.sdk.unsubscribe(unsubscribe);
+        }
+      }
+    } catch {}
+  };
+
+  const startTeamsSessionSubscription = (sessionId) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return false;
+    if (teamsSessionSubscription && teamsSessionSubscriptionId === trimmed) return true;
+    clearTeamsSessionSubscription();
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    let unsubscribe = null;
+    try {
+      const handleSnapshot = (snapshot) => {
+        if (!snapshot) return;
+        const exists = typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists;
+        if (exists === false) return;
+        if (teamsSessionId !== trimmed) return;
+        const data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
+        replaceTeamsSessionGoTo(data?.goTo);
+      };
+      const handleError = (err) => {
+        console.warn('Firestore session subscription failed', trimmed, err);
+        clearTeamsSessionSubscription();
+      };
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') return false;
+        const docRef = db.doc(`sessions/${trimmed}`);
+        unsubscribe = docRef.onSnapshot(handleSnapshot, handleError);
+      } else {
+        const { doc, onSnapshot } = sdkInfo.sdk || {};
+        if (typeof doc !== 'function' || typeof onSnapshot !== 'function') {
+          console.warn('Firebase modular SDK missing doc/onSnapshot');
+          return false;
+        }
+        const docRef = doc(db, 'sessions', trimmed);
+        unsubscribe = onSnapshot(docRef, handleSnapshot, handleError);
+      }
+    } catch (err) {
+      console.warn('Failed to subscribe to session updates', trimmed, err);
+    }
+    if (typeof unsubscribe === 'function' || typeof unsubscribe === 'string') {
+      teamsSessionSubscription = unsubscribe;
+      teamsSessionSubscriptionId = trimmed;
+      return true;
+    }
+    return false;
+  };
+
+  const registerTeamsSessionTrackerId = (trackerId, { updateUI = true, subscribe = true } = {}) => {
+    if (!teamsSessionId) return;
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed || teamsSessionTrackerIds.has(trimmed)) return;
+    teamsSessionTrackerIds.add(trimmed);
+    if (subscribe) startTrackerSubscription(trimmed);
+    if (updateUI) updateTeamsEmptyState();
+  };
+
+  const updateTeamsEmptyState = () => {
+    if (!teamsEmptyState || !teamsEmptyTitle || !teamsEmptySubtitle) return;
+    const listEl = trackersItems || q('#trackersItems');
+    const listHasItems = !!(listEl && listEl.children && listEl.children.length > 0);
+    const listHasTrackers = !!(listEl && listEl.querySelector && listEl.querySelector('.tracker-row'));
+    const hasSessionTrackers = teamsSessionTrackerIds.size > 0;
+    const hasTrackers = trackerStore.size > 0 || listHasTrackers || listHasItems || hasSessionTrackers;
+    const hasSession = !!teamsSessionId;
+    const hasPendingFirstMember = !hasTrackers && hasSession && !!pendingTeamMemberTrackerId;
+    teamsEmptyState.hidden = hasTrackers || hasPendingFirstMember;
+    if (teamsEmptyActions) teamsEmptyActions.hidden = hasSession;
+    if (hasSession) {
+      bindText(teamsEmptyTitle, 'teams.emptyActiveTitle', 'No team members yet');
+      bindText(teamsEmptySubtitle, 'teams.emptyActiveSubtitle', 'Add a member to start tracking.');
+    } else {
+      bindText(teamsEmptyTitle, 'teams.emptyTitle', 'No active session');
+      bindText(teamsEmptySubtitle, 'teams.emptySubtitle', 'Start or resume a session to track team members.');
+    }
+  };
+
+  const updateMapSessionOverlay = () => {
+    if (!mapSessionOverlay) return;
+    const hasSession = !!teamsSessionId;
+    mapSessionOverlay.classList.toggle('has-session', hasSession);
+    if (mapSessionEmpty) mapSessionEmpty.hidden = hasSession;
+    if (mapSessionActive) mapSessionActive.hidden = !hasSession;
+    if (mapSessionStartBtn) mapSessionStartBtn.hidden = hasSession;
+    if (mapSessionResumeBtn) mapSessionResumeBtn.hidden = hasSession;
+    if (mapSessionStopBtn) {
+      mapSessionStopBtn.hidden = !hasSession;
+      mapSessionStopBtn.disabled = teamsSessionEndInFlight;
+      mapSessionStopBtn.setAttribute('aria-disabled', String(!hasSession || teamsSessionEndInFlight));
+    }
+    if (mapSessionTitleEl) {
+      mapSessionTitleEl.setAttribute('contenteditable', hasSession ? 'true' : 'false');
+      mapSessionTitleEl.setAttribute('aria-disabled', String(!hasSession));
+      if (!hasSession) {
+        mapSessionTitleEl.textContent = '';
+        delete mapSessionTitleEl.dataset.i18n;
+      } else if (document.activeElement !== mapSessionTitleEl) {
+        const title = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+        if (title) {
+          delete mapSessionTitleEl.dataset.i18n;
+          mapSessionTitleEl.textContent = title;
+        } else {
+          mapSessionTitleEl.dataset.i18n = 'teams.sessionTitleFallback';
+          mapSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
+        }
+      }
+    }
+    if (mapSessionIdEl) {
+      mapSessionIdEl.textContent = hasSession ? teamsSessionId : '—';
+    }
+  };
+
+  function updateTeamsSessionUI() {
+    const hasSession = !!teamsSessionId;
+    if (teamsSessionIdEl) teamsSessionIdEl.textContent = hasSession ? teamsSessionId : '—';
+    if (teamsSessionTitleEl) {
+      if (!hasSession) {
+        teamsSessionTitleEl.dataset.i18n = 'teams.noActiveSession';
+        teamsSessionTitleEl.textContent = t('teams.noActiveSession', 'No active session');
+      } else if (teamsSessionInfo?.title) {
+        delete teamsSessionTitleEl.dataset.i18n;
+        teamsSessionTitleEl.textContent = teamsSessionInfo.title;
+      } else {
+        teamsSessionTitleEl.dataset.i18n = 'teams.sessionTitleFallback';
+        teamsSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
+      }
+    }
+    if (teamsAddBtn) {
+      teamsAddBtn.disabled = !hasSession;
+      teamsAddBtn.setAttribute('aria-disabled', String(!hasSession));
+      teamsAddBtn.hidden = !hasSession;
+    }
+    if (teamsStartSessionBtn) teamsStartSessionBtn.hidden = hasSession;
+    if (teamsResumeSessionBtn) teamsResumeSessionBtn.hidden = hasSession;
+    updateTeamsEmptyState();
+    updateMapSessionOverlay();
+  }
+
+  const applyMapSessionTitleText = (value) => {
+    if (!mapSessionTitleEl) return;
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (trimmed) {
+      delete mapSessionTitleEl.dataset.i18n;
+      mapSessionTitleEl.textContent = trimmed;
+    } else {
+      mapSessionTitleEl.dataset.i18n = 'teams.sessionTitleFallback';
+      mapSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
+    }
+  };
+
+  const handleMapSessionTitleFocus = () => {
+    if (!mapSessionTitleEl || !teamsSessionId) return;
+    mapSessionTitleBeforeEdit = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+    if (!mapSessionTitleBeforeEdit) {
+      mapSessionTitleEl.textContent = '';
+      delete mapSessionTitleEl.dataset.i18n;
+    }
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(mapSessionTitleEl);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch {}
+  };
+
+  const handleMapSessionTitleKeydown = (event) => {
+    if (!event) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      mapSessionTitleEl?.blur();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      applyMapSessionTitleText(mapSessionTitleBeforeEdit);
+      mapSessionTitleEl?.blur();
+    }
+  };
+
+  const commitMapSessionTitle = async () => {
+    if (!mapSessionTitleEl) return;
+    if (!teamsSessionId) {
+      updateMapSessionOverlay();
+      return;
+    }
+    const nextTitle = String(mapSessionTitleEl.textContent || '').trim();
+    const currentTitle = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+    if (!nextTitle) {
+      applyMapSessionTitleText(currentTitle);
+      return;
+    }
+    if (nextTitle === currentTitle || teamsSessionTitleUpdateInFlight) {
+      applyMapSessionTitleText(currentTitle || nextTitle);
+      return;
+    }
+    teamsSessionTitleUpdateInFlight = true;
+    mapSessionTitleEl.setAttribute('aria-busy', 'true');
+    try {
+      const ok = await writeTeamsSessionDocument(teamsSessionId, { title: nextTitle });
+      if (!ok) {
+        showToast(t('teams.sessionTitleUpdateFailed', 'Unable to update session title. Check Firebase settings.'), 'error');
+        applyMapSessionTitleText(currentTitle);
+        return;
+      }
+      if (!teamsSessionInfo || typeof teamsSessionInfo !== 'object') {
+        teamsSessionInfo = { id: teamsSessionId, title: nextTitle, startDate: null, endDate: null, coordinates: null };
+      } else {
+        teamsSessionInfo.title = nextTitle;
+      }
+      updateTeamsSessionUI();
+    } finally {
+      teamsSessionTitleUpdateInFlight = false;
+      mapSessionTitleEl.removeAttribute('aria-busy');
+    }
+  };
+
+  const setTeamsSessionState = (session, { skipFeaturesSync = false } = {}) => {
+    if (session && typeof session === 'object') {
+      const title = typeof session.title === 'string' ? session.title.trim() : '';
+      teamsSessionInfo = {
+        id: session.id,
+        title,
+        startDate: session.startDate || null,
+        endDate: session.endDate || null,
+        coordinates: session.coordinates || null
+      };
+      teamsSessionId = session.id || null;
+      replaceTeamsSessionTrackerIds(session);
+      replaceTeamsSessionGoTo(session.goTo);
+    } else {
+      teamsSessionInfo = null;
+      teamsSessionId = null;
+      teamsSessionTrackerIds.clear();
+      replaceTeamsSessionGoTo(null);
+    }
+    updateTeamsSessionUI();
+    if (teamsSessionId) {
+      startTeamsSessionSubscription(teamsSessionId);
+      if (!skipFeaturesSync) {
+        requestFirestoreFeaturesSync(0);
+      }
+    } else {
+      clearTeamsSessionSubscription();
+    }
+  };
+
+  const resetTeamsSessionData = () => {
+    teamsSessionTrackerIds.clear();
+    trackerStore.clear();
+    trackerPositionsStore.clear();
+    trackerGoToLocations.clear();
+    clearActiveTrackerGoTo({ skipToolReset: true });
+    trackerAutoReveal.clear();
+    trackerSubscriptions.forEach((entry) => {
+      const unsubscribe = entry?.unsubscribe;
+      try {
+        if (typeof unsubscribe === 'function') unsubscribe();
+        else if (typeof unsubscribe === 'string') {
+          const sdkInfo = resolveFirebaseSdk();
+          if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+            sdkInfo.sdk.unsubscribe(unsubscribe);
+          }
+        }
+      } catch {}
+    });
+    trackerSubscriptions.clear();
+    trackerSubscriptionRetries.forEach((entry) => {
+      if (entry?.timer) clearTimeout(entry.timer);
+    });
+    trackerSubscriptionRetries.clear();
+    pendingTeamMemberTrackerId = null;
+    try { closeTeamMemberModal(); } catch {}
+    resetTrackersRecordingData();
+    trackersRecordingState.active = false;
+    trackersRecordingHasData = false;
+    try { updateTrackerSource(); } catch {}
+    try { updateTrackerPathSource(); } catch {}
+    try { updateTrackerGoToSource(); } catch {}
+    renderTrackersList();
+    updateTrackersPanelState();
+  };
+
+  const getFirestoreHandle = ({ warn = true } = {}) => {
+    const sdkInfo = resolveFirebaseSdk();
+    const db = firestoreInstance || initFirestoreConnection();
+    if (!sdkInfo || !db) {
+      if (warn && !firestoreUnavailableToasted) {
+        firestoreUnavailableToasted = true;
+        showToast(t('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.'), 'error');
+      }
+      return null;
+    }
+    return { sdkInfo, db };
+  };
+
+  const buildSessionPayload = ({ title, coordinates, startDate, endDate, trackerIds } = {}) => ({
+    startDate: startDate instanceof Date ? startDate : new Date(),
+    endDate: endDate instanceof Date ? endDate : null,
+    title: title ? title : null,
+    coordinates: coordinates || null,
+    trackerIds: Array.isArray(trackerIds) ? trackerIds : []
+  });
+
+  const appendTrackerToSessionDocument = async (trackerId) => {
+    const trimmedTrackerId = String(trackerId || '').trim();
+    const trimmedSessionId = String(teamsSessionId || '').trim();
+    if (!trimmedTrackerId || !trimmedSessionId) return false;
+    registerTeamsSessionTrackerId(trimmedTrackerId);
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        const fieldValue = sdkInfo.sdk?.firestore?.FieldValue;
+        if (fieldValue && typeof fieldValue.arrayUnion === 'function' && typeof db.doc === 'function') {
+          const docRef = db.doc(`sessions/${trimmedSessionId}`);
+          await docRef.set({ trackerIds: fieldValue.arrayUnion(trimmedTrackerId) }, { merge: true });
+          return true;
+        }
+      } else {
+        const { doc, setDoc, arrayUnion } = sdkInfo.sdk || {};
+        if (typeof doc === 'function' && typeof setDoc === 'function' && typeof arrayUnion === 'function') {
+          const docRef = doc(db, 'sessions', trimmedSessionId);
+          await setDoc(docRef, { trackerIds: arrayUnion(trimmedTrackerId) }, { merge: true });
+          return true;
+        }
+      }
+      const existing = await fetchTeamsSessionDocument(trimmedSessionId);
+      if (!existing.ok) return false;
+      const current = Array.isArray(existing.data?.trackerIds)
+        ? existing.data.trackerIds
+        : Array.isArray(existing.data?.trackers) ? existing.data.trackers : [];
+      const next = current.includes(trimmedTrackerId) ? current.slice() : current.concat(trimmedTrackerId);
+      return await writeTeamsSessionDocument(trimmedSessionId, { trackerIds: next });
+    } catch (err) {
+      console.warn('Failed to append tracker to session document', trimmedSessionId, trimmedTrackerId, err);
+      return false;
+    }
+  };
+
+  const removeTrackerFromSessionDocument = async (trackerId) => {
+    const trimmedTrackerId = String(trackerId || '').trim();
+    const trimmedSessionId = String(teamsSessionId || '').trim();
+    if (!trimmedTrackerId || !trimmedSessionId) return false;
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        const fieldValue = sdkInfo.sdk?.firestore?.FieldValue;
+        if (fieldValue && typeof fieldValue.arrayRemove === 'function' && typeof db.doc === 'function') {
+          const docRef = db.doc(`sessions/${trimmedSessionId}`);
+          await docRef.set({ trackerIds: fieldValue.arrayRemove(trimmedTrackerId) }, { merge: true });
+          return true;
+        }
+      } else {
+        const { doc, setDoc, arrayRemove } = sdkInfo.sdk || {};
+        if (typeof doc === 'function' && typeof setDoc === 'function' && typeof arrayRemove === 'function') {
+          const docRef = doc(db, 'sessions', trimmedSessionId);
+          await setDoc(docRef, { trackerIds: arrayRemove(trimmedTrackerId) }, { merge: true });
+          return true;
+        }
+      }
+      const existing = await fetchTeamsSessionDocument(trimmedSessionId);
+      if (!existing.ok) return false;
+      const current = Array.isArray(existing.data?.trackerIds)
+        ? existing.data.trackerIds
+        : Array.isArray(existing.data?.trackers) ? existing.data.trackers : [];
+      const next = current.filter((entry) => String(entry || '').trim() !== trimmedTrackerId);
+      return await writeTeamsSessionDocument(trimmedSessionId, { trackerIds: next });
+    } catch (err) {
+      console.warn('Failed to remove tracker from session document', trimmedSessionId, trimmedTrackerId, err);
+      return false;
+    }
+  };
+
+  const deleteTeamTrackerDocument = async (trackerId) => {
+    const trimmedTrackerId = String(trackerId || '').trim();
+    const trimmedSessionId = String(teamsSessionId || '').trim();
+    if (!trimmedTrackerId || !trimmedSessionId) return false;
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') return false;
+        const docRef = db.doc(`sessions/${trimmedSessionId}/trackers/${trimmedTrackerId}`);
+        await docRef.delete();
+        return true;
+      }
+      const { doc, deleteDoc } = sdkInfo.sdk || {};
+      if (typeof doc !== 'function' || typeof deleteDoc !== 'function') return false;
+      const docRef = doc(db, 'sessions', trimmedSessionId, 'trackers', trimmedTrackerId);
+      await deleteDoc(docRef);
+      return true;
+    } catch (err) {
+      console.warn('Failed to delete team tracker document', trimmedSessionId, trimmedTrackerId, err);
+      return false;
+    }
+  };
+
+  const writeTeamsSessionDocument = async (sessionId, payload) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return false;
+    const handle = getFirestoreHandle();
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') {
+          console.warn('Firebase compat SDK missing doc().');
+          return false;
+        }
+        const docRef = db.doc(`sessions/${trimmed}`);
+        await docRef.set(payload, { merge: true });
+      } else {
+        const { doc, setDoc } = sdkInfo.sdk || {};
+        if (typeof doc !== 'function' || typeof setDoc !== 'function') {
+          console.warn('Firebase modular SDK missing doc/setDoc.');
+          return false;
+        }
+        const docRef = doc(db, 'sessions', trimmed);
+        await setDoc(docRef, payload, { merge: true });
+      }
+      return true;
+    } catch (err) {
+      console.warn('Failed to write team session document', trimmed, err);
+      return false;
+    }
+  };
+
+  const buildTeamsGoToPayload = () => {
+    const payload = {};
+    trackerGoToLocations.forEach((coords, trackerId) => {
+      if (!coords) return;
+      const lng = Number(coords.longitude);
+      const lat = Number(coords.latitude);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      payload[String(trackerId)] = { longitude: lng, latitude: lat };
+    });
+    return payload;
+  };
+
+  const persistTeamsGoToLocations = async () => {
+    if (!teamsSessionId) return false;
+    const sessionId = String(teamsSessionId || '').trim();
+    if (!sessionId) return false;
+    const payload = buildTeamsGoToPayload();
+    return await writeTeamsSessionDocument(sessionId, { goTo: payload });
+  };
+
+  const removeTrackerGoToFromSessionDocument = async (trackerId) => {
+    const trimmedTrackerId = String(trackerId || '').trim();
+    const trimmedSessionId = String(teamsSessionId || '').trim();
+    if (!trimmedTrackerId || !trimmedSessionId) return false;
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    const fieldPath = `goTo.${trimmedTrackerId}`;
+    try {
+      if (sdkInfo.type === 'compat') {
+        const fieldValue = sdkInfo.sdk?.firestore?.FieldValue;
+        if (fieldValue && typeof fieldValue.delete === 'function' && typeof db.doc === 'function') {
+          const docRef = db.doc(`sessions/${trimmedSessionId}`);
+          if (typeof docRef.update === 'function') {
+            await docRef.update({ [fieldPath]: fieldValue.delete() });
+          } else {
+            await docRef.set({ [fieldPath]: fieldValue.delete() }, { merge: true });
+          }
+          return true;
+        }
+      } else {
+        const { doc, updateDoc, deleteField } = sdkInfo.sdk || {};
+        if (typeof doc === 'function' && typeof updateDoc === 'function' && typeof deleteField === 'function') {
+          const docRef = doc(db, 'sessions', trimmedSessionId);
+          await updateDoc(docRef, { [fieldPath]: deleteField() });
+          return true;
+        }
+      }
+      const existing = await fetchTeamsSessionDocument(trimmedSessionId);
+      if (!existing.ok) return false;
+      const nextMap = normalizeTeamsGoToMap(existing.data?.goTo);
+      nextMap.delete(trimmedTrackerId);
+      const payload = {};
+      nextMap.forEach((coords, id) => {
+        if (!coords) return;
+        const lng = Number(coords.longitude);
+        const lat = Number(coords.latitude);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        payload[String(id)] = { longitude: lng, latitude: lat };
+      });
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc === 'function') {
+          const docRef = db.doc(`sessions/${trimmedSessionId}`);
+          if (typeof docRef.update === 'function') {
+            await docRef.update({ goTo: payload });
+            return true;
+          }
+          if (typeof docRef.set === 'function') {
+            await docRef.set({ goTo: payload }, { mergeFields: ['goTo'] });
+            return true;
+          }
+        }
+      } else {
+        const { doc, updateDoc, setDoc } = sdkInfo.sdk || {};
+        if (typeof doc === 'function' && typeof updateDoc === 'function') {
+          const docRef = doc(db, 'sessions', trimmedSessionId);
+          await updateDoc(docRef, { goTo: payload });
+          return true;
+        }
+        if (typeof doc === 'function' && typeof setDoc === 'function') {
+          const docRef = doc(db, 'sessions', trimmedSessionId);
+          await setDoc(docRef, { goTo: payload }, { mergeFields: ['goTo'] });
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.warn('Failed to remove go-to from session document', trimmedSessionId, trimmedTrackerId, err);
+      return false;
+    }
+  };
+
+  const setTrackerGoToLocation = async (trackerId, coords) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed || !coords) return false;
+    const lng = Number(coords.longitude);
+    const lat = Number(coords.latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+    trackerGoToLocations.set(trimmed, { longitude: lng, latitude: lat });
+    const current = trackerStore.get(trimmed);
+    if (current && Number.isFinite(current.longitude) && Number.isFinite(current.latitude)) {
+      maybeAutoClearTrackerGoTo(trimmed, current, { skipUpdate: true, skipPersist: true });
+    }
+    updateTrackerGoToSource();
+    const ok = await persistTeamsGoToLocations();
+    if (!ok && teamsSessionId) {
+      console.warn('Failed to persist go-to location', trimmed);
+    }
+    return ok;
+  };
+
+  const clearTrackerGoToLocation = async (trackerId) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return false;
+    if (!trackerGoToLocations.has(trimmed)) return false;
+    trackerGoToLocations.delete(trimmed);
+    updateTrackerGoToSource();
+    const ok = await removeTrackerGoToFromSessionDocument(trimmed);
+    if (!ok && teamsSessionId) {
+      console.warn('Failed to persist go-to removal', trimmed);
+    }
+    return ok;
+  };
+
+  const fetchTeamsSessionDocument = async (sessionId) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return { ok: false, reason: 'missing' };
+    const handle = getFirestoreHandle();
+    if (!handle) return { ok: false, reason: 'firestore' };
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') {
+          console.warn('Firebase compat SDK missing doc().');
+          return { ok: false, reason: 'sdk' };
+        }
+        const docRef = db.doc(`sessions/${trimmed}`);
+        const snap = await docRef.get();
+        const exists = typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+        if (!exists) return { ok: false, reason: 'not-found' };
+        const data = typeof snap.data === 'function' ? snap.data() : snap.data;
+        return { ok: true, data: data || {} };
+      }
+      const { doc, getDoc } = sdkInfo.sdk || {};
+      if (typeof doc !== 'function' || typeof getDoc !== 'function') {
+        console.warn('Firebase modular SDK missing doc/getDoc.');
+        return { ok: false, reason: 'sdk' };
+      }
+      const docRef = doc(db, 'sessions', trimmed);
+      const snap = await getDoc(docRef);
+      const exists = typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+      if (!exists) return { ok: false, reason: 'not-found' };
+      const data = typeof snap.data === 'function' ? snap.data() : snap.data;
+      return { ok: true, data: data || {} };
+    } catch (err) {
+      console.warn('Failed to fetch team session document', trimmed, err);
+      return { ok: false, reason: 'error', error: err };
+    }
+  };
+
+  const extractSessionFeatures = (data) => {
+    if (!data || typeof data !== 'object') return [];
+    const candidates = [
+      data.features,
+      data.data?.features,
+      data.data?.data?.features,
+      data.featureCollection,
+      data.data?.featureCollection
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      if (Array.isArray(candidate)) return candidate;
+      if (candidate.type === 'FeatureCollection' && Array.isArray(candidate.features)) {
+        return candidate.features;
+      }
+      if (Array.isArray(candidate.features)) return candidate.features;
+      if (candidate.features && candidate.features.type === 'FeatureCollection' && Array.isArray(candidate.features.features)) {
+        return candidate.features.features;
+      }
+    }
+    return [];
+  };
+
+  const cloneSessionFeature = (feature) => {
+    try {
+      return JSON.parse(JSON.stringify(feature));
+    } catch {
+      return feature;
+    }
+  };
+
+  const normalizeSessionFeature = (feature, existingIds, existingEndpoints) => {
+    if (!feature || feature.type !== 'Feature' || !feature.geometry) return null;
+    const clone = cloneSessionFeature(feature);
+    const restored = reviveNestedArrayStrings(clone);
+    restored.properties = { ...(restored.properties || {}) };
+    const geomType = restored.geometry?.type;
+    if (!restored.properties.kind) {
+      if (geomType === 'Polygon') restored.properties.kind = 'polygon';
+      else if (geomType === 'LineString') restored.properties.kind = 'line';
+      else if (geomType === 'Point') restored.properties.kind = 'poi';
+    }
+    if (!restored.properties.color) {
+      restored.properties.color = (typeof nextColor === 'function') ? nextColor() : '#1565C0';
+    }
+    const rawId = typeof restored.properties.id === 'string' ? restored.properties.id.trim() : '';
+    if (rawId && existingIds.has(rawId)) return null;
+    const relatedLineId = restored.properties.relatedLineId || restored.properties.related_line_id;
+    const kind = restored.properties.kind;
+    const isEndpoint = restored.properties.isLineEndpoint === true || kind === 'line-start' || kind === 'line-end';
+    if (isEndpoint && relatedLineId && kind) {
+      const key = `${relatedLineId}:${kind}`;
+      if (existingEndpoints.has(key)) return null;
+      existingEndpoints.add(key);
+    }
+    let finalId = rawId;
+    if (!finalId || existingIds.has(finalId)) {
+      const generateId = () => (typeof newId === 'function')
+        ? newId()
+        : `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      do { finalId = generateId(); } while (existingIds.has(finalId));
+      restored.properties.id = finalId;
+    }
+    existingIds.add(finalId);
+    return restored;
+  };
+
+  const applySessionFeaturesFromDoc = (data, { mode = 'auto' } = {}) => {
+    const features = extractSessionFeatures(data);
+    if (!features.length) return { ok: false, reason: 'empty', total: 0 };
+    let storeRef = null;
+    try { storeRef = (window)._drawStore || drawStore; } catch { storeRef = null; }
+    if (!storeRef || !Array.isArray(storeRef.features)) return { ok: false, reason: 'store', total: features.length };
+
+    const hasExisting = storeRef.features.some((feature) => feature && !feature?.properties?.isLineEndpoint);
+    const replace = mode === 'replace' ? true : mode === 'merge' ? false : !hasExisting;
+
+    const existingIds = new Set();
+    const existingEndpoints = new Set();
+    if (!replace) {
+      storeRef.features.forEach((feature) => {
+        const id = feature?.properties?.id;
+        if (id) existingIds.add(String(id));
+        const kind = feature?.properties?.kind;
+        const relatedLineId = feature?.properties?.relatedLineId || feature?.properties?.related_line_id;
+        const isEndpoint = feature?.properties?.isLineEndpoint === true || kind === 'line-start' || kind === 'line-end';
+        if (isEndpoint && relatedLineId && kind) {
+          existingEndpoints.add(`${relatedLineId}:${kind}`);
+        }
+      });
+    }
+
+    if (replace) storeRef.features = [];
+
+    const added = [];
+    features.forEach((feature) => {
+      const normalized = normalizeSessionFeature(feature, existingIds, existingEndpoints);
+      if (normalized) added.push(normalized);
+    });
+
+    if (!added.length) return { ok: false, reason: 'no-new', total: features.length, mode: replace ? 'replace' : 'merge' };
+    added.forEach((feature) => storeRef.features.push(feature));
+
+    let refreshed = false;
+    try {
+      if (typeof refreshDraw === 'function') {
+        refreshDraw();
+        refreshed = true;
+      }
+    } catch {}
+    if (!refreshed) {
+      try {
+        if (typeof window._refreshDraw === 'function') {
+          window._refreshDraw();
+          refreshed = true;
+        }
+      } catch {}
+    }
+    if (!refreshed) {
+      try { if (typeof updateDrawingsPanel === 'function') updateDrawingsPanel(); } catch {}
+    }
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+
+    return { ok: true, added: added.length, total: features.length, mode: replace ? 'replace' : 'merge' };
+  };
+
+  const buildSessionStateFromDoc = (sessionId, data) => {
+    const title = typeof data?.title === 'string' ? data.title.trim() : '';
+    const startDate = normalizeSessionDate(data?.startDate);
+    const endDate = normalizeSessionDate(data?.endDate);
+    const coordinates = normalizeSessionCoordinates(data?.coordinates);
+    const trackerIds = normalizeSessionTrackerIds(data);
+    const goTo = normalizeTeamsGoToMap(data?.goTo);
+    return {
+      id: sessionId,
+      title,
+      startDate,
+      endDate,
+      coordinates,
+      trackerIds,
+      goTo
+    };
+  };
+
+  let teamsStartSessionInFlight = false;
+  let teamsResumeSessionInFlight = false;
+  let teamsLoadSessionInFlight = false;
+
+  const formatSessionDateTime = (value) => {
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) return '';
+    try {
+      return value.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return value.toLocaleString();
+    }
+  };
+
+  const formatSessionStartDateText = (value) => {
+    if (!value) return t('teams.loadSessionModal.unknownDate', 'Unknown');
+    const formatted = formatSessionDateTime(value);
+    return formatted || t('teams.loadSessionModal.unknownDate', 'Unknown');
+  };
+
+  const formatSessionEndDateText = (value) => {
+    if (!value) return t('teams.loadSessionModal.active', 'Active');
+    const formatted = formatSessionDateTime(value);
+    return formatted || t('teams.loadSessionModal.active', 'Active');
+  };
+
+  const setTeamsLoadSessionStatus = (key, fallback) => {
+    if (!teamsLoadSessionStatus) return;
+    if (!key) {
+      teamsLoadSessionStatus.hidden = true;
+      return;
+    }
+    teamsLoadSessionStatus.hidden = false;
+    teamsLoadSessionStatus.textContent = t(key, fallback);
+  };
+
+  const setTeamsLoadSessionBusy = (busy) => {
+    if (!teamsLoadSessionList) return;
+    teamsLoadSessionList.classList.toggle('is-busy', !!busy);
+    teamsLoadSessionList.setAttribute('aria-busy', String(!!busy));
+  };
+
+  const clearTeamsLoadSessionList = () => {
+    if (!teamsLoadSessionList) return;
+    teamsLoadSessionList.innerHTML = '';
+  };
+
+  const fetchTeamsSessionsList = async () => {
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return { ok: false, reason: 'firestore' };
+    const { sdkInfo, db } = handle;
+    try {
+      const items = [];
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.collection !== 'function') return { ok: false, reason: 'sdk' };
+        let ref = db.collection('sessions');
+        if (typeof ref.orderBy === 'function') {
+          ref = ref.orderBy('startDate', 'desc');
+        }
+        const snap = await ref.get();
+        snap.forEach((doc) => {
+          const data = typeof doc.data === 'function' ? doc.data() : doc.data;
+          items.push({ id: doc.id, data: data || {} });
+        });
+      } else {
+        const { collection, getDocs, query, orderBy } = sdkInfo.sdk || {};
+        if (typeof collection !== 'function' || typeof getDocs !== 'function') return { ok: false, reason: 'sdk' };
+        const colRef = collection(db, 'sessions');
+        let qref = colRef;
+        if (typeof query === 'function' && typeof orderBy === 'function') {
+          qref = query(colRef, orderBy('startDate', 'desc'));
+        }
+        const snap = await getDocs(qref);
+        snap.forEach((doc) => {
+          const data = typeof doc.data === 'function' ? doc.data() : doc.data;
+          items.push({ id: doc.id, data: data || {} });
+        });
+      }
+      return { ok: true, items };
+    } catch (err) {
+      console.warn('Failed to fetch session list', err);
+      return { ok: false, reason: 'error', error: err };
+    }
+  };
+
+  const resumeTeamsSessionById = async (sessionId) => {
+    if (teamsResumeSessionInFlight || teamsSessionId) return;
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return;
+    teamsResumeSessionInFlight = true;
+    setTeamsLoadSessionBusy(true);
+    try {
+      const result = await fetchTeamsSessionDocument(trimmed);
+      if (!result.ok) {
+        if (result.reason === 'not-found') {
+          showToast(t('teams.sessionNotFound', 'Session not found.'), 'error');
+        } else {
+          showToast(t('teams.sessionResumeFailed', 'Unable to resume session. Check the session ID and Firebase settings.'), 'error');
+        }
+        return;
+      }
+      resetTeamsSessionData();
+      const sessionState = buildSessionStateFromDoc(trimmed, result.data);
+      const featureApplyResult = applySessionFeaturesFromDoc(result.data);
+      setTeamsSessionState(sessionState, { skipFeaturesSync: true });
+      if (featureApplyResult.ok || featureApplyResult.reason === 'empty' || featureApplyResult.reason === 'no-new') {
+        requestFirestoreFeaturesSync(0);
+      }
+      focusResumedSessionCenter(trimmed, result.data, sessionState.coordinates).catch((err) => {
+        console.warn('Failed to focus on resumed session center', err);
+      });
+      closeTeamsResumeSessionModal();
+      showToast(t('teams.sessionResumed', 'Session resumed.'));
+    } finally {
+      teamsResumeSessionInFlight = false;
+      setTeamsLoadSessionBusy(false);
+    }
+  };
+
+  const renderTeamsLoadSessionList = (entries) => {
+    if (!teamsLoadSessionList) return;
+    clearTeamsLoadSessionList();
+    if (!entries.length) {
+      setTeamsLoadSessionStatus('teams.loadSessionModal.empty', 'No sessions found.');
+      return;
+    }
+    setTeamsLoadSessionStatus(null);
+    const titleFallback = t('teams.sessionTitleFallback', 'Untitled session');
+    const idLabel = t('teams.loadSessionModal.idLabel', 'ID');
+    const startLabel = t('teams.loadSessionModal.startLabel', 'Start');
+    const endLabel = t('teams.loadSessionModal.endLabel', 'End');
+    const featuresLabel = t('teams.loadSessionModal.featuresLabel', 'Features');
+    const teamsLabel = t('teams.loadSessionModal.teamsLabel', 'Teams');
+    const statusLabels = {
+      stopped: t('teams.loadSessionModal.statusStopped', 'Stopped'),
+      open: t('teams.loadSessionModal.statusOpen', 'Open'),
+      running: t('teams.loadSessionModal.statusRunning', 'Running')
+    };
+    entries.forEach((entry) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'session-row';
+      row.dataset.sessionId = entry.id;
+      row.setAttribute('role', 'listitem');
+      row.addEventListener('click', () => resumeTeamsSessionById(entry.id));
+
+      const main = document.createElement('div');
+      main.className = 'session-row-main';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'session-row-title';
+      const titleText = entry.title || titleFallback;
+      const status = entry.endDate ? 'stopped' : entry.hasFeatures ? 'running' : 'open';
+      const statusLabel = statusLabels[status] || statusLabels.open;
+      const statusDot = document.createElement('span');
+      statusDot.className = `session-row-status session-row-status--${status}`;
+      statusDot.setAttribute('role', 'img');
+      statusDot.setAttribute('aria-label', statusLabel);
+      statusDot.title = statusLabel;
+      const titleTextEl = document.createElement('span');
+      titleTextEl.className = 'session-row-title-text';
+      titleTextEl.textContent = titleText;
+      titleTextEl.title = titleText;
+      titleEl.appendChild(statusDot);
+      titleEl.appendChild(titleTextEl);
+
+      const idEl = document.createElement('div');
+      idEl.className = 'session-row-id';
+      idEl.textContent = `${idLabel}: ${entry.id}`;
+      idEl.title = entry.id;
+
+      const stats = document.createElement('div');
+      stats.className = 'session-row-stats';
+      const featuresStat = document.createElement('div');
+      featuresStat.className = 'session-row-stat';
+      const featuresLabelEl = document.createElement('div');
+      featuresLabelEl.className = 'session-row-stat-label';
+      featuresLabelEl.textContent = featuresLabel;
+      const featuresValueEl = document.createElement('div');
+      featuresValueEl.className = 'session-row-stat-value';
+      const featuresCount = Number.isFinite(entry.featuresCount) ? entry.featuresCount : 0;
+      featuresValueEl.textContent = String(featuresCount);
+      featuresStat.appendChild(featuresLabelEl);
+      featuresStat.appendChild(featuresValueEl);
+
+      const teamsStat = document.createElement('div');
+      teamsStat.className = 'session-row-stat';
+      const teamsLabelEl = document.createElement('div');
+      teamsLabelEl.className = 'session-row-stat-label';
+      teamsLabelEl.textContent = teamsLabel;
+      const teamsValueEl = document.createElement('div');
+      teamsValueEl.className = 'session-row-stat-value';
+      const teamsCount = Number.isFinite(entry.teamsCount) ? entry.teamsCount : 0;
+      teamsValueEl.textContent = String(teamsCount);
+      teamsStat.appendChild(teamsLabelEl);
+      teamsStat.appendChild(teamsValueEl);
+
+      stats.appendChild(featuresStat);
+      stats.appendChild(teamsStat);
+
+      const dates = document.createElement('div');
+      dates.className = 'session-row-dates';
+
+      const startLine = document.createElement('div');
+      startLine.className = 'session-row-date';
+      startLine.textContent = `${startLabel}: ${formatSessionStartDateText(entry.startDate)}`;
+
+      const endLine = document.createElement('div');
+      endLine.className = 'session-row-date';
+      endLine.textContent = `${endLabel}: ${formatSessionEndDateText(entry.endDate)}`;
+
+      main.appendChild(titleEl);
+      main.appendChild(idEl);
+      dates.appendChild(startLine);
+      dates.appendChild(endLine);
+      row.appendChild(main);
+      row.appendChild(stats);
+      row.appendChild(dates);
+      teamsLoadSessionList.appendChild(row);
+    });
+  };
+
+  const refreshTeamsLoadSessionList = async () => {
+    if (teamsLoadSessionInFlight) return;
+    teamsLoadSessionInFlight = true;
+    setTeamsLoadSessionBusy(true);
+    setTeamsLoadSessionStatus('teams.loadSessionModal.loading', 'Loading sessions...');
+    clearTeamsLoadSessionList();
+    try {
+      const result = await fetchTeamsSessionsList();
+      if (!result.ok) {
+        if (result.reason === 'firestore') {
+          setTeamsLoadSessionStatus('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.');
+        } else {
+          setTeamsLoadSessionStatus('teams.loadSessionModal.error', 'Unable to load sessions. Check Firebase settings.');
+        }
+        return;
+      }
+      const sessions = result.items
+        .map((entry) => {
+          const title = typeof entry.data?.title === 'string' ? entry.data.title.trim() : '';
+          const startDate = normalizeSessionDate(entry.data?.startDate);
+          const endDate = normalizeSessionDate(entry.data?.endDate);
+          const startTime = startDate instanceof Date ? startDate.getTime() : NaN;
+          const endTime = endDate instanceof Date ? endDate.getTime() : NaN;
+          const sortValue = Number.isFinite(startTime) ? startTime : Number.isFinite(endTime) ? endTime : 0;
+          const featuresCount = filterSessionFeatures(extractSessionFeatures(entry.data)).length;
+          const teamsCount = normalizeSessionTrackerIds(entry.data).length;
+          return {
+            id: entry.id,
+            title,
+            startDate,
+            endDate,
+            sortValue,
+            featuresCount,
+            teamsCount,
+            hasFeatures: featuresCount > 0
+          };
+        })
+        .filter((entry) => entry.id);
+      sessions.sort((a, b) => b.sortValue - a.sortValue);
+      renderTeamsLoadSessionList(sessions);
+    } finally {
+      teamsLoadSessionInFlight = false;
+      setTeamsLoadSessionBusy(false);
+    }
+  };
+
+  const openTeamsStartSessionModal = () => {
+    if (!teamsStartSessionModal) return;
+    if (teamsSessionId) return;
+    if (teamsStartSessionTitleInput) teamsStartSessionTitleInput.value = '';
+    teamsStartSessionModal.hidden = false;
+    teamsStartSessionModal.setAttribute('aria-hidden', 'false');
+    try { teamsStartSessionTitleInput?.focus(); } catch {}
+  };
+
+  const closeTeamsStartSessionModal = () => {
+    if (!teamsStartSessionModal) return;
+    teamsStartSessionModal.hidden = true;
+    teamsStartSessionModal.setAttribute('aria-hidden', 'true');
+  };
+
+  const openTeamsResumeSessionModal = () => {
+    if (!teamsResumeSessionModal) return;
+    if (teamsSessionId) return;
+    teamsResumeSessionModal.hidden = false;
+    teamsResumeSessionModal.setAttribute('aria-hidden', 'false');
+    refreshTeamsLoadSessionList();
+  };
+
+  const closeTeamsResumeSessionModal = () => {
+    if (!teamsResumeSessionModal) return;
+    teamsResumeSessionModal.hidden = true;
+    teamsResumeSessionModal.setAttribute('aria-hidden', 'true');
+  };
+
+  const handleTeamsStartSessionSubmit = async (event) => {
+    if (event?.preventDefault) event.preventDefault();
+    if (teamsStartSessionInFlight || teamsSessionId) return;
+    const title = (teamsStartSessionTitleInput?.value || '').trim();
+    if (!title) {
+      showToast(t('teams.sessionTitleRequired', 'Please enter a session title.'), 'error');
+      try { teamsStartSessionTitleInput?.focus(); } catch {}
+      return;
+    }
+    const coordinates = getSessionCenterCoordinates();
+    const sessionId = generateSessionId();
+    const payload = buildSessionPayload({ title, coordinates, startDate: new Date(), endDate: null });
+    teamsStartSessionInFlight = true;
+    if (teamsStartSessionSubmit) teamsStartSessionSubmit.disabled = true;
+    try {
+      const ok = await writeTeamsSessionDocument(sessionId, payload);
+      if (!ok) {
+        showToast(t('teams.sessionStartFailed', 'Unable to start session. Check Firebase settings.'), 'error');
+        return;
+      }
+      resetTeamsSessionData();
+      setTeamsSessionState({
+        id: sessionId,
+        title,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        coordinates: payload.coordinates
+      });
+      closeTeamsStartSessionModal();
+      showToast(t('teams.sessionStarted', 'Session started.'));
+    } finally {
+      teamsStartSessionInFlight = false;
+      if (teamsStartSessionSubmit) teamsStartSessionSubmit.disabled = false;
+    }
+  };
+
+  const handleTeamsResumeSessionSubmit = async (event, sessionIdOverride) => {
+    if (event?.preventDefault) event.preventDefault();
+    const sessionId = String(sessionIdOverride || '').trim();
+    if (!sessionId) return;
+    await resumeTeamsSessionById(sessionId);
+  };
+
+  const clearTeamsSessionMapState = () => {
+    try { (window).draw?.clear?.(); } catch {}
+    try { if (typeof setDirty === 'function') setDirty(false); } catch {}
+  };
+
+  const endTeamsSession = async () => {
+    if (teamsSessionEndInFlight || !teamsSessionId) return;
+    const confirmMessage = t('teams.sessionEndConfirm', 'Stop this session?');
+    let confirmed = true;
+    try { confirmed = window.confirm(confirmMessage); } catch { confirmed = true; }
+    if (!confirmed) return;
+    const sessionId = String(teamsSessionId || '').trim();
+    if (!sessionId) return;
+    teamsSessionEndInFlight = true;
+    updateMapSessionOverlay();
+    try {
+      const ok = await writeTeamsSessionDocument(sessionId, { endDate: new Date() });
+      if (!ok) {
+        showToast(t('teams.sessionEndFailed', 'Unable to end session. Check Firebase settings.'), 'error');
+        return;
+      }
+      resetTeamsSessionData();
+      setTeamsSessionState(null);
+      clearTeamsSessionMapState();
+      showToast(t('teams.sessionEnded', 'Session ended.'), 'success');
+    } finally {
+      teamsSessionEndInFlight = false;
+      updateMapSessionOverlay();
+    }
+  };
+
+  const buildTeamMemberPayload = (trackerId) => {
+    const resolvedTrackerId = trackerId || '';
+    if (!teamsSessionId) return null;
+    return JSON.stringify({
+      id: teamsSessionId,
+      updateDocumentPath: `/sessions/${teamsSessionId}/trackers/${resolvedTrackerId}`,
+      trackerId: resolvedTrackerId,
+      mapboxApiKey: readMapboxToken(),
+      firebaseConfig: readFirebaseConfigString()
+    });
+  };
+
+  const ensureTeamTracker = (trackerId, { color } = {}) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return null;
+    let tracker = trackerStore.get(trimmed);
+    if (!tracker) {
+      const resolvedColor = color || nextTrackerColor();
+      tracker = {
+        id: trimmed,
+        longitude: null,
+        latitude: null,
+        altitude: null,
+        battery: null,
+        hops: null,
+        updatedAt: Date.now(),
+        raw: null,
+        name: null,
+        title: null,
+        color: resolvedColor,
+        poiIcon: null,
+        visible: true
+      };
+      trackerStore.set(trimmed, tracker);
+      ensureTrackerHistoryEntry(trimmed);
+      recordLiveTrackerMetadata(tracker, { delay: 0 });
+      updateTrackerSource();
+      updateTrackerPathSource();
+      renderTrackersList();
+      updateTrackersPanelState();
+      refreshTrackersControlsState();
+      return tracker;
+    }
+    return tracker;
+  };
+
+  const normalizeTrackerLabelText = (value) => {
+    if (value == null) return '';
+    return String(value).replace(/\s+/g, ' ').trim();
+  };
+
+  const readStringField = (value) => {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+      if (typeof value.stringValue === 'string') return value.stringValue;
+      if (typeof value.textValue === 'string') return value.textValue;
+      if (typeof value.value === 'string') return value.value;
+    }
+    return null;
+  };
+
+  const unwrapFirestoreFields = (value) => {
+    if (!value || typeof value !== 'object') return value;
+    if (value.mapValue && value.mapValue.fields && typeof value.mapValue.fields === 'object') {
+      return value.mapValue.fields;
+    }
+    if (value.fields && typeof value.fields === 'object') return value.fields;
+    return value;
+  };
+
+  const extractProfilePayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+    const candidates = [];
+    const pushCandidate = (value) => {
+      if (!value) return;
+      candidates.push(value);
+    };
+    pushCandidate(payload.profile);
+    pushCandidate(payload.data?.profile);
+    pushCandidate(payload.fields?.profile);
+    pushCandidate(payload.profile?.mapValue?.fields);
+    pushCandidate(payload.fields?.profile?.mapValue?.fields);
+    pushCandidate(payload.data?.fields?.profile);
+    for (const candidate of candidates) {
+      const profile = unwrapFirestoreFields(candidate);
+      if (!profile || typeof profile !== 'object') continue;
+      const nameRaw = readStringField(profile.name);
+      const orgRaw = readStringField(profile.organisation)
+        || readStringField(profile.organization)
+        || readStringField(profile.org);
+      const unitRaw = readStringField(profile.unitName)
+        || readStringField(profile.unit_name)
+        || readStringField(profile.unit);
+      const name = normalizeTrackerLabelText(nameRaw);
+      const organisation = normalizeTrackerLabelText(orgRaw);
+      const unitName = normalizeTrackerLabelText(unitRaw);
+      if (name || organisation || unitName) {
+        return { name, organisation, unitName };
+      }
+    }
+    return null;
+  };
+
+  const formatProfileTitle = (profile) => {
+    if (!profile || typeof profile !== 'object') return '';
+    const org = normalizeTrackerLabelText(profile.organisation || profile.organization || profile.org);
+    const unit = normalizeTrackerLabelText(profile.unitName || profile.unit_name || profile.unit);
+    if (org && unit) return `${org} - ${unit}`;
+    return org || unit || '';
+  };
+
+  const applyTrackerProfileUpdate = (trackerId, profile) => {
+    if (!profile) return;
+    const trimmedId = String(trackerId || '').trim();
+    if (!trimmedId) return;
+    ensureTeamTracker(trimmedId);
+    const current = trackerStore.get(trimmedId);
+    if (!current) return;
+    const next = { ...current };
+    const name = normalizeTrackerLabelText(profile.name);
+    const title = formatProfileTitle(profile);
+    let changed = false;
+    if (name) {
+      const currentName = normalizeTrackerLabelText(current.name || '');
+      const priorProfileName = normalizeTrackerLabelText(current.profileName || '');
+      if (!currentName || currentName === current.id || (priorProfileName && currentName === priorProfileName)) {
+        next.name = name;
+        changed = true;
+      }
+      if (name !== priorProfileName) {
+        next.profileName = name;
+        changed = true;
+      }
+    }
+    if (title && title !== (current.title || '')) {
+      next.title = title;
+      changed = true;
+    }
+    if (changed) {
+      trackerStore.set(trimmedId, next);
+      recordLiveTrackerMetadata(next, { delay: 0 });
+      updateTrackerSource();
+      updateTrackerPathSource();
+      renderTrackersList();
+      try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+    }
+  };
+
+  const extractCoordsPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const readNumber = (value) => {
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      if (value && typeof value === 'object') {
+        const candidate = value.doubleValue ?? value.integerValue ?? value.stringValue ?? value.floatValue;
+        if (candidate !== undefined) {
+          const parsed = Number(candidate);
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+      }
+      return null;
+    };
+
+    const extractFromArray = (arr) => {
+      if (!Array.isArray(arr) || arr.length < 2) return null;
+      const a = readNumber(arr[0]);
+      const b = readNumber(arr[1]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      const aAbs = Math.abs(a);
+      const bAbs = Math.abs(b);
+      if (aAbs > 90 && bAbs <= 90) return { longitude: a, latitude: b };
+      if (bAbs > 90 && aAbs <= 90) return { longitude: b, latitude: a };
+      return { longitude: a, latitude: b };
+    };
+
+    const extractFromObject = (obj) => {
+      if (!obj || typeof obj !== 'object') return null;
+      if (obj.geoPointValue) return extractFromObject(obj.geoPointValue);
+      if (obj.mapValue && obj.mapValue.fields) return extractFromObject(obj.mapValue.fields);
+      if (Array.isArray(obj)) return extractFromArray(obj);
+
+      const directLat = readNumber(obj.latitude ?? obj.lat ?? obj._lat);
+      const directLng = readNumber(obj.longitude ?? obj.lng ?? obj.lon ?? obj.long ?? obj._long ?? obj._lng);
+      if (Number.isFinite(directLat) && Number.isFinite(directLng)) {
+        return { longitude: directLng, latitude: directLat, altitude: readNumber(obj.altitude ?? obj.alt ?? obj.elevation) };
+      }
+
+      if (Number.isFinite(obj.latitude) && Number.isFinite(obj.longitude)) {
+        return { longitude: obj.longitude, latitude: obj.latitude };
+      }
+
+      return null;
+    };
+
+    const candidates = [];
+    const pushCandidate = (value) => {
+      if (!value) return;
+      candidates.push(value);
+    };
+
+    pushCandidate(payload.coords);
+    pushCandidate(payload.location);
+    pushCandidate(payload.position);
+    pushCandidate(payload.geo);
+    pushCandidate(payload.geopoint);
+    pushCandidate(payload.point);
+    pushCandidate(payload);
+
+    if (payload.data && typeof payload.data === 'object') {
+      pushCandidate(payload.data.coords);
+      pushCandidate(payload.data.location);
+      pushCandidate(payload.data.position);
+      pushCandidate(payload.data);
+    }
+
+    if (payload.fields && typeof payload.fields === 'object') {
+      const fields = payload.fields;
+      pushCandidate(fields);
+      ['coords', 'location', 'position', 'geo', 'geopoint', 'point'].forEach((key) => {
+        const entry = fields[key];
+        if (entry?.mapValue?.fields) pushCandidate(entry.mapValue.fields);
+        else pushCandidate(entry);
+      });
+    }
+
+    for (const candidate of candidates) {
+      const coords = extractFromObject(candidate);
+      if (coords && Number.isFinite(coords.longitude) && Number.isFinite(coords.latitude)) {
+        return {
+          longitude: coords.longitude,
+          latitude: coords.latitude,
+          altitude: Number.isFinite(coords.altitude) ? coords.altitude : null
+        };
+      }
+    }
+    return null;
+  };
+
+  const applyTrackerCoordsUpdate = (trackerId, coords) => {
+    if (!coords) return;
+    const trimmedId = String(trackerId || '').trim();
+    if (!trimmedId) return;
+    ensureTeamTracker(trimmedId);
+    const prev = trackerStore.get(trimmedId);
+    if (!prev) return;
+    const prevLng = prev.longitude;
+    const prevLat = prev.latitude;
+    const prevAlt = prev.altitude;
+    const samePosition = Number.isFinite(prevLng)
+      && Number.isFinite(prevLat)
+      && prevLng === coords.longitude
+      && prevLat === coords.latitude
+      && (Number.isFinite(prevAlt) ? prevAlt === coords.altitude : coords.altitude == null);
+    if (samePosition) {
+      maybeAutoClearTrackerGoTo(trimmedId, coords);
+      return;
+    }
+    const color = prev.color || nextTrackerColor();
+    const timestamp = Date.now();
+    const merged = {
+      ...prev,
+      id: trimmedId,
+      longitude: coords.longitude,
+      latitude: coords.latitude,
+      altitude: coords.altitude,
+      updatedAt: timestamp,
+      color,
+      visible: prev.visible === false ? false : true
+    };
+    trackerStore.set(trimmedId, merged);
+    const hasPrev = Number.isFinite(prevLng) && Number.isFinite(prevLat);
+    let movementDistance = 0;
+    let shouldAppendSegment = false;
+    if (hasPrev) {
+      movementDistance = haversineMeters(
+        { longitude: prevLng, latitude: prevLat },
+        { longitude: coords.longitude, latitude: coords.latitude }
+      );
+      if (movementDistance > 3) shouldAppendSegment = true;
+    }
+    if (shouldAppendSegment) {
+      appendTrackerSegment(
+        trimmedId,
+        { longitude: prevLng, latitude: prevLat },
+        { longitude: coords.longitude, latitude: coords.latitude },
+        movementDistance,
+        color,
+        prev.updatedAt,
+        timestamp
+      );
+      updateTrackerPathSource();
+    }
+    maybeAutoClearTrackerGoTo(trimmedId, coords, { skipUpdate: true });
+    updateTrackerSource();
+    renderTrackersList();
+    updateTrackersPanelState();
+    recordLiveTrackerLocation(merged);
+    maybeRevealTrackerOnMap(trimmedId, coords, { force: !hasPrev });
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+  };
+
+  const maybeRevealTrackerOnMap = (trackerId, coords, { force = false } = {}) => {
+    const map = getMap();
+    if (!map || !coords) return;
+    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return;
+    try {
+      if (!trackersLayersVisible) {
+        trackersLayersVisible = true;
+        applyTrackersVisibility(map);
+      }
+    } catch {}
+    const lng = coords.longitude;
+    const lat = coords.latitude;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    if (!force) {
+      if (trackerAutoReveal.has(trackerId)) return;
+      try {
+        const bounds = typeof map.getBounds === 'function' ? map.getBounds() : null;
+        if (bounds && typeof bounds.contains === 'function' && bounds.contains([lng, lat])) return;
+      } catch {}
+    }
+    trackerAutoReveal.add(trackerId);
+    const nextZoom = Math.max(Number(map.getZoom?.() ?? 0), 12);
+    try {
+      map.flyTo({ center: [lng, lat], zoom: nextZoom, duration: 800, essential: true });
+    } catch (err) {
+      console.warn('Failed to focus tracker on map', err);
+    }
+  };
+
+  const startTrackerSubscription = (trackerId) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return false;
+    if (!teamsSessionId) return false;
+    const sessionId = String(teamsSessionId || '').trim();
+    if (!sessionId) return false;
+    if (trackerSubscriptions.has(trimmed)) return true;
+    clearTrackerSubscriptionRetry(trimmed);
+    const sdkInfo = resolveFirebaseSdk();
+    const db = firestoreInstance || initFirestoreConnection();
+    if (!sdkInfo || !db) {
+      if (!firestoreUnavailableToasted) {
+        firestoreUnavailableToasted = true;
+        showToast(t('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.'), 'error');
+      }
+      console.warn('Firestore not available for tracker subscription', trimmed);
+      scheduleTrackerSubscriptionRetry(trimmed, 'firestore unavailable');
+      return false;
+    }
+    let unsubscribe = null;
+    try {
+      const handleSnapshot = (snapshot) => {
+        if (!snapshot) return;
+        const exists = typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists;
+        if (exists === false) return;
+        const data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
+        const profile = extractProfilePayload(data || {});
+        if (profile) applyTrackerProfileUpdate(trimmed, profile);
+        const coords = extractCoordsPayload(data || {});
+        if (coords) {
+          applyTrackerCoordsUpdate(trimmed, coords);
+          void writeTrackerUpdateDocument({ trackerId: trimmed, coords, sessionId, sdkInfo, db });
+        }
+      };
+      const handleError = (err) => {
+        console.warn('Firestore tracker subscription failed', trimmed, err);
+        if (typeof unsubscribe === 'function') {
+          try { unsubscribe(); } catch {}
+        } else if (typeof unsubscribe === 'string' && sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+          try { sdkInfo.sdk.unsubscribe(unsubscribe); } catch {}
+        }
+        trackerSubscriptions.delete(trimmed);
+        scheduleTrackerSubscriptionRetry(trimmed, 'snapshot error');
+      };
+      if (sdkInfo.type === 'compat') {
+        const docRef = db.doc(`sessions/${teamsSessionId}/trackers/${trimmed}`);
+        unsubscribe = docRef.onSnapshot(handleSnapshot, handleError);
+      } else {
+        const { doc, onSnapshot } = sdkInfo.sdk || {};
+        if (typeof doc !== 'function' || typeof onSnapshot !== 'function') {
+          console.warn('Firebase modular SDK missing doc/onSnapshot');
+          if (!firestoreUnavailableToasted) {
+            firestoreUnavailableToasted = true;
+            showToast(t('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.'), 'error');
+          }
+          scheduleTrackerSubscriptionRetry(trimmed, 'modular sdk missing');
+          return false;
+        }
+        const docRef = doc(db, 'sessions', teamsSessionId, 'trackers', trimmed);
+        unsubscribe = onSnapshot(docRef, handleSnapshot, handleError);
+      }
+    } catch (err) {
+      console.warn('Failed to subscribe to tracker updates', trimmed, err);
+      scheduleTrackerSubscriptionRetry(trimmed, 'subscription error');
+    }
+    if (typeof unsubscribe === 'function' || typeof unsubscribe === 'string') {
+      trackerSubscriptions.set(trimmed, { unsubscribe });
+      return true;
+    }
+    scheduleTrackerSubscriptionRetry(trimmed, 'no unsubscribe handle');
+    return false;
+  };
+
+  const closeTeamMemberModal = () => {
+    if (!teamMemberModal) return;
+    teamMemberModal.hidden = true;
+    teamMemberModal.setAttribute('aria-hidden', 'true');
+    pendingTeamMemberTrackerId = null;
+    updateTeamsEmptyState();
+  };
+
+  const setTeamMemberModalQr = (payload) => {
+    const qrUrl = generateQrDataUrl(payload, 360, 6);
+    if (teamMemberQr) {
+      if (qrUrl) {
+        teamMemberQr.hidden = false;
+        teamMemberQr.src = qrUrl;
+      } else {
+        teamMemberQr.hidden = true;
+        teamMemberQr.removeAttribute('src');
+      }
+    }
+    if (teamMemberStart) teamMemberStart.disabled = !qrUrl;
+    if (teamMemberStatus) {
+      const key = qrUrl ? 'teams.memberModal.subtitle' : 'teams.memberModal.error';
+      teamMemberStatus.dataset.i18n = key;
+      teamMemberStatus.textContent = t(
+        key,
+        qrUrl ? 'Scan this QR code to join the team.' : 'Unable to render QR code.'
+      );
+    }
+    return qrUrl;
+  };
+
+  const openTeamMemberModal = () => {
+    if (!teamMemberModal) return;
+    if (!teamsSessionId) {
+      showToast(t('teams.noActiveSessionAction', 'Start or resume a session to add team members.'), 'error');
+      return;
+    }
+    teamMemberModal.hidden = false;
+    teamMemberModal.setAttribute('aria-hidden', 'false');
+    pendingTeamMemberTrackerId = generateTrackerId();
+    const payload = buildTeamMemberPayload(pendingTeamMemberTrackerId);
+    updateTeamsEmptyState();
+    if (teamMemberStart) teamMemberStart.hidden = false;
+    setTeamMemberModalQr(payload);
+    try { teamMemberClose?.focus(); } catch {}
+  };
+
+  const openTeamMemberQrModal = (trackerId) => {
+    if (!teamMemberModal) return;
+    if (!teamsSessionId) {
+      showToast(t('teams.noActiveSessionAction', 'Start or resume a session to add team members.'), 'error');
+      return;
+    }
+    const resolvedId = String(trackerId || '').trim();
+    if (!resolvedId) return;
+    teamMemberModal.hidden = false;
+    teamMemberModal.setAttribute('aria-hidden', 'false');
+    pendingTeamMemberTrackerId = resolvedId;
+    updateTeamsEmptyState();
+    if (teamMemberStart) {
+      teamMemberStart.hidden = true;
+      teamMemberStart.disabled = true;
+    }
+    const payload = buildTeamMemberPayload(resolvedId);
+    setTeamMemberModalQr(payload);
+    if (teamMemberStart) teamMemberStart.disabled = true;
+    try { teamMemberClose?.focus(); } catch {}
+  };
+
+  const startTrackingFromModal = () => {
+    const trackerId = String(pendingTeamMemberTrackerId || '').trim();
+    if (!trackerId) return;
+    if (!teamsSessionId) {
+      showToast(t('teams.noActiveSessionAction', 'Start or resume a session to add team members.'), 'error');
+      return;
+    }
+    const color = pickRandomTrackerColor();
+    ensureTeamTracker(trackerId, { color });
+    renderTrackersList();
+    updateTrackersPanelState();
+    appendTrackerToSessionDocument(trackerId).catch((err) => {
+      console.warn('Failed to persist tracker ID on session document', err);
+    });
+
+    const started = startTrackerSubscription(trackerId);
+    if (started) {
+      showToast(t('teams.trackingStarted', 'Tracking started'));
+    }
+    closeTeamMemberModal();
+  };
+
   function ensureRecordingEntry(tracker) {
     if (!tracker || !tracker.id) return null;
     let entry = trackersRecordingState.entries.get(tracker.id);
     if (!entry) {
-      entry = { id: tracker.id, color: tracker.color || null, name: tracker.name || null, samples: [], segments: [] };
+      entry = {
+        id: tracker.id,
+        color: tracker.color || null,
+        name: tracker.name || null,
+        poiIcon: typeof tracker.poiIcon === 'string' ? tracker.poiIcon : null,
+        samples: [],
+        segments: []
+      };
       trackersRecordingState.entries.set(tracker.id, entry);
     } else {
       if (!entry.color && tracker.color) entry.color = tracker.color;
       if (!entry.name && tracker.name) entry.name = tracker.name;
+      if (!entry.poiIcon && tracker.poiIcon) entry.poiIcon = tracker.poiIcon;
     }
     return entry;
   }
@@ -3221,10 +6074,6 @@
   function handleTrackersRecordClick() {
     if (trackersRecordingState.active) {
       pauseTrackersRecording();
-      return;
-    }
-    if (!serialConnected || serialConnecting) {
-      showToast('Open a serial connection before recording', 'error');
       return;
     }
     const hasExistingData = trackersRecordingHasData && trackersRecordingState.entries.size > 0;
@@ -3310,6 +6159,7 @@
       const id = entry.id || key;
       if (!id) return;
       const color = typeof entry.color === 'string' ? entry.color : null;
+      const poiIcon = typeof entry.poiIcon === 'string' ? entry.poiIcon : null;
       const samples = Array.isArray(entry.samples) ? entry.samples.map(cloneTrackerSample).filter(Boolean) : [];
       const segments = Array.isArray(entry.segments) ? entry.segments.map((seg) => cloneTrackerSegment(seg, color)).filter(Boolean) : [];
       if (!samples.length && !segments.length) return;
@@ -3317,6 +6167,7 @@
         id,
         name: typeof entry.name === 'string' ? entry.name : null,
         color,
+        poiIcon,
         samples,
         segments
       });
@@ -3346,6 +6197,9 @@
       if (!id) return;
       const name = typeof item.name === 'string' ? item.name : null;
       const color = typeof item.color === 'string' ? item.color : null;
+      const poiIcon = typeof item.poiIcon === 'string'
+        ? item.poiIcon
+        : (typeof item.symbol === 'string' ? item.symbol : null);
       const samples = Array.isArray(item.samples) ? item.samples.map(cloneTrackerSample).filter(Boolean) : [];
       const segments = Array.isArray(item.segments) ? item.segments.map((seg) => cloneTrackerSegment(seg, color)).filter(Boolean) : [];
       samples.forEach((sample) => {
@@ -3361,7 +6215,7 @@
         }
       });
       if (!samples.length && !segments.length) return;
-      trackers.push({ id, name, color, samples, segments });
+      trackers.push({ id, name, color, poiIcon, samples, segments });
     });
     if (!trackers.length) return null;
     const startedAt = Number.isFinite(Number(data.startedAt)) ? Number(data.startedAt) : (Number.isFinite(minTs) ? minTs : null);
@@ -3380,6 +6234,7 @@
         id: item.id,
         name: item.name || null,
         color: item.color || null,
+        poiIcon: item.poiIcon || null,
         samples: Array.isArray(item.samples) ? item.samples.slice().sort((a, b) => (Number(a.timestamp || 0) - Number(b.timestamp || 0))) : [],
         segments: Array.isArray(item.segments) ? item.segments.slice() : []
       };
@@ -3387,10 +6242,12 @@
       let resolvedColor = entry.color || existingTracker?.color || null;
       if (!resolvedColor) resolvedColor = nextTrackerColor();
       entry.color = resolvedColor;
+      if (!entry.poiIcon && existingTracker?.poiIcon) entry.poiIcon = existingTracker.poiIcon;
       trackersRecordingState.entries.set(item.id, {
         id: entry.id,
         name: entry.name,
         color: resolvedColor,
+        poiIcon: entry.poiIcon || null,
         samples: entry.samples.map(cloneTrackerSample).filter(Boolean),
         segments: entry.segments.map((seg) => cloneTrackerSegment(seg, resolvedColor)).filter(Boolean)
       });
@@ -3463,6 +6320,7 @@
           raw: lastSample.raw || merged.raw || null,
           name: entry.name || merged.name || null,
           color: resolvedColor,
+          poiIcon: entry.poiIcon || merged.poiIcon || null,
           visible: merged.visible === false ? false : true
         });
         const currentTracker = trackerStore.get(item.id);
@@ -3477,7 +6335,6 @@
     if (trackersRecordingState.startedAt && trackersRecordingState.updatedAt && trackersRecordingState.updatedAt < trackersRecordingState.startedAt) {
       trackersRecordingState.updatedAt = trackersRecordingState.startedAt;
     }
-    trackerDataSeen = true;
     updateTrackerSource();
     updateTrackerPathSource();
     renderTrackersList();
@@ -3549,22 +6406,13 @@
   }
 
   function updateTrackersPanelState() {
-    if (trackersConnectBtn) {
-      const disabled = serialConnected || serialConnecting;
-      trackersConnectBtn.disabled = disabled;
-      trackersConnectBtn.setAttribute('aria-disabled', String(disabled));
-    }
-    const waitingEl = trackersWaiting || q('#trackersWaiting');
-    const shouldWait = serialConnected && !trackerDataSeen && trackerStore.size === 0;
-    if (waitingEl) waitingEl.hidden = !shouldWait;
-    const emptyEl = trackersEmpty || q('#trackersEmpty');
-    if (emptyEl) emptyEl.style.display = shouldWait ? 'none' : (trackerStore.size === 0 ? 'flex' : 'none');
     const listEl = trackersItems || q('#trackersItems');
     if (listEl) {
       if (trackerStore.size > 0) listEl.classList.add('is-visible');
       else listEl.classList.remove('is-visible');
     }
     refreshTrackersControlsState();
+    updateTeamsEmptyState();
   }
 
   const trackerColorPalette = ['#ff5722', '#03a9f4', '#8bc34a', '#ffc107', '#9c27b0', '#4caf50', '#00bcd4', '#ff9800'];
@@ -3574,53 +6422,10 @@
     trackerColorIndex += 1;
     return color;
   };
-
-  const normalizeTrackerIdFromAutoProbe = (type, deviceId) => {
-    const cleanedType = String(type || '').trim().toLowerCase();
-    if (cleanedType === 'base') return 'CO-ROOT';
-    if (cleanedType !== 'tracker') return null;
-    let id = String(deviceId || '').trim();
-    if (!id) return null;
-    if (!id.toUpperCase().startsWith('CO-')) id = `CO-${id}`;
-    id = id.toUpperCase();
-    return id;
-  };
-
-  const ensureTrackerStub = (id, { name } = {}) => {
-    const trackerId = String(id || '').trim();
-    if (!trackerId) return null;
-    let tracker = trackerStore.get(trackerId);
-    if (!tracker) {
-      const color = nextTrackerColor();
-      tracker = {
-        id: trackerId,
-        longitude: null,
-        latitude: null,
-        altitude: null,
-        battery: null,
-        hops: null,
-        updatedAt: Date.now(),
-        raw: null,
-        name: name || null,
-        color,
-        visible: true,
-      };
-      trackerStore.set(trackerId, tracker);
-      trackerDataSeen = true;
-      ensureTrackerHistoryEntry(trackerId);
-      recordLiveTrackerMetadata(tracker, { delay: 0 });
-      updateTrackerSource();
-      updateTrackerPathSource();
-      renderTrackersList();
-      updateTrackersPanelState();
-      refreshTrackersControlsState();
-      return tracker;
-    }
-    if (name && !tracker.name) {
-      updateTrackerEntry(trackerId, { name });
-      return trackerStore.get(trackerId);
-    }
-    return tracker;
+  const pickRandomTrackerColor = () => {
+    if (!trackerColorPalette.length) return nextTrackerColor();
+    const idx = Math.floor(Math.random() * trackerColorPalette.length);
+    return trackerColorPalette[idx] || nextTrackerColor();
   };
 
   let editingTrackerId = null;
@@ -3653,6 +6458,33 @@
     const clampedInner = Math.min(1, Math.max(0, inner));
     const earthRadiusMeters = 6371000;
     return 2 * earthRadiusMeters * Math.asin(Math.sqrt(clampedInner));
+  };
+
+  const GO_TO_AUTO_CLEAR_METERS = 5;
+  const maybeAutoClearTrackerGoTo = (trackerId, coords, { skipUpdate = false, skipPersist = false } = {}) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed || !coords) return false;
+    const target = trackerGoToLocations.get(trimmed);
+    if (!target) return false;
+    const lng = Number(coords.longitude);
+    const lat = Number(coords.latitude);
+    const toLng = Number(target.longitude);
+    const toLat = Number(target.latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || !Number.isFinite(toLng) || !Number.isFinite(toLat)) return false;
+    const distance = haversineMeters({ longitude: lng, latitude: lat }, { longitude: toLng, latitude: toLat });
+    if (!Number.isFinite(distance) || distance > GO_TO_AUTO_CLEAR_METERS) return false;
+    trackerGoToLocations.delete(trimmed);
+    if (!skipUpdate) {
+      try { updateTrackerGoToSource(); } catch {}
+    }
+    if (!skipPersist && teamsSessionId) {
+      void removeTrackerGoToFromSessionDocument(trimmed).then((ok) => {
+        if (!ok && teamsSessionId) {
+          console.warn('Failed to persist go-to auto-clear', trimmed);
+        }
+      });
+    }
+    return true;
   };
 
   const ensureTrackerHistoryEntry = (trackerId) => {
@@ -3693,6 +6525,132 @@
     }, 1100);
   };
 
+  const getTrackerDisplayName = (tracker) => {
+    if (!tracker) return '';
+    const raw = typeof tracker.name === 'string' ? tracker.name.trim() : '';
+    if (raw) return raw;
+    return tracker.id ? String(tracker.id) : '';
+  };
+
+  const getTrackerDisplayTitle = (tracker) => {
+    if (!tracker) return '';
+    const raw = typeof tracker.title === 'string' ? tracker.title.trim() : '';
+    return raw || '';
+  };
+
+  const getTrackerLabelText = (tracker) => {
+    const name = getTrackerDisplayName(tracker);
+    const title = getTrackerDisplayTitle(tracker);
+    if (title) return `${name}\n${title}`;
+    return name;
+  };
+
+  const clearActiveTrackerGoTo = ({ skipToolReset = false } = {}) => {
+    if (activeTrackerGoToButton && activeTrackerGoToButton.isConnected) {
+      activeTrackerGoToButton.classList.remove('is-active');
+      activeTrackerGoToButton.setAttribute('aria-pressed', 'false');
+    }
+    activeTrackerGoToButton = null;
+    activeTrackerGoToId = null;
+    if (!skipToolReset && (window)._currentTool === 'team-goto') {
+      try { window.setActiveTool?.(null); } catch {}
+    }
+  };
+
+  const activateTrackerGoTo = (trackerId, buttonEl) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed || !buttonEl) return;
+    if (activeTrackerGoToButton && activeTrackerGoToButton !== buttonEl && activeTrackerGoToButton.isConnected) {
+      activeTrackerGoToButton.classList.remove('is-active');
+      activeTrackerGoToButton.setAttribute('aria-pressed', 'false');
+    }
+    activeTrackerGoToId = trimmed;
+    activeTrackerGoToButton = buttonEl;
+    buttonEl.classList.add('is-active');
+    buttonEl.setAttribute('aria-pressed', 'true');
+    if (typeof window.setActiveTool === 'function') {
+      window.setActiveTool('team-goto');
+    } else {
+      (window)._currentTool = 'team-goto';
+    }
+  };
+
+  const toggleTrackerGoTo = (trackerId, buttonEl) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return;
+    if (activeTrackerGoToId === trimmed) {
+      clearActiveTrackerGoTo();
+      return;
+    }
+    activateTrackerGoTo(trimmed, buttonEl);
+  };
+
+  const removeTeamMember = async (trackerId) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return false;
+
+    const hadGoTo = trackerGoToLocations.has(trimmed);
+
+    if (activeTrackerGoToId === trimmed) {
+      clearActiveTrackerGoTo();
+    }
+    if (editingTrackerId === trimmed) {
+      editingTrackerId = null;
+      editingTrackerDraft = '';
+    }
+    if (pendingTeamMemberTrackerId === trimmed) {
+      try { closeTeamMemberModal(); } catch {}
+      pendingTeamMemberTrackerId = null;
+    }
+
+    teamsSessionTrackerIds.delete(trimmed);
+    trackerStore.delete(trimmed);
+    trackerPositionsStore.delete(trimmed);
+    trackerGoToLocations.delete(trimmed);
+    trackerAutoReveal.delete(trimmed);
+    trackerBlinkQueue.delete(trimmed);
+
+    const subscription = trackerSubscriptions.get(trimmed);
+    if (subscription) {
+      const unsubscribe = subscription?.unsubscribe;
+      try {
+        if (typeof unsubscribe === 'function') unsubscribe();
+        else if (typeof unsubscribe === 'string') {
+          const sdkInfo = resolveFirebaseSdk();
+          if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+            sdkInfo.sdk.unsubscribe(unsubscribe);
+          }
+        }
+      } catch {}
+    }
+    trackerSubscriptions.delete(trimmed);
+    clearTrackerSubscriptionRetry(trimmed);
+    trackerSubscriptionRetries.delete(trimmed);
+
+    if (trackersRecordingState.entries.delete(trimmed)) {
+      trackersRecordingHasData = trackersRecordingState.entries.size > 0;
+    }
+
+    try { updateTrackerSource(); } catch {}
+    try { updateTrackerPathSource(); } catch {}
+    try { updateTrackerGoToSource(); } catch {}
+    renderTrackersList();
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+
+    if (teamsSessionId) {
+      const [removeOk, deleteOk] = await Promise.all([
+        removeTrackerFromSessionDocument(trimmed),
+        deleteTeamTrackerDocument(trimmed)
+      ]);
+      const goToOk = hadGoTo ? await removeTrackerGoToFromSessionDocument(trimmed) : true;
+      if (!removeOk || !deleteOk || !goToOk) {
+        showToast(t('teams.memberRemoveFailed', 'Unable to remove team member. Check Firebase settings.'), 'error');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const renderTrackersList = () => {
     const listEl = trackersItems || q('#trackersItems');
     if (!listEl) { updateTrackersPanelState(); return; }
@@ -3705,6 +6663,7 @@
       } else {
         listEl.classList.add('is-visible');
       }
+      updateTeamsEmptyState();
 
       trackers.forEach((tracker) => {
         const row = document.createElement('div');
@@ -3712,13 +6671,18 @@
         row.dataset.trackerId = tracker.id;
         if (tracker.visible === false) row.classList.add('hidden');
 
-        const displayName = (tracker.name && tracker.name.trim()) || tracker.id;
+        const displayName = getTrackerDisplayName(tracker);
+        const displayTitle = getTrackerDisplayTitle(tracker);
+
+        const header = document.createElement('div');
+        header.className = 'tracker-header';
 
         const nameEl = document.createElement('div');
         nameEl.className = 'tracker-name';
         nameEl.contentEditable = 'true';
         nameEl.textContent = tracker.id === editingTrackerId && editingTrackerDraft ? editingTrackerDraft : displayName;
         nameEl.setAttribute('role', 'textbox');
+        nameEl.setAttribute('aria-multiline', 'true');
         nameEl.setAttribute('aria-label', `Tracker ${tracker.id} name`);
         const commitName = () => {
           const value = (nameEl.textContent || '').trim();
@@ -3745,108 +6709,191 @@
           }
         });
         nameEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Escape') {
             e.preventDefault();
             nameEl.blur();
           }
         });
+        header.appendChild(nameEl);
+        if (displayTitle) {
+          const titleEl = document.createElement('div');
+          titleEl.className = 'tracker-title';
+          titleEl.textContent = displayTitle;
+          header.appendChild(titleEl);
+        }
 
         const meta = document.createElement('div');
         meta.className = 'tracker-meta';
         const idSpan = document.createElement('span');
-      idSpan.textContent = `ID ${tracker.id}`;
-      meta.appendChild(idSpan);
-      if (Number.isFinite(tracker.battery)) {
-        const bat = document.createElement('span');
-        bat.textContent = `${Math.round(tracker.battery)}%`;
-        meta.appendChild(bat);
-      }
-      if (Number.isFinite(tracker.hops)) {
-        const hops = document.createElement('span');
-        hops.textContent = `hops ${tracker.hops}`;
-        meta.appendChild(hops);
-      }
-      if (meta.childElementCount <= 1) meta.style.opacity = '0.7';
-
-      const actions = document.createElement('div');
-      actions.className = 'tracker-actions';
-
-      const colorBtn = document.createElement('button');
-      colorBtn.type = 'button';
-      colorBtn.className = 'tracker-action tracker-color';
-      colorBtn.title = 'Change tracker color';
-      const chip = document.createElement('span');
-      chip.className = 'tracker-color-chip';
-      chip.style.backgroundColor = tracker.color || '#ff5722';
-      colorBtn.appendChild(chip);
-      colorBtn.addEventListener('click', () => {
-        const picker = (window).openColorModal;
-        const current = tracker.color || '#ff5722';
-        if (typeof picker === 'function') {
-          picker(current, (hex) => updateTrackerEntry(tracker.id, { color: hex }));
-        } else {
-          const hex = prompt('Tracker color (hex)', current);
-          if (hex) updateTrackerEntry(tracker.id, { color: hex });
+        idSpan.textContent = `ID ${tracker.id}`;
+        meta.appendChild(idSpan);
+        if (Number.isFinite(tracker.battery)) {
+          const bat = document.createElement('span');
+          bat.textContent = `${Math.round(tracker.battery)}%`;
+          meta.appendChild(bat);
         }
-      });
+        if (Number.isFinite(tracker.hops)) {
+          const hops = document.createElement('span');
+          hops.textContent = `hops ${tracker.hops}`;
+          meta.appendChild(hops);
+        }
+        if (meta.childElementCount <= 1) meta.style.opacity = '0.7';
 
-      const toggleBtn = document.createElement('button');
-      toggleBtn.type = 'button';
-      toggleBtn.className = 'tracker-action tracker-toggle';
-      toggleBtn.title = tracker.visible === false ? 'Show tracker' : 'Hide tracker';
-      if (tracker.visible === false) toggleBtn.classList.add('is-off');
-      toggleBtn.setAttribute('aria-pressed', String(tracker.visible !== false));
-      const toggleIcon = document.createElement('img');
-      toggleIcon.src = tracker.visible === false ? './assets/icons/regular/eye-slash.svg' : './assets/icons/regular/eye.svg';
-      toggleIcon.alt = '';
-      toggleIcon.setAttribute('aria-hidden', 'true');
-      toggleBtn.appendChild(toggleIcon);
-      toggleBtn.addEventListener('click', () => {
-        const visible = tracker.visible === false;
-        updateTrackerEntry(tracker.id, { visible });
-      });
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'tracker-actions-row';
 
-      actions.appendChild(colorBtn);
+        const actions = document.createElement('div');
+        actions.className = 'tracker-actions';
 
-      const hasValidPosition = Number.isFinite(tracker.longitude) && Number.isFinite(tracker.latitude);
-      if (hasValidPosition && !(tracker.longitude === 0 && tracker.latitude === 0)) {
-        const focusBtn = document.createElement('button');
-        focusBtn.type = 'button';
-        focusBtn.className = 'tracker-action tracker-focus';
-        focusBtn.title = 'Center map on tracker';
-        focusBtn.setAttribute('aria-label', `Center map on tracker ${displayName}`);
-        const focusIcon = document.createElement('img');
-        focusIcon.src = './assets/icons/regular/crosshair.svg';
-        focusIcon.alt = '';
-        focusIcon.setAttribute('aria-hidden', 'true');
-        focusBtn.appendChild(focusIcon);
-        focusBtn.addEventListener('click', () => {
-          try {
-            const latest = trackerStore.get(tracker.id) || tracker;
-            const lng = Number(latest.longitude);
-            const lat = Number(latest.latitude);
-            if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-            if (lng === 0 && lat === 0) return;
-            const map = getMap();
-            if (!map) return;
-            const currentZoom = map.getZoom();
-            map.flyTo({
-              center: [lng, lat],
-              zoom: Number.isFinite(currentZoom) ? Math.max(12, currentZoom) : 12,
-              duration: 600
-            });
-          } catch (err) {
-            console.error('tracker focus failed', err);
+        const colorBtn = document.createElement('button');
+        colorBtn.type = 'button';
+        colorBtn.className = 'tracker-action tracker-color';
+        colorBtn.title = 'Change tracker color';
+        const chip = document.createElement('span');
+        chip.className = 'tracker-color-chip';
+        chip.style.backgroundColor = tracker.color || '#ff5722';
+        colorBtn.appendChild(chip);
+        colorBtn.addEventListener('click', () => {
+          const picker = (window).openColorModal;
+          const current = tracker.color || '#ff5722';
+          if (typeof picker === 'function') {
+            picker(current, (hex) => updateTrackerEntry(tracker.id, { color: hex }));
+          } else {
+            const hex = prompt('Tracker color (hex)', current);
+            if (hex) updateTrackerEntry(tracker.id, { color: hex });
           }
         });
-        actions.appendChild(focusBtn);
-      }
+        const trackerHasSymbol = typeof tracker.poiIcon === 'string' && tracker.poiIcon.trim();
+        if (trackerHasSymbol) {
+          colorBtn.hidden = true;
+          colorBtn.setAttribute('aria-hidden', 'true');
+        }
+        actionsRow.appendChild(colorBtn);
 
-      actions.appendChild(toggleBtn);
+        const poiIconBtn = document.createElement('button');
+        poiIconBtn.type = 'button';
+        poiIconBtn.className = 'tracker-action tracker-poi-icon-btn';
+        const selectLabel = t('teams.symbolButton', 'Team symbol');
+        poiIconBtn.title = selectLabel;
+        poiIconBtn.setAttribute('aria-label', selectLabel);
+        poiIconBtn.appendChild(makeButtonIcon(DRAWING_ICON_PATHS.poiIcon));
+        poiIconBtn.addEventListener('click', () => {
+          const picker = (window).openTrackerPoiIconModal;
+          if (typeof picker === 'function') picker(tracker);
+        });
 
-        row.appendChild(nameEl);
-        row.appendChild(actions);
+        const qrBtn = document.createElement('button');
+        qrBtn.type = 'button';
+        qrBtn.className = 'tracker-action tracker-qr';
+        qrBtn.title = 'Show QR code';
+        qrBtn.setAttribute('aria-label', `Show QR code for ${displayName}`);
+        const qrIcon = document.createElement('img');
+        qrIcon.src = './assets/icons/regular/qr-code.svg';
+        qrIcon.alt = '';
+        qrIcon.setAttribute('aria-hidden', 'true');
+        qrBtn.appendChild(qrIcon);
+        qrBtn.addEventListener('click', () => openTeamMemberQrModal(tracker.id));
+        actions.appendChild(poiIconBtn);
+        actions.appendChild(qrBtn);
+
+        const gotoBtn = document.createElement('button');
+        gotoBtn.type = 'button';
+        gotoBtn.className = 'tracker-action tracker-goto';
+        gotoBtn.title = 'Set go-to location';
+        gotoBtn.setAttribute('aria-label', `Set go-to location for ${displayName}`);
+        const gotoIcon = document.createElement('img');
+        gotoIcon.src = './assets/icons/regular/sneaker-move.svg';
+        gotoIcon.alt = '';
+        gotoIcon.setAttribute('aria-hidden', 'true');
+        gotoBtn.appendChild(gotoIcon);
+        const isGoToActive = tracker.id === activeTrackerGoToId;
+        gotoBtn.classList.toggle('is-active', isGoToActive);
+        gotoBtn.setAttribute('aria-pressed', String(isGoToActive));
+        if (isGoToActive) activeTrackerGoToButton = gotoBtn;
+        gotoBtn.addEventListener('click', () => toggleTrackerGoTo(tracker.id, gotoBtn));
+        actions.appendChild(gotoBtn);
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'tracker-action tracker-toggle';
+        toggleBtn.title = tracker.visible === false ? 'Show tracker' : 'Hide tracker';
+        if (tracker.visible === false) toggleBtn.classList.add('is-off');
+        toggleBtn.setAttribute('aria-pressed', String(tracker.visible !== false));
+        const toggleIcon = document.createElement('img');
+        toggleIcon.src = tracker.visible === false ? './assets/icons/regular/eye-slash.svg' : './assets/icons/regular/eye.svg';
+        toggleIcon.alt = '';
+        toggleIcon.setAttribute('aria-hidden', 'true');
+        toggleBtn.appendChild(toggleIcon);
+        toggleBtn.addEventListener('click', () => {
+          const visible = tracker.visible === false;
+          updateTrackerEntry(tracker.id, { visible });
+        });
+
+        const hasValidPosition = Number.isFinite(tracker.longitude) && Number.isFinite(tracker.latitude);
+        if (hasValidPosition && !(tracker.longitude === 0 && tracker.latitude === 0)) {
+          const focusBtn = document.createElement('button');
+          focusBtn.type = 'button';
+          focusBtn.className = 'tracker-action tracker-focus';
+          focusBtn.title = 'Center map on tracker';
+          focusBtn.setAttribute('aria-label', `Center map on tracker ${displayName}`);
+          const focusIcon = document.createElement('img');
+          focusIcon.src = './assets/icons/regular/crosshair.svg';
+          focusIcon.alt = '';
+          focusIcon.setAttribute('aria-hidden', 'true');
+          focusBtn.appendChild(focusIcon);
+          focusBtn.addEventListener('click', () => {
+            try {
+              const latest = trackerStore.get(tracker.id) || tracker;
+              const lng = Number(latest.longitude);
+              const lat = Number(latest.latitude);
+              if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+              if (lng === 0 && lat === 0) return;
+              const map = getMap();
+              if (!map) return;
+              const currentZoom = map.getZoom();
+              map.flyTo({
+                center: [lng, lat],
+                zoom: Number.isFinite(currentZoom) ? Math.max(12, currentZoom) : 12,
+                duration: 600
+              });
+            } catch (err) {
+              console.error('tracker focus failed', err);
+            }
+          });
+          actions.appendChild(focusBtn);
+        }
+
+        actions.appendChild(toggleBtn);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'tracker-action tracker-remove';
+        const removeLabel = t('teams.removeMember', 'Remove member');
+        removeBtn.title = removeLabel;
+        removeBtn.setAttribute('aria-label', displayName ? `${removeLabel} (${displayName})` : removeLabel);
+        const removeIcon = document.createElement('img');
+        removeIcon.src = './assets/icons/regular/trash.svg';
+        removeIcon.alt = '';
+        removeIcon.setAttribute('aria-hidden', 'true');
+        removeBtn.appendChild(removeIcon);
+        removeBtn.addEventListener('click', () => {
+          const current = trackerStore.get(tracker.id) || tracker;
+          const currentName = getTrackerDisplayName(current);
+          const confirmBase = t(
+            'teams.confirmRemoveMember',
+            'Remove this team member? This will stop tracking their updates.'
+          );
+          const confirmText = currentName ? `${confirmBase}\n\n${currentName}` : confirmBase;
+          if (!confirm(confirmText)) return;
+          void removeTeamMember(tracker.id);
+        });
+        actions.appendChild(removeBtn);
+
+        actionsRow.appendChild(actions);
+
+        row.appendChild(header);
         row.appendChild(meta);
+        row.appendChild(actionsRow);
         listEl.appendChild(row);
 
         if (trackerBlinkQueue.has(tracker.id)) {
@@ -3882,75 +6929,31 @@
     try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
   };
 
-  const TRACKER_ID_PATTERN = /^CO-(?:\d{12}|ROOT)$/; // allow regular trackers (12 digits) and special CO-ROOT beacon
-
-  const parseTrackerLine = (raw) => {
-    if (!raw && raw !== 0) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    const parts = text.split(':');
-    if (parts.length < 6) return null;
-    const [trackerIdRaw, firstCoordRaw, secondCoordRaw, altRaw, batteryRaw, hopsRaw] = parts;
-    const trackerId = trackerIdRaw.trim();
-    if (!trackerId) return null;
-    if (!TRACKER_ID_PATTERN.test(trackerId)) return null;
-    const candidateA = {
-      longitude: Number(firstCoordRaw),
-      latitude: Number(secondCoordRaw)
-    };
-    const candidateB = {
-      longitude: Number(secondCoordRaw),
-      latitude: Number(firstCoordRaw)
-    };
-    const isValid = (c) => Number.isFinite(c.longitude) && c.longitude >= -180 && c.longitude <= 180 && Number.isFinite(c.latitude) && c.latitude >= -90 && c.latitude <= 90;
-    let coord = null;
-    const prev = trackerStore.get(trackerId);
-    const reference = prev ? { longitude: prev.longitude, latitude: prev.latitude } : { longitude: defaultStartLng, latitude: defaultStartLat };
-    const distance = (c) => Math.abs((c.longitude ?? 0) - reference.longitude) + Math.abs((c.latitude ?? 0) - reference.latitude);
-
-    if (isValid(candidateA) && isValid(candidateB)) {
-      coord = distance(candidateA) <= distance(candidateB) ? candidateA : candidateB;
-    } else if (isValid(candidateA)) {
-      coord = candidateA;
-    } else if (isValid(candidateB)) {
-      coord = candidateB;
-    }
-
-    if (!coord) return null;
-
-    const altitude = Number(altRaw);
-    const battery = Number(batteryRaw);
-    const hops = Number.parseInt(hopsRaw, 10);
-    return {
-      id: trackerId,
-      longitude: coord.longitude,
-      latitude: coord.latitude,
-      altitude: Number.isFinite(altitude) ? altitude : null,
-      battery: Number.isFinite(battery) ? battery : null,
-      hops: Number.isFinite(hops) ? hops : null,
-      raw: text
-    };
-  };
-
   const getTrackerFeatureCollection = () => {
     const features = [];
     trackerStore.forEach((tracker) => {
       if (!tracker || tracker.visible === false) return;
       if (!Number.isFinite(tracker.longitude) || !Number.isFinite(tracker.latitude)) return;
-      const displayName = (tracker.name && tracker.name.trim()) || tracker.id;
+      const displayName = getTrackerDisplayName(tracker);
+      const displayTitle = getTrackerDisplayTitle(tracker);
+      const displayLabel = getTrackerLabelText(tracker);
+      const poiIcon = typeof tracker.poiIcon === 'string' ? tracker.poiIcon.trim() : '';
+      const props = {
+        id: tracker.id,
+        label: displayLabel,
+        text: displayLabel,
+        name: displayName,
+        color: tracker.color || '#ff5722',
+        battery: tracker.battery,
+        altitude: tracker.altitude,
+        hops: tracker.hops,
+        updatedAt: tracker.updatedAt
+      };
+      if (displayTitle) props.title = displayTitle;
+      if (poiIcon) props.poiIcon = poiIcon;
       features.push({
         type: 'Feature',
-        properties: {
-          id: tracker.id,
-          label: displayName,
-          text: displayName,
-          name: displayName,
-          color: tracker.color || '#ff5722',
-          battery: tracker.battery,
-          altitude: tracker.altitude,
-          hops: tracker.hops,
-          updatedAt: tracker.updatedAt
-        },
+        properties: props,
         geometry: {
           type: 'Point',
           coordinates: [tracker.longitude, tracker.latitude]
@@ -3990,6 +6993,49 @@
     return { type: 'FeatureCollection', features };
   };
 
+  const getTrackerGoToFeatureCollection = () => {
+    const features = [];
+    trackerGoToLocations.forEach((coords, trackerId) => {
+      if (!coords) return;
+      const tracker = trackerStore.get(trackerId);
+      if (!tracker || tracker.visible === false) return;
+      const lng = Number(tracker.longitude);
+      const lat = Number(tracker.latitude);
+      const toLng = Number(coords.longitude);
+      const toLat = Number(coords.latitude);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat) || !Number.isFinite(toLng) || !Number.isFinite(toLat)) return;
+      const color = tracker.color || '#ff5722';
+      features.push({
+        type: 'Feature',
+        properties: {
+          trackerId,
+          color,
+          kind: 'goto-line'
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [lng, lat],
+            [toLng, toLat]
+          ]
+        }
+      });
+      features.push({
+        type: 'Feature',
+        properties: {
+          trackerId,
+          color,
+          kind: 'goto-end'
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [toLng, toLat]
+        }
+      });
+    });
+    return { type: 'FeatureCollection', features };
+  };
+
   const ensureTrackerLayer = (map) => {
     if (!map) return;
     try {
@@ -4004,16 +7050,62 @@
           data: { type: 'FeatureCollection', features: [] }
         });
       }
+      ensureFeatureLabelBackgroundImage(map);
+      ensurePoiIconBackgroundImage(map);
+      const trackerHasIconExpr = ['all',
+        ['has', 'poiIcon'],
+        ['!=', ['coalesce', ['get', 'poiIcon'], ''], '']
+      ];
+      const trackerLabelTextExpr = ['coalesce', ['get', 'label'], ['get', 'id'], ''];
+      const trackerHasLabelExpr = ['!=', trackerLabelTextExpr, ''];
+      const trackerLabelOffsetExpr = ['case',
+        trackerHasIconExpr,
+        ['literal', [1.8, 0]],
+        ['literal', [1, 0]]
+      ];
       if (!map.getLayer('tracker-dots')) {
         map.addLayer({
           id: 'tracker-dots',
           type: 'circle',
           source: 'trackers',
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', trackerHasIconExpr]],
           paint: {
             'circle-radius': 5.75,
             'circle-color': ['coalesce', ['get', 'color'], '#ff5722'],
             'circle-stroke-width': 1,
             'circle-stroke-color': '#ffffff'
+          }
+        });
+      }
+      if (!map.getLayer('tracker-icon-bg')) {
+        map.addLayer({
+          id: 'tracker-icon-bg',
+          type: 'symbol',
+          source: 'trackers',
+          filter: ['all', ['==', ['geometry-type'], 'Point'], trackerHasIconExpr],
+          layout: {
+            'icon-image': POI_ICON_BG_IMAGE_ID,
+            'icon-size': scaleLabelValue(POI_ICON_BG_SIZE),
+            'icon-anchor': 'center',
+            'icon-offset': [0, 0],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+      }
+      if (!map.getLayer('tracker-icon')) {
+        map.addLayer({
+          id: 'tracker-icon',
+          type: 'symbol',
+          source: 'trackers',
+          filter: ['all', ['==', ['geometry-type'], 'Point'], trackerHasIconExpr],
+          layout: {
+            'icon-image': ['get', 'poiIcon'],
+            'icon-size': scaleLabelValue(POI_ICON_SIZE),
+            'icon-anchor': 'center',
+            'icon-offset': [0, 0],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
           }
         });
       }
@@ -4023,18 +7115,26 @@
           type: 'symbol',
           source: 'trackers',
           layout: {
-            'text-field': ['coalesce', ['get', 'label'], ['get', 'id']],
-            'text-offset': [0, 1.35],
-            'text-anchor': 'top',
-            'text-padding': 2,
-            'text-size': 14,
-            'text-allow-overlap': true
+            'text-field': trackerLabelTextExpr,
+            'icon-image': ['case', trackerHasLabelExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [3, 6, 3, 6],
+            'text-size': scaleLabelValue(BASE_TRACKER_LABEL_SIZE),
+            'text-line-height': 1.1,
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+            'text-allow-overlap': true,
+            'text-anchor': 'left',
+            'text-offset': trackerLabelOffsetExpr,
+            'text-letter-spacing': 0.02,
+            'icon-anchor': 'left',
+            'icon-offset': trackerLabelOffsetExpr,
+            'icon-allow-overlap': true
           },
           paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': '#000000',
-            'text-halo-width': 4.5,
-            'text-halo-blur': 0.2
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
+            'text-halo-blur': 0
           }
         });
       }
@@ -4042,7 +7142,12 @@
       pointsReady = false;
       console.error('ensureTrackerLayer failed', err);
     }
-    trackerSourceReady = pointsReady && !!map.getSource('trackers') && !!map.getLayer('tracker-dots') && !!map.getLayer('tracker-labels');
+    trackerSourceReady = pointsReady
+      && !!map.getSource('trackers')
+      && !!map.getLayer('tracker-dots')
+      && !!map.getLayer('tracker-icon-bg')
+      && !!map.getLayer('tracker-icon')
+      && !!map.getLayer('tracker-labels');
 
     let pathsReady = true;
     try {
@@ -4058,12 +7163,14 @@
           id: 'tracker-paths',
           type: 'line',
           source: 'tracker-paths',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round'
+          },
           paint: {
             'line-color': ['coalesce', ['get', 'color'], '#ff5722'],
             'line-width': 2.2,
-            'line-opacity': 0.72,
-            'line-cap': 'round',
-            'line-join': 'round'
+            'line-opacity': 0.72
           }
         };
         if (beforeId) map.addLayer(layerConfig, beforeId);
@@ -4074,6 +7181,56 @@
       console.error('ensureTrackerPathLayer failed', err);
     }
     trackerPathSourceReady = pathsReady && !!map.getSource('tracker-paths') && !!map.getLayer('tracker-paths');
+
+    let gotoReady = true;
+    try {
+      if (!map.getSource('tracker-goto')) {
+        map.addSource('tracker-goto', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+      }
+      if (!map.getLayer('tracker-goto')) {
+        const beforeId = map.getLayer('tracker-dots') ? 'tracker-dots' : undefined;
+        const layerConfig = {
+          id: 'tracker-goto',
+          type: 'line',
+          source: 'tracker-goto',
+          filter: ['==', ['geometry-type'], 'LineString'],
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round'
+          },
+          paint: {
+            'line-color': ['coalesce', ['get', 'color'], '#ff5722'],
+            'line-width': 2.4,
+            'line-opacity': 0.8,
+            'line-dasharray': [1.2, 1.2]
+          }
+        };
+        if (beforeId) map.addLayer(layerConfig, beforeId);
+        else map.addLayer(layerConfig);
+      }
+      if (!map.getLayer('tracker-goto-end')) {
+        const beforeId = map.getLayer('tracker-dots') ? 'tracker-dots' : undefined;
+        const layerConfig = {
+          id: 'tracker-goto-end',
+          type: 'circle',
+          source: 'tracker-goto',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'circle-radius': 3,
+            'circle-color': ['coalesce', ['get', 'color'], '#ff5722']
+          }
+        };
+        if (beforeId) map.addLayer(layerConfig, beforeId);
+        else map.addLayer(layerConfig);
+      }
+    } catch (err) {
+      gotoReady = false;
+      console.error('ensureTrackerGoToLayer failed', err);
+    }
+    trackerGoToSourceReady = gotoReady && !!map.getSource('tracker-goto') && !!map.getLayer('tracker-goto');
   };
 
   const updateTrackerSource = () => {
@@ -4085,10 +7242,13 @@
     }
     try {
       const src = map.getSource('trackers');
-      if (src && src.setData) src.setData(getTrackerFeatureCollection());
+      const collection = getTrackerFeatureCollection();
+      if (src && src.setData) src.setData(collection);
+      try { ensurePoiIconsLoaded(map, collection.features); } catch {}
     } catch (e) {
       console.error('updateTrackerSource failed', e);
     }
+    try { updateTrackerGoToSource(); } catch {}
   };
 
   const updateTrackerPathSource = () => {
@@ -4106,57 +7266,19 @@
     }
   };
 
-  const processTrackerLine = (raw) => {
-    const data = parseTrackerLine(raw);
-    if (!data) return;
-    const prev = trackerStore.get(data.id);
-    let color = prev?.color;
-    if (!color) color = nextTrackerColor();
-    const hasPrevPosition = prev && Number.isFinite(prev.longitude) && Number.isFinite(prev.latitude);
-    const hasNextPosition = Number.isFinite(data.longitude) && Number.isFinite(data.latitude);
-    let shouldAppendSegment = false;
-    let movementDistance = 0;
-    if (hasPrevPosition && hasNextPosition) {
-      movementDistance = haversineMeters({ longitude: prev.longitude, latitude: prev.latitude }, { longitude: data.longitude, latitude: data.latitude });
-      if (movementDistance > 3) {
-        shouldAppendSegment = true;
-      }
+  const updateTrackerGoToSource = () => {
+    const map = getMap();
+    if (!map) return;
+    if (!trackerGoToSourceReady) {
+      ensureTrackerLayer(map);
+      if (!trackerGoToSourceReady) return;
     }
-    const timestamp = Date.now();
-    const merged = {
-      id: data.id,
-      longitude: data.longitude,
-      latitude: data.latitude,
-      altitude: data.altitude,
-      battery: data.battery,
-      hops: data.hops,
-      updatedAt: timestamp,
-      raw: data.raw,
-      name: prev?.name || null,
-      color,
-      visible: prev?.visible === false ? false : true,
-    };
-    trackerStore.set(data.id, merged);
-    trackerDataSeen = true;
-    captureRecordingSample(merged, prev, movementDistance, shouldAppendSegment, timestamp);
-    if (shouldAppendSegment) {
-      appendTrackerSegment(
-        data.id,
-        { longitude: prev.longitude, latitude: prev.latitude },
-        { longitude: data.longitude, latitude: data.latitude },
-        movementDistance,
-        color,
-        prev?.updatedAt,
-        timestamp
-      );
-      updateTrackerPathSource();
+    try {
+      const src = map.getSource('tracker-goto');
+      if (src && src.setData) src.setData(getTrackerGoToFeatureCollection());
+    } catch (e) {
+      console.error('updateTrackerGoToSource failed', e);
     }
-    trackerBlinkQueue.add(data.id);
-    updateTrackerSource();
-    renderTrackersList();
-    updateTrackersPanelState();
-    recordLiveTrackerLocation(merged);
-    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
   };
 
   const syncGotoPoiControls = (shouldFocus=false) => {
@@ -4265,10 +7387,16 @@
       const storedCynoopsLiveKey = localStorage.getItem('cynoops.liveApiKey');
       if (settingCynoopsLiveKey) settingCynoopsLiveKey.value = storedCynoopsLiveKey !== null ? storedCynoopsLiveKey : defaultCynoopsLiveKey;
 
-      const storedStyleUrl = localStorage.getItem('map.styleUrl');
+      loadFirebaseSettingsFromStorage({ syncInput: true, warnOnError: true });
+      initFirestoreConnection();
+
+      const storedStyleUrl = localStorage.getItem('map.streetStyleUrl');
+      const legacyStyleUrl = storedStyleUrl === null ? localStorage.getItem('map.styleUrl') : storedStyleUrl;
       const storedSatelliteStyleUrl = localStorage.getItem('map.satelliteStyleUrl');
-      if (settingStyleUrl) settingStyleUrl.value = storedStyleUrl !== null ? storedStyleUrl : defaultStyleUrl;
+      const storedTerrainStyleUrl = localStorage.getItem('map.terrainStyleUrl');
+      if (settingStyleUrl) settingStyleUrl.value = legacyStyleUrl !== null ? legacyStyleUrl : defaultStyleUrl;
       if (settingSatelliteStyleUrl) settingSatelliteStyleUrl.value = storedSatelliteStyleUrl !== null ? storedSatelliteStyleUrl : defaultSatelliteStyleUrl;
+      if (settingTerrainStyleUrl) settingTerrainStyleUrl.value = storedTerrainStyleUrl !== null ? storedTerrainStyleUrl : defaultTerrainStyleUrl;
 
       const storedHome = localStorage.getItem('map.homeAddress');
       if (settingHomeAddress) settingHomeAddress.value = storedHome !== null ? storedHome : defaultHomeAddress;
@@ -4284,13 +7412,6 @@
       const zoom = Number.isFinite(Number(storedZoomRaw)) ? Number(storedZoomRaw) : defaultStartZoom;
       if (settingStartZoom) settingStartZoom.value = String(zoom);
 
-      const storedBaud = localStorage.getItem('serial.baud');
-      if (settingBaud) settingBaud.value = storedBaud !== null ? storedBaud : DEFAULT_SERIAL_BAUD;
-      if (connectBaud) connectBaud.value = settingBaud?.value || DEFAULT_SERIAL_BAUD;
-
-      const storedAuto = localStorage.getItem('serial.autoReconnect');
-      if (settingAutoReconnect) settingAutoReconnect.value = storedAuto || DEFAULT_AUTO_RECONNECT;
-
       const storedCoord = (localStorage.getItem('map.coordinateSystem') || 'latlng').toLowerCase();
       currentCoordinateSystem = storedCoord;
       if (settingCoordinateSystem) settingCoordinateSystem.value = storedCoord;
@@ -4298,8 +7419,8 @@
       if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
       refreshGotoFormForSystem(false);
 
-      satelliteStyleActive = localStorage.getItem('map.satelliteEnabled') === '1';
-      setSatelliteButtonState(satelliteStyleActive);
+      activeMapStyle = getStoredMapStyleKey();
+      setActiveMapStyle(activeMapStyle, { persist: false });
       updateMapCursor();
 
       const storedLanguage = localStorage.getItem('app.language');
@@ -4323,7 +7444,16 @@
     const cynoopsLiveKey = (settingCynoopsLiveKey?.value || '').trim();
     let styleUrl = (settingStyleUrl?.value || '').trim();
     let satelliteStyleUrl = (settingSatelliteStyleUrl?.value || '').trim();
+    let terrainStyleUrl = (settingTerrainStyleUrl?.value || '').trim();
+    const firebaseConfigRaw = normalizeLineBreaks(settingFirebaseConfig?.value || '');
+    const parsedFirebase = parseFirebaseSettingsText(firebaseConfigRaw);
+    if (parsedFirebase.error) {
+      alert(t('alerts.invalidFirebaseConfig', 'Firebase settings must be valid JSON.'));
+      settingFirebaseConfig?.focus();
+      return null;
+    }
     if (!satelliteStyleUrl) satelliteStyleUrl = DEFAULT_SATELLITE_STYLE_URL;
+    if (!terrainStyleUrl) terrainStyleUrl = DEFAULT_TERRAIN_STYLE_URL;
     if (!styleUrl) styleUrl = DEFAULT_STYLE_URL;
     const homeAddress = (settingHomeAddress?.value || '').trim();
     const coords = parseStartInputs();
@@ -4346,16 +7476,6 @@
       settingStartZoom?.focus();
       return null;
     }
-    let baudValue = (settingBaud?.value || '').trim();
-    if (!baudValue) baudValue = DEFAULT_SERIAL_BAUD;
-    const baudNumber = Number(baudValue);
-    if (!Number.isFinite(baudNumber) || baudNumber <= 0) {
-      alert(t('alerts.invalidBaud', 'Please enter a valid positive baud rate.'));
-      settingBaud?.focus();
-      return null;
-    }
-    const baud = String(Math.round(baudNumber));
-    const autoReconnect = (settingAutoReconnect?.value === 'off') ? 'off' : 'on';
     const language = normalizeAppLanguage(settingLanguage?.value);
     const coordinateSystem = (settingCoordinateSystem?.value || 'latlng').toLowerCase();
 
@@ -4368,11 +7488,12 @@
       homeAddress,
       startPos: coords,
       startZoom,
-      baud,
-      autoReconnect,
       language,
       coordinateSystem,
       satelliteStyleUrl,
+      terrainStyleUrl,
+      firebaseConfigRaw: parsedFirebase.raw,
+      firebaseConfig: parsedFirebase.value,
     };
   };
   const applySettings = async () => {
@@ -4380,13 +7501,18 @@
     if (!values) return;
 
     const prevAccessToken = localStorage.getItem('map.accessToken') || '';
-    const prevStyleUrl = localStorage.getItem('map.styleUrl') || '';
+    const prevStyleUrl = (localStorage.getItem('map.streetStyleUrl')
+      ?? localStorage.getItem('map.styleUrl')
+      ?? '');
     const prevStartPos = parseStartPos(localStorage.getItem('map.startPos'));
     const prevStartZoom = Number(localStorage.getItem('map.startZoom') || DEFAULT_START_ZOOM);
     const prevSatelliteStyleUrl = localStorage.getItem('map.satelliteStyleUrl') || defaultSatelliteStyleUrl;
+    const prevTerrainStyleUrl = localStorage.getItem('map.terrainStyleUrl') || defaultTerrainStyleUrl;
     const prevSatelliteEnabled = localStorage.getItem('map.satelliteEnabled') === '1';
+    const prevActiveStyleKey = normalizeMapStyleKey(localStorage.getItem('map.activeStyle')) || (prevSatelliteEnabled ? 'satellite' : 'street');
     const styleChanged = values.styleUrl !== prevStyleUrl;
     const satelliteChanged = values.satelliteStyleUrl !== prevSatelliteStyleUrl;
+    const terrainChanged = values.terrainStyleUrl !== prevTerrainStyleUrl;
 
     let saveErrored = false;
     if (styleChanged && MAPBOX_STYLE_URL_RE.test(values.styleUrl || '') && (values.accessToken || prevAccessToken)) {
@@ -4411,19 +7537,35 @@
         }
       }
     }
+    if (terrainChanged && MAPBOX_STYLE_URL_RE.test(values.terrainStyleUrl || '') && (values.accessToken || prevAccessToken)) {
+      const tokenForCheck = (values.accessToken || prevAccessToken || '').trim();
+      if (tokenForCheck) {
+        const ok = await validateMapboxStyleUrl(values.terrainStyleUrl, tokenForCheck);
+        if (!ok) {
+          showToast(t('status.styleLoadFailed', 'Unable to load terrain style. Restoring previous style.'), 'error');
+          values.terrainStyleUrl = prevTerrainStyleUrl || DEFAULT_TERRAIN_STYLE_URL;
+          if (settingTerrainStyleUrl) settingTerrainStyleUrl.value = values.terrainStyleUrl;
+        }
+      }
+    }
 
     try {
       localStorage.setItem('map.accessToken', values.accessToken);
       localStorage.setItem('map.googleKey', values.googleKey);
       localStorage.setItem('openai.key', values.openaiKey);
       localStorage.setItem('cynoops.liveApiKey', values.cynoopsLiveKey);
+      if (values.firebaseConfigRaw && values.firebaseConfigRaw.trim()) {
+        localStorage.setItem(FIREBASE_SETTINGS_STORAGE_KEY, values.firebaseConfigRaw);
+      } else {
+        localStorage.removeItem(FIREBASE_SETTINGS_STORAGE_KEY);
+      }
+      localStorage.setItem('map.streetStyleUrl', values.styleUrl);
       localStorage.setItem('map.styleUrl', values.styleUrl);
       localStorage.setItem('map.satelliteStyleUrl', values.satelliteStyleUrl);
+      localStorage.setItem('map.terrainStyleUrl', values.terrainStyleUrl);
       localStorage.setItem('map.homeAddress', values.homeAddress);
       localStorage.setItem('map.startPos', `${values.startPos[0].toFixed(6)}, ${values.startPos[1].toFixed(6)}`);
       localStorage.setItem('map.startZoom', String(values.startZoom));
-      localStorage.setItem('serial.baud', values.baud);
-      localStorage.setItem('serial.autoReconnect', values.autoReconnect);
       localStorage.setItem('app.language', values.language);
       localStorage.setItem('map.coordinateSystem', values.coordinateSystem);
     } catch (e) {
@@ -4438,9 +7580,12 @@
 
     applyLanguagePreference(values.language);
 
-    if (connectBaud && values.baud) connectBaud.value = values.baud;
+    firebaseSettings = values.firebaseConfig;
+    initFirestoreConnection();
+
     if (settingCoordinateSystem) settingCoordinateSystem.value = values.coordinateSystem;
     if (settingSatelliteStyleUrl) settingSatelliteStyleUrl.value = values.satelliteStyleUrl || DEFAULT_SATELLITE_STYLE_URL;
+    if (settingTerrainStyleUrl) settingTerrainStyleUrl.value = values.terrainStyleUrl || DEFAULT_TERRAIN_STYLE_URL;
     currentCoordinateSystem = values.coordinateSystem || 'latlng';
     applyFooterCoordLabel(getFooterLabelKeyForSystem(currentCoordinateSystem));
     if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
@@ -4461,7 +7606,11 @@
       }
     } else {
       try {
-        const prevActiveStyleUrl = prevSatelliteEnabled ? prevSatelliteStyleUrl : prevStyleUrl;
+        const prevActiveStyleUrl = getMapStyleUrlForKey(prevActiveStyleKey, {
+          street: prevStyleUrl || DEFAULT_STYLE_URL,
+          satellite: prevSatelliteStyleUrl || DEFAULT_SATELLITE_STYLE_URL,
+          terrain: prevTerrainStyleUrl || DEFAULT_TERRAIN_STYLE_URL,
+        });
         const nextActiveStyleUrl = getTargetMapStyleUrl();
         if (nextActiveStyleUrl && prevActiveStyleUrl !== nextActiveStyleUrl) {
           applyMapStyle(nextActiveStyleUrl);
@@ -4669,7 +7818,7 @@
     });
     (window)._map = map; // for debugging
     (window)._lastStyleUrl = styleUrl;
-    setSatelliteButtonState(satelliteStyleActive);
+    updateMapStyleButtons();
     try { (window)._bindEditInteractions && (window)._bindEditInteractions(); } catch {}
     try { ensureTrackerLayer(map); } catch (e) { console.error('tracker layer init failed', e); }
 
@@ -4680,7 +7829,7 @@
         const zoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : null;
         const center = typeof mapInstance.getCenter === 'function' ? mapInstance.getCenter() : null;
         if (!Number.isFinite(zoom) || !center || !Number.isFinite(center.lat)) return null;
-        const metersPerPixel = 156543.03392 * Math.cos(center.lat * DEG_TO_RAD) / Math.pow(2, zoom);
+        const metersPerPixel = getMetersPerPixelAtLatitude(mapInstance, center.lat, zoom);
         if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return null;
         const scale = (metersPerPixel * 96) / 0.0254;
         if (!Number.isFinite(scale) || scale <= 0) return null;
@@ -4815,13 +7964,34 @@
         map.addSource('draw-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       }
       ensureTriangleMarkerImage(map);
+      ensureFeatureLabelBackgroundImage(map);
+      ensurePoiIconBackgroundImage(map);
+      const hasValidNameExpr = ['all',
+        ['!=', ['coalesce', ['get','name'], ''], ''],
+        ['!=', ['downcase', ['coalesce', ['get','name'], '']], 'untitled']
+      ];
+      const poiHasIconExpr = ['all',
+        ['has', 'poiIcon'],
+        ['!=', ['coalesce', ['get','poiIcon'], ''], '']
+      ];
+      const hasAreaLabelExpr = ['all',
+        ['==', ['get', 'showSize'], true],
+        ['!=', ['coalesce', ['get', 'area'], ''], '']
+      ];
+      const polygonHasLabelExpr = ['any', hasValidNameExpr, hasAreaLabelExpr];
+      const lineLengthLabelExpr = ['!=', ['coalesce', ['get','length'], ''], ''];
+      const poiLabelOffsetExpr = ['case',
+        poiHasIconExpr,
+        ['literal', [1.8, 0]],
+        ['literal', [1, 0]]
+      ];
       if (!map.getLayer('draw-fill')) {
         map.addLayer({
           id: 'draw-fill',
           type: 'fill',
           source: 'draw',
           filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
-          paint: { 'fill-color': ['coalesce', ['get','color'], '#2196F3'], 'fill-opacity': 0.17 }
+          paint: { 'fill-color': ['coalesce', ['get','color'], '#1565C0'], 'fill-opacity': 0.25 }
         });
       }
       if (!map.getLayer('draw-fill-outline')) {
@@ -4830,11 +8000,11 @@
           type: 'line',
           source: 'draw',
           filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
+          layout: { 'line-join': 'round' },
           paint: {
-            'line-color': ['coalesce', ['get','color'], '#2196F3'],
+            'line-color': ['coalesce', ['get','color'], '#1565C0'],
             'line-width': 2.2,
-            'line-opacity': 0.75,
-            'line-join': 'round'
+            'line-opacity': 1
           }
         });
       }
@@ -4844,7 +8014,7 @@
           type: 'line',
           source: 'draw',
           filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
-          paint: { 'line-color': ['coalesce', ['get','color'], '#64b5f6'], 'line-width': 2 }
+          paint: { 'line-color': ['coalesce', ['get','color'], '#1565C0'], 'line-width': 2 }
         });
       }
       if (!map.getLayer('draw-line-arrows')) {
@@ -4862,8 +8032,8 @@
             'icon-allow-overlap': true
           },
           paint: {
-            'icon-color': ['coalesce', ['get','color'], '#64b5f6'],
-            'icon-opacity': 0.9
+            'icon-color': ['coalesce', ['get','color'], '#1565C0'],
+            'icon-opacity': 1
           }
         });
       }
@@ -4871,9 +8041,9 @@
       if (!map.getLayer('draw-point-circle')) {
         map.addLayer({
           id: 'draw-point-circle', type: 'circle', source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true], ['!', poiHasIconExpr]],
           paint: {
-            'circle-color': ['coalesce', ['get','color'], '#2196F3'],
+            'circle-color': ['coalesce', ['get','color'], '#1565C0'],
             'circle-radius': 9,
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 1,
@@ -4892,11 +8062,57 @@
           }
         });
       }
+      if (!map.getLayer('draw-point-icon-bg')) {
+        map.addLayer({
+          id: 'draw-point-icon-bg',
+          type: 'symbol',
+          source: 'draw',
+          filter: ['all',
+            ['==', ['geometry-type'], 'Point'],
+            ['!=', ['get','_trackerHidden'], true],
+            ['!=', ['get','_featureHidden'], true],
+            ['!=', ['get','_featureLabelHidden'], true],
+            ['!=', ['get','isLineEndpoint'], true],
+            poiHasIconExpr
+          ],
+          layout: {
+            'icon-image': POI_ICON_BG_IMAGE_ID,
+            'icon-size': scaleLabelValue(POI_ICON_BG_SIZE),
+            'icon-anchor': 'center',
+            'icon-offset': [0, 0],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+      }
+      if (!map.getLayer('draw-point-icon')) {
+        map.addLayer({
+          id: 'draw-point-icon',
+          type: 'symbol',
+          source: 'draw',
+          filter: ['all',
+            ['==', ['geometry-type'], 'Point'],
+            ['!=', ['get','_trackerHidden'], true],
+            ['!=', ['get','_featureHidden'], true],
+            ['!=', ['get','_featureLabelHidden'], true],
+            ['!=', ['get','isLineEndpoint'], true],
+            poiHasIconExpr
+          ],
+          layout: {
+            'icon-image': ['get','poiIcon'],
+            'icon-size': scaleLabelValue(POI_ICON_SIZE),
+            'icon-anchor': 'center',
+            'icon-offset': [0, 0],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true
+          }
+        });
+      }
       // Optional label next to POI: show feature name when not empty/Untitled
       if (!map.getLayer('draw-point')) {
         map.addLayer({
           id: 'draw-point', type: 'symbol', source: 'draw',
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true], ['!=', ['get','isLineEndpoint'], true]],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true], ['!=', ['get','_featureLabelHidden'], true], ['!=', ['get','isLineEndpoint'], true]],
           layout: {
             'text-field': [
               'case',
@@ -4909,17 +8125,25 @@
               ['get','name'],
               ''
             ],
-            'text-size': 14,
+            'icon-image': ['case', hasValidNameExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [3, 6, 3, 6],
+            'text-size': scaleLabelValue(BASE_FEATURE_LABEL_SIZE),
+            'text-line-height': 1.1,
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
             'text-allow-overlap': true,
             'text-anchor': 'left',
-            'text-offset': [1, 0],
-            'text-letter-spacing': 0.02
+            'text-offset': poiLabelOffsetExpr,
+            'text-letter-spacing': 0.02,
+            'icon-anchor': 'left',
+            'icon-offset': poiLabelOffsetExpr,
+            'icon-allow-overlap': true
           },
           paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': '#000000',
-            'text-halo-width': 2,
-            'text-halo-blur': 0.2
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
+            'text-halo-blur': 0
           }
         });
       }
@@ -4944,30 +8168,43 @@
               ['case',
                 ['all',
                   ['!=', ['coalesce', ['get', 'name'], ''], ''],
-                  ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'untitled']
+                  ['!=', ['downcase', ['coalesce', ['get', 'name'], '']], 'untitled'],
+                  ['==', ['get', 'showSize'], true],
+                  ['!=', ['coalesce', ['get', 'area'], ''], '']
                 ],
                 '\n',
                 ''
               ],
               {},
-              ['coalesce', ['get', 'area'], ''],
+              ['case',
+                ['all',
+                  ['==', ['get', 'showSize'], true],
+                  ['!=', ['coalesce', ['get', 'area'], ''], '']
+                ],
+                ['coalesce', ['get', 'area'], ''],
+                ''
+              ],
               { 'font-scale': 0.85 }
             ],
-            'text-size': 14,
+            'icon-image': ['case', polygonHasLabelExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [4, 6, 4, 6],
+            'text-size': scaleLabelValue(BASE_FEATURE_LABEL_SIZE),
             'text-line-height': 1.1,
-            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
             'text-anchor': 'center',
             'text-justify': 'center',
             'text-max-width': 8,
             'text-allow-overlap': false,
             'text-padding': 2,
-            'text-optional': true
+            'text-optional': false,
+            'icon-anchor': 'center'
           },
           paint: {
-            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
-            'text-halo-color': 'rgba(255,255,255,0.85)',
-            'text-halo-width': 1.4,
-            'text-halo-blur': 0.2
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
+            'text-halo-blur': 0
           }
         });
       }
@@ -4987,20 +8224,26 @@
               ['coalesce', ['get', 'name'], ''],
               ''
             ],
-            'text-size': 13,
-            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'icon-image': ['case', hasValidNameExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [3, 6, 3, 6],
+            'text-size': scaleLabelValue(BASE_FEATURE_LABEL_SIZE),
+            'text-line-height': 1.1,
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
             'text-anchor': 'bottom',
             'text-offset': [0, -0.7],
             'text-allow-overlap': false,
             'text-max-width': 6,
             'text-padding': 2,
-            'text-optional': true
+            'text-optional': false,
+            'icon-anchor': 'bottom',
+            'icon-offset': [0, -0.7]
           },
           paint: {
-            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
-            'text-halo-color': 'rgba(255,255,255,0.85)',
-            'text-halo-width': 1.2,
-            'text-halo-blur': 0.2
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
+            'text-halo-blur': 0
           }
         });
       }
@@ -5013,28 +8256,33 @@
           layout: {
             'visibility': 'none',
             'text-field': ['coalesce', ['get', 'length'], ''],
-            'text-size': 12,
-            'text-font': ['DIN Pro Medium', 'Arial Unicode MS Bold'],
+            'icon-image': ['case', lineLengthLabelExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [3, 6, 3, 6],
+            'text-size': scaleLabelValue(BASE_FEATURE_LABEL_SIZE),
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
             'text-anchor': 'top',
             'text-offset': [0, 0.7],
             'text-allow-overlap': false,
             'text-max-width': 6,
             'text-padding': 2,
-            'text-optional': true
+            'text-optional': false,
+            'icon-anchor': 'top',
+            'icon-offset': [0, 0.7]
           },
           paint: {
-            'text-color': ['coalesce', ['get', 'color'], '#1f2933'],
-            'text-halo-color': 'rgba(255,255,255,0.85)',
-            'text-halo-width': 1.2,
-            'text-halo-blur': 0.2
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
+            'text-halo-blur': 0
           }
         });
       }
       if (!map.getLayer('draw-draft-fill')) {
-        map.addLayer({ id: 'draw-draft-fill', type: 'fill', source: 'draw-draft', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#2196F3', 'fill-opacity': 0.10 } });
+        map.addLayer({ id: 'draw-draft-fill', type: 'fill', source: 'draw-draft', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#1565C0', 'fill-opacity': 0.18 } });
       }
       if (!map.getLayer('draw-draft-line')) {
-        map.addLayer({ id: 'draw-draft-line', type: 'line', source: 'draw-draft', paint: { 'line-color': '#64b5f6', 'line-width': 2, 'line-dasharray': [2,2] } });
+        map.addLayer({ id: 'draw-draft-line', type: 'line', source: 'draw-draft', paint: { 'line-color': '#1565C0', 'line-width': 2, 'line-dasharray': [2,2] } });
       }
       if (!map.getLayer('draw-hl-fill')) {
         map.addLayer({ id: 'draw-hl-fill', type: 'fill', source: 'draw', filter: ['all', ['==', ['get','id'], '__none__'], ['!=', ['get','_trackerHidden'], true], ['!=', ['get','_featureHidden'], true]], paint: { 'fill-color': '#FFC107', 'fill-opacity': 0.30 } });
@@ -5053,6 +8301,7 @@
       }
       applyLabelVisibility(map);
       updateFeatureLabels();
+      try { ensurePoiIconsLoaded(map, drawStore.features); } catch {}
     };
     map.on('load', ensureDrawLayers);
     // When switching styles (map.setStyle), the style graph resets; re-add our drawing layers
@@ -5067,6 +8316,8 @@
           map.setLayoutProperty('edit-mid','visibility','visible');
         }
         applyFeaturesVisibility(map);
+        updateTrackerSource();
+        updateTrackerPathSource();
         applyTrackersVisibility(map);
         if (weatherOverlayActive) scheduleWeatherRefresh();
       } catch {}
@@ -5079,10 +8330,12 @@
       src.setData(fc);
     };
     const refreshDraw = () => {
+      try { ensureLineEndpointsForAll(); } catch {}
       const src = map.getSource('draw');
-      if (src) src.setData(drawStore);
+      if (src) src.setData({ type: 'FeatureCollection', features: drawStore.features });
       updateFeatureLabels();
       updateDrawingsPanel();
+      try { ensurePoiIconsLoaded(map, drawStore.features); } catch {}
       try { if ((window)._editTarget) refreshEditVerts(); } catch {}
     };
     // Expose refreshers so edit interaction code can call them
@@ -5243,6 +8496,7 @@
           return f;
         }) : [];
         refreshDraw();
+        try { ensurePoiIconsLoaded(getMap(), drawStore.features); } catch {}
         requestLiveFeaturesSync(0);
         try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
       } catch(e){ console.error('loadDrawings failed', e); }
@@ -5320,6 +8574,8 @@
           if (!feature || feature.properties?.isLineEndpoint) return;
           if (feature.properties?._trackerHidden) return;
           if (feature.properties?._featureHidden) return;
+          if (feature.properties?._featureLabelHidden) return;
+          const showSize = !feature.properties?._featureSizeHidden;
           const geom = feature.geometry;
           const kind = (feature.properties?.kind || '').toLowerCase();
           const color = typeof feature.properties?.color === 'string' ? feature.properties.color : '#1f2933';
@@ -5329,17 +8585,25 @@
             if (!ring || ring.length < 4) return;
             const centroid = polygonCentroid(ring);
             if (!centroid) return;
-            const area = areaSqm(ring);
-            if (!Number.isFinite(area)) return;
-            const name = (feature.properties?.name || '').trim() || 'Untitled';
+            let areaLabel = '';
+            if (showSize) {
+              const area = areaSqm(ring);
+              if (Number.isFinite(area)) areaLabel = fmtArea(area);
+            }
+            const rawName = normalizeLineBreaks(feature.properties?.name || '');
+            const hasText = /\S/.test(rawName);
+            const name = hasText ? rawName : 'Untitled';
+            const hasName = hasText && String(name).toLowerCase() !== 'untitled';
+            if (!hasName && !areaLabel) return;
             labels.push({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: centroid },
               properties: {
                 labelType: 'polygon',
                 name,
-                area: fmtArea(area),
-                color
+                area: areaLabel,
+                color,
+                showSize
               }
             });
             return;
@@ -5350,10 +8614,9 @@
             const start = coords[0];
             const end = coords[coords.length - 1];
             if (!Array.isArray(start) || !Array.isArray(end)) return;
-            const name = (feature.properties?.name || '').trim() || 'Untitled';
-            const lengthMetersValue = lengthMeters(coords);
-            if (!Number.isFinite(lengthMetersValue)) return;
-            const length = fmtLen(lengthMetersValue);
+            const rawName = normalizeLineBreaks(feature.properties?.name || '');
+            const hasText = /\S/.test(rawName);
+            const name = hasText ? rawName : 'Untitled';
             labels.push({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: [start[0], start[1]] },
@@ -5363,15 +8626,21 @@
                 color
               }
             });
-            labels.push({
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [end[0], end[1]] },
-              properties: {
-                labelType: 'line-length',
-                length,
-                color
+            if (showSize) {
+              const lengthMetersValue = lengthMeters(coords);
+              if (Number.isFinite(lengthMetersValue)) {
+                const length = fmtLen(lengthMetersValue);
+                labels.push({
+                  type: 'Feature',
+                  geometry: { type: 'Point', coordinates: [end[0], end[1]] },
+                  properties: {
+                    labelType: 'line-length',
+                    length,
+                    color
+                  }
+                });
               }
-            });
+            }
           }
         } catch (err) {
           console.error('buildFeatureLabelFeatures failed', err);
@@ -5392,14 +8661,13 @@
     };
     const newId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;
     // Auto-assign palette (cycling)
-    const colorPalette = ['#e91e63','#9c27b0','#3f51b5','#03a9f4','#009688','#4caf50','#ff9800','#795548','#607d8b','#f44336'];
+    const colorPalette = ['#1565C0','#C62828','#2E7D32','#EF6C00','#6A1B9A','#00838F','#AD1457','#4E342E','#283593','#546E7A'];
     // Picker palette (30+ choices)
     const colorChoices = [
-      '#f44336','#e91e63','#9c27b0','#673ab7','#3f51b5','#2196f3','#03a9f4','#00bcd4','#009688',
-      '#4caf50','#8bc34a','#cddc39','#ffeb3b','#ffc107','#ff9800','#ff5722','#795548','#9e9e9e',
-      '#607d8b','#000000','#ffffff','#b71c1c','#880e4f','#4a148c','#311b92','#1a237e','#0d47a1',
-      '#01579b','#006064','#004d40','#1b5e20','#33691e','#827717','#f57f17','#ff6f00','#e65100',
-      '#bf360c'
+      '#b71c1c','#c62828','#ad1457','#880e4f','#6a1b9a','#4a148c','#311b92','#283593','#1a237e',
+      '#0d47a1','#1565c0','#0277bd','#006064','#00838f','#004d40','#00796b','#1b5e20','#2e7d32',
+      '#33691e','#827717','#f57f17','#ff8f00','#ef6c00','#e65100','#d84315','#bf360c','#5d4037',
+      '#4e342e','#37474f','#263238','#000000'
     ];
     let lastColorIndex = -1;
     const nextColor = () => { lastColorIndex = (lastColorIndex + 1) % colorPalette.length; return colorPalette[lastColorIndex]; };
@@ -5416,7 +8684,7 @@
         const start = coords[0];
         const end = coords[coords.length - 1];
         if (!Array.isArray(start) || !Array.isArray(end)) return;
-        const color = lineFeature.properties?.color || '#64b5f6';
+        const color = lineFeature.properties?.color || '#1565C0';
         const lineId = lineFeature.properties?.id;
         const hidden = !!lineFeature.properties?._featureHidden;
         const makePoint = (coord, kind, { opacity = 1, hasInnerDot = false } = {}) => ({
@@ -5469,17 +8737,53 @@
         const start = coords[0];
         const end = coords[coords.length - 1];
         if (!Array.isArray(start) || !Array.isArray(end)) return;
+        let hasStart = false;
+        let hasEnd = false;
         drawStore.features.forEach((feat) => {
           if (!feat || feat.properties?.relatedLineId !== lineId) return;
           if (!feat.geometry || feat.geometry.type !== 'Point') return;
           if (feat.properties?.kind === 'line-start') {
             feat.geometry.coordinates = [start[0], start[1]];
+            hasStart = true;
           } else if (feat.properties?.kind === 'line-end') {
             feat.geometry.coordinates = [end[0], end[1]];
+            hasEnd = true;
           }
         });
+        if (!hasStart || !hasEnd) {
+          const color = lineFeature.properties?.color || '#1565C0';
+          const hidden = !!lineFeature.properties?._featureHidden;
+          const makePoint = (coord, kind, { opacity = 1, hasInnerDot = false } = {}) => ({
+            type: 'Feature',
+            properties: {
+              id: newId(),
+              kind,
+              color,
+              pointOpacity: opacity,
+              hasInnerDot,
+              relatedLineId: lineId,
+              isLineEndpoint: true,
+              _featureHidden: hidden
+            },
+            geometry: { type: 'Point', coordinates: [coord[0], coord[1]] }
+          });
+          if (!hasStart) drawStore.features.push(makePoint(start, 'line-start', { opacity: 1, hasInnerDot: true }));
+          if (!hasEnd) drawStore.features.push(makePoint(end, 'line-end', { opacity: 1 }));
+        }
       } catch (err) {
         console.error('syncLineEndpoints failed', err);
+      }
+    }
+    function ensureLineEndpointsForAll() {
+      try {
+        if (!Array.isArray(drawStore.features)) return;
+        drawStore.features.forEach((feat) => {
+          if (!feat || feat.properties?.isLineEndpoint) return;
+          if (feat.geometry?.type !== 'LineString') return;
+          syncLineEndpoints(feat);
+        });
+      } catch (err) {
+        console.error('ensureLineEndpointsForAll failed', err);
       }
     }
     const circleFrom = (center, edge, steps=64) => {
@@ -5613,6 +8917,22 @@
         }
         return;
       }
+      if (tool === 'team-goto') {
+        if (e?.preventDefault) e.preventDefault();
+        const lngLat = e?.lngLat;
+        const trackerId = activeTrackerGoToId;
+        if (trackerId && lngLat && Number.isFinite(lngLat.lng) && Number.isFinite(lngLat.lat)) {
+          if (trackerGoToLocations.has(trackerId)) {
+            void clearTrackerGoToLocation(trackerId);
+            return;
+          }
+          void setTrackerGoToLocation(trackerId, { longitude: lngLat.lng, latitude: lngLat.lat });
+          try { window.setActiveTool?.(null); } catch { (window)._currentTool = null; }
+          return;
+        }
+        try { window.setActiveTool?.(null); } catch { (window)._currentTool = null; }
+        return;
+      }
       if (tool === 'arrow') {
         if (!arrowStart) {
           arrowStart = e.lngLat;
@@ -5713,6 +9033,260 @@
       try { map.setFilter('draw-hl-line', lineFilter); } catch {}
       try { map.setFilter('draw-hl-point', pointFilter); } catch {}
     };
+    // ---- Direct edit tool (hover + drag) ----
+    let editToolHoverId = null;
+    let editToolOwnedId = null;
+    let editToolDrag = null;
+    let editToolRafPending = false;
+    let editToolLastEvt = null;
+    const EDIT_TOOL_LAYERS = ['draw-fill', 'draw-fill-outline', 'draw-line', 'draw-point-circle', 'draw-point-icon', 'draw-point'];
+    const isEditToolActive = () => (window)._currentTool === 'edit';
+    const setEditHandleVisibility = (visible) => {
+      try { map.setLayoutProperty('edit-verts', 'visibility', visible ? 'visible' : 'none'); } catch {}
+      try { map.setLayoutProperty('edit-mid', 'visibility', visible ? 'visible' : 'none'); } catch {}
+    };
+    const setDrawSourceData = () => {
+      try {
+        const src = map.getSource('draw');
+        if (src) src.setData({ type: 'FeatureCollection', features: drawStore.features });
+      } catch {}
+    };
+    const clearEditHover = () => {
+      const hadHover = !!editToolHoverId;
+      editToolHoverId = null;
+      if (hadHover) setHighlight(null);
+      if (editToolOwnedId && (window)._editTarget === editToolOwnedId) {
+        (window)._editTarget = null;
+        editToolOwnedId = null;
+        try { refreshEditVerts(); } catch {}
+        setEditHandleVisibility(false);
+      }
+      try { map.getCanvas().style.cursor = ''; } catch {}
+    };
+    const getEditableHit = (point) => {
+      if (!point) return null;
+      let hits = [];
+      try { hits = map.queryRenderedFeatures(point, { layers: EDIT_TOOL_LAYERS }) || []; } catch { hits = []; }
+      if (!hits.length) return null;
+      let endpointHit = null;
+      let featureHit = null;
+      for (let i = 0; i < hits.length; i += 1) {
+        const hit = hits[i];
+        const props = hit?.properties || {};
+        if (props._featureHidden || props._trackerHidden) continue;
+        if (props.isReadOnly) continue;
+        if (props.isLineEndpoint) {
+          const relatedId = props.relatedLineId || props.relatedLineID || props.related_line_id || null;
+          if (!relatedId) continue;
+          const lineFeat = drawStore.features.find(f => f?.properties?.id === relatedId);
+          if (!lineFeat || lineFeat.geometry?.type !== 'LineString') continue;
+          if (lineFeat.properties?._featureHidden || lineFeat.properties?._trackerHidden) continue;
+          if (lineFeat.properties?.isReadOnly) continue;
+          endpointHit = { rendered: hit, store: lineFeat, endpointKind: props.kind || null, endpointId: props.id || null };
+          break;
+        }
+        const fid = props.id || null;
+        if (!fid) continue;
+        const storeFeat = drawStore.features.find(f => f?.properties?.id === fid);
+        if (!storeFeat || storeFeat?.properties?.isLineEndpoint) continue;
+        featureHit = { rendered: hit, store: storeFeat };
+        break;
+      }
+      return endpointHit || featureHit || null;
+    };
+    const applyEditHover = (hit) => {
+      const nextId = hit?.store?.properties?.id || null;
+      if (editToolHoverId !== nextId) {
+        editToolHoverId = nextId;
+        setHighlight(nextId);
+      }
+      const canEditVerts = !!(hit && (hit.store.geometry?.type === 'LineString' || hit.store.geometry?.type === 'Polygon'));
+      if (canEditVerts) {
+        if ((window)._editTarget !== nextId) {
+          (window)._editTarget = nextId;
+          editToolOwnedId = nextId;
+          try { refreshEditVerts(); } catch {}
+        }
+        setEditHandleVisibility(true);
+        try { map.moveLayer('edit-mid'); map.moveLayer('edit-verts'); } catch {}
+      } else if (editToolOwnedId && (window)._editTarget === editToolOwnedId) {
+        (window)._editTarget = null;
+        editToolOwnedId = null;
+        try { refreshEditVerts(); } catch {}
+        setEditHandleVisibility(false);
+      }
+      try { map.getCanvas().style.cursor = hit ? 'grab' : ''; } catch {}
+    };
+    const toLngLatFromEvent = (ev) => {
+      if (!ev) return null;
+      if (ev.lngLat) return ev.lngLat;
+      if (ev.point && Number.isFinite(ev.point.x) && Number.isFinite(ev.point.y)) {
+        try { return map.unproject([ev.point.x, ev.point.y]); } catch { return null; }
+      }
+      const oe = ev.originalEvent || ev;
+      const canvas = map.getCanvas();
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      let x = null;
+      let y = null;
+      if (oe?.touches && oe.touches[0]) {
+        x = oe.touches[0].clientX - rect.left;
+        y = oe.touches[0].clientY - rect.top;
+      } else if (oe && (oe.clientX != null) && (oe.clientY != null)) {
+        x = oe.clientX - rect.left;
+        y = oe.clientY - rect.top;
+      }
+      if (x == null || y == null) return null;
+      try { return map.unproject([x, y]); } catch { return null; }
+    };
+    const translateCoords = (coords, dx, dy) => {
+      if (!Array.isArray(coords)) return coords;
+      if (coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+        return [coords[0] + dx, coords[1] + dy];
+      }
+      return coords.map((item) => translateCoords(item, dx, dy));
+    };
+    const applyEditDrag = (evt) => {
+      if (!editToolDrag) return;
+      const lngLat = toLngLatFromEvent(evt);
+      if (!lngLat) return;
+      const f = editToolDrag.feature;
+      if (!f || !f.geometry) return;
+      if (editToolDrag.mode === 'endpoint') {
+        if (f.geometry.type !== 'LineString') return;
+        const coords = Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+        if (!coords || coords.length < 2) return;
+        const idx = editToolDrag.endpointKind === 'line-start' ? 0 : coords.length - 1;
+        const nextCoord = [lngLat.lng, lngLat.lat];
+        coords[idx] = nextCoord;
+        if (editToolDrag.endpointFeature?.geometry?.type === 'Point') {
+          editToolDrag.endpointFeature.geometry.coordinates = [nextCoord[0], nextCoord[1]];
+        }
+        try { syncLineEndpoints(f); } catch {}
+        editToolDrag.moved = editToolDrag.moved || Math.abs(lngLat.lng - editToolDrag.start[0]) > 1e-10 || Math.abs(lngLat.lat - editToolDrag.start[1]) > 1e-10;
+      } else {
+        const dx = lngLat.lng - editToolDrag.start[0];
+        const dy = lngLat.lat - editToolDrag.start[1];
+        if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+        const nextCoords = translateCoords(editToolDrag.origCoords, dx, dy);
+        f.geometry.coordinates = nextCoords;
+        if (f.geometry.type === 'LineString') {
+          try { syncLineEndpoints(f); } catch {}
+        }
+        editToolDrag.moved = editToolDrag.moved || Math.abs(dx) > 1e-10 || Math.abs(dy) > 1e-10;
+      }
+      setDrawSourceData();
+      try { map.triggerRepaint(); } catch {}
+      try { updateFeatureLabels(); } catch {}
+      try { if ((window)._editTarget) refreshEditVerts(); } catch {}
+    };
+    const onEditDragMove = (e) => {
+      if (!editToolDrag) return;
+      editToolLastEvt = e;
+      if (editToolRafPending) return;
+      editToolRafPending = true;
+      requestAnimationFrame(() => {
+        editToolRafPending = false;
+        applyEditDrag(editToolLastEvt);
+      });
+    };
+    const stopEditDrag = () => {
+      if (!editToolDrag) return;
+      const moved = !!editToolDrag.moved;
+      editToolDrag = null;
+      try {
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = editToolHoverId ? 'grab' : '';
+      } catch {}
+      try {
+        document.removeEventListener('mousemove', onEditDragMove, true);
+        document.removeEventListener('mouseup', stopEditDrag, true);
+        document.removeEventListener('touchmove', onEditDragMove, { capture:true });
+        document.removeEventListener('touchend', stopEditDrag, { capture:true });
+      } catch {}
+      if (moved) {
+        setDirty(true);
+        refreshDraw();
+        notifyFeatureModified('Feature moved');
+      }
+    };
+    const beginEditDrag = (hit, evt) => {
+      if (!hit || !hit.store || !hit.store.geometry) return;
+      const lngLat = toLngLatFromEvent(evt);
+      if (!lngLat) return;
+      if (hit.endpointKind === 'line-start' || hit.endpointKind === 'line-end') {
+        let endpointFeature = null;
+        if (hit.endpointId) {
+          endpointFeature = drawStore.features.find(f => f?.properties?.id === hit.endpointId) || null;
+        }
+        editToolDrag = {
+          id: hit.store.properties?.id || null,
+          feature: hit.store,
+          start: [lngLat.lng, lngLat.lat],
+          endpointKind: hit.endpointKind,
+          endpointFeature,
+          mode: 'endpoint',
+          moved: false
+        };
+      } else {
+        const coords = hit.store.geometry.coordinates;
+        let orig;
+        try { orig = JSON.parse(JSON.stringify(coords)); } catch { orig = coords; }
+        editToolDrag = {
+          id: hit.store.properties?.id || null,
+          feature: hit.store,
+          start: [lngLat.lng, lngLat.lat],
+          origCoords: orig,
+          mode: 'translate',
+          moved: false
+        };
+      }
+      try {
+        map.getCanvas().style.cursor = 'grabbing';
+        map.dragPan.disable();
+      } catch {}
+      try {
+        document.addEventListener('mousemove', onEditDragMove, true);
+        document.addEventListener('mouseup', stopEditDrag, true);
+        document.addEventListener('touchmove', onEditDragMove, { capture:true, passive:false });
+        document.addEventListener('touchend', stopEditDrag, { capture:true });
+      } catch {}
+      evt?.preventDefault?.();
+    };
+    const onEditToolMouseDown = (e) => {
+      if (!isEditToolActive()) return;
+      if (editToolDrag) return;
+      if (e?.originalEvent && ('button' in e.originalEvent) && e.originalEvent.button !== 0) return;
+      try {
+        const handleHits = map.queryRenderedFeatures(e.point, { layers: ['edit-verts', 'edit-mid'] });
+        if (handleHits && handleHits.length) return;
+      } catch {}
+      const hit = getEditableHit(e.point);
+      if (!hit) return;
+      applyEditHover(hit);
+      beginEditDrag(hit, e);
+    };
+    map.on('mousemove', (e) => {
+      if (!isEditToolActive()) return;
+      if (editToolDrag || (window)._editVertexDragging) return;
+      const hit = getEditableHit(e.point);
+      if (!hit) { clearEditHover(); return; }
+      applyEditHover(hit);
+    });
+    map.on('mousedown', onEditToolMouseDown);
+    map.on('touchstart', onEditToolMouseDown, { passive:false });
+    try {
+      map.getCanvas().addEventListener('mouseleave', () => {
+        if (!isEditToolActive() || editToolDrag) return;
+        clearEditHover();
+      });
+    } catch {}
+    (window)._setEditToolActive = (active) => {
+      if (!active) {
+        if (editToolDrag) stopEditDrag();
+        clearEditHover();
+      }
+    };
     // Color modal helpers
     function buildColorGridOnce(){
       if (!colorGrid || colorGrid.dataset.built === '1') return;
@@ -5757,22 +9331,194 @@
       const t = e.target; if (t && t instanceof HTMLElement && t.classList.contains('modal-backdrop')) closeColorModal();
     });
 
+    // POI icon modal helpers
+    function buildPoiIconGrid(currentId){
+      if (!poiIconGrid) return;
+      poiIconGrid.textContent = '';
+      const list = symbolCatalogState.list;
+      if (!list.length) {
+        if (poiIconStatus) {
+          poiIconStatus.textContent = symbolCatalogState.promise ? POI_ICON_LOADING_LABEL : POI_ICON_EMPTY_LABEL;
+          poiIconStatus.hidden = false;
+        }
+        return;
+      }
+      if (poiIconStatus) {
+        poiIconStatus.textContent = '';
+        poiIconStatus.hidden = true;
+      }
+      const makeBtn = ({ id, label, src, fallbackSrc, isNone = false }) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `poi-icon-opt${isNone ? ' poi-icon-opt--none' : ''}`;
+        btn.setAttribute('data-icon-id', id || '');
+        const selected = isNone ? !currentId : (id === currentId);
+        btn.setAttribute('aria-selected', String(selected));
+        const ariaLabel = label || POI_ICON_NONE_LABEL;
+        btn.setAttribute('aria-label', ariaLabel);
+        btn.title = ariaLabel;
+        if (isNone) {
+          const labelEl = document.createElement('span');
+          labelEl.className = 'poi-icon-none-label';
+          labelEl.textContent = POI_ICON_NONE_LABEL;
+          btn.appendChild(labelEl);
+          return btn;
+        }
+        const img = document.createElement('img');
+        img.className = 'poi-icon-img';
+        img.alt = '';
+        img.setAttribute('aria-hidden', 'true');
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = src || '';
+        if (fallbackSrc) {
+          img.addEventListener('error', () => {
+            if (img.src !== fallbackSrc) img.src = fallbackSrc;
+          }, { once: true });
+        }
+        btn.appendChild(img);
+        return btn;
+      };
+      const noneWrap = document.createElement('div');
+      noneWrap.className = 'poi-icon-group';
+      const noneTitle = document.createElement('div');
+      noneTitle.className = 'poi-icon-group-title';
+      noneTitle.textContent = POI_ICON_NONE_LABEL;
+      const noneGrid = document.createElement('div');
+      noneGrid.className = 'poi-icon-group-grid';
+      noneGrid.appendChild(makeBtn({ id: '', label: POI_ICON_NONE_LABEL, isNone: true }));
+      noneWrap.appendChild(noneTitle);
+      noneWrap.appendChild(noneGrid);
+      poiIconGrid.appendChild(noneWrap);
+
+      symbolCatalogState.groups.forEach((group) => {
+        if (!group || !Array.isArray(group.entries) || group.entries.length === 0) return;
+        const groupWrap = document.createElement('div');
+        groupWrap.className = 'poi-icon-group';
+        const title = document.createElement('div');
+        title.className = 'poi-icon-group-title';
+        title.textContent = String(group.label || '').trim() || 'Symbols';
+        const grid = document.createElement('div');
+        grid.className = 'poi-icon-group-grid';
+        group.entries.forEach((entry) => {
+          grid.appendChild(makeBtn(entry));
+        });
+        groupWrap.appendChild(title);
+        groupWrap.appendChild(grid);
+        poiIconGrid.appendChild(groupWrap);
+      });
+    }
+    function applyPoiIconSelection(nextId){
+      if (poiIconPickerState.mode === 'tracker') {
+        const trackerId = poiIconPickerState.trackerId;
+        if (!trackerId) return;
+        if (nextId) {
+          const mapInst = getMap();
+          if (mapInst) {
+            const entry = symbolCatalogState.byId.get(nextId);
+            if (entry) ensurePoiIconImageOnMap(mapInst, entry);
+          }
+        }
+        updateTrackerEntry(trackerId, { poiIcon: nextId || null });
+        return;
+      }
+      const targetId = poiIconPickerState.targetId;
+      if (!targetId) return;
+      const ds = (window)._drawStore;
+      const feature = ds?.features?.find((item) => item?.properties?.id === targetId) || null;
+      if (!feature) return;
+      feature.properties = feature.properties || {};
+      if (nextId) feature.properties.poiIcon = nextId;
+      else delete feature.properties.poiIcon;
+      if (nextId) {
+        const mapInst = getMap();
+        if (mapInst) {
+          const entry = symbolCatalogState.byId.get(nextId);
+          if (entry) ensurePoiIconImageOnMap(mapInst, entry);
+        }
+      }
+      setDirty(true);
+      refreshDrawMapOnly();
+      notifyFeatureModified('POI icon updated');
+      try { updateDrawingsPanel(); } catch {}
+    }
+    function openPoiIconModal(feature){
+      if (!poiIconModal || !feature) return;
+      const currentId = typeof feature.properties?.poiIcon === 'string' ? feature.properties.poiIcon.trim() : '';
+      poiIconPickerState.mode = 'draw';
+      poiIconPickerState.targetId = feature.properties?.id || null;
+      poiIconPickerState.currentId = currentId;
+      poiIconPickerState.trackerId = null;
+      poiIconModal.hidden = false;
+      if (!symbolCatalogState.list.length) {
+        const loading = ensureSymbolsLoaded();
+        buildPoiIconGrid(currentId);
+        loading.then(() => buildPoiIconGrid(poiIconPickerState.currentId)).catch(() => {});
+      } else {
+        buildPoiIconGrid(currentId);
+      }
+    }
+    function openTrackerPoiIconModal(tracker){
+      if (!poiIconModal || !tracker) return;
+      const currentId = typeof tracker.poiIcon === 'string' ? tracker.poiIcon.trim() : '';
+      poiIconPickerState.mode = 'tracker';
+      poiIconPickerState.trackerId = tracker.id || null;
+      poiIconPickerState.targetId = null;
+      poiIconPickerState.currentId = currentId;
+      poiIconModal.hidden = false;
+      if (!symbolCatalogState.list.length) {
+        const loading = ensureSymbolsLoaded();
+        buildPoiIconGrid(currentId);
+        loading.then(() => buildPoiIconGrid(poiIconPickerState.currentId)).catch(() => {});
+      } else {
+        buildPoiIconGrid(currentId);
+      }
+    }
+    (window).openTrackerPoiIconModal = openTrackerPoiIconModal;
+    function closePoiIconModal(){
+      if (poiIconModal) poiIconModal.hidden = true;
+      poiIconPickerState.targetId = null;
+      poiIconPickerState.currentId = null;
+      poiIconPickerState.mode = null;
+      poiIconPickerState.trackerId = null;
+    }
+    if (poiIconGrid && poiIconGrid.dataset.bound !== '1') {
+      poiIconGrid.dataset.bound = '1';
+      poiIconGrid.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement)) return;
+        const btn = t.closest('button[data-icon-id]');
+        if (!btn) return;
+        const nextId = btn.getAttribute('data-icon-id') || '';
+        applyPoiIconSelection(nextId);
+        closePoiIconModal();
+      });
+    }
+    poiIconClose?.addEventListener('click', () => closePoiIconModal());
+    poiIconModal?.addEventListener('click', (e) => {
+      const t = e.target; if (t && t instanceof HTMLElement && t.classList.contains('modal-backdrop')) closePoiIconModal();
+    });
+
     const renderRow = (f) => {
       if (f?.properties?.isLineEndpoint) return null;
       f.properties = f.properties || {};
       const row = document.createElement('div');
       row.className = 'drawing-row';
       row.dataset.id = f.properties.id;
-      const main = document.createElement('div');
-      main.className = 'drawing-main';
+      const header = document.createElement('div');
+      header.className = 'drawing-header';
       const nameWrap = document.createElement('div');
       nameWrap.className = 'drawing-name';
       const nameEl = document.createElement('div');
       nameEl.className = 'drawing-title';
       const isReadOnlyFeature = !!f.properties?.isReadOnly;
-      nameEl.contentEditable = 'true';
+      const canEditName = !isReadOnlyFeature || !!f.properties?.allowNameEdit;
+      nameEl.contentEditable = 'false';
+      nameEl.setAttribute('role', 'textbox');
+      nameEl.setAttribute('aria-multiline', 'true');
+      nameEl.setAttribute('aria-readonly', 'true');
       nameEl.setAttribute('data-placeholder', 'Untitled');
-      const initialName = sanitizeFeatureName(f.properties?.name || '', { allowImportEllipsis: true });
+      const initialName = sanitizeFeatureNameDraft(f.properties?.name || '');
       if (initialName !== (f.properties?.name || '')) f.properties.name = initialName;
       nameEl.textContent = initialName;
       nameWrap.appendChild(nameEl);
@@ -5785,18 +9531,19 @@
         badge.title = importBadgeText;
         nameWrap.appendChild(badge);
       }
+      header.appendChild(nameWrap);
       const meta = document.createElement('div');
       meta.className = 'drawing-meta';
-      const typeEl = document.createElement('div');
-      typeEl.className = 'drawing-type';
       const size = document.createElement('div');
       size.className = 'drawing-size';
+      const actionsRow = document.createElement('div');
+      actionsRow.className = 'drawing-actions-row';
       const actions = document.createElement('div');
       actions.className = 'drawing-actions';
       const colorWrap = document.createElement('button');
       colorWrap.type = 'button';
       colorWrap.className = 'drawing-color';
-      const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#2196F3';
+      const getColor = () => (f.properties && f.properties.color) ? String(f.properties.color) : '#1565C0';
       const applyColorToWrap = () => { try { colorWrap.style.backgroundColor = getColor(); } catch {} };
       applyColorToWrap();
       const changeColorLabel = t('messages.changeColor', 'Change color');
@@ -5820,8 +9567,9 @@
       const delIcon = makeButtonIcon(DRAWING_ICON_PATHS.delete);
       del.appendChild(delIcon);
       const g = f.geometry || {};
-      const geomType = g.type || '';
-      const isPointFeature = geomType === 'Point';
+      const isPoiFeature = g.type === 'Point';
+      row.classList.toggle('drawing-row--poi', isPoiFeature);
+      const poiHasSymbol = isPoiFeature && typeof f.properties?.poiIcon === 'string' && f.properties.poiIcon.trim();
       const isArrowFeature = (f.properties?.kind || '').toLowerCase() === 'arrow';
       const disableEditAi = isArrowFeature;
       let editBtn = null;
@@ -5868,6 +9616,16 @@
       toggleBtn.className = 'drawing-toggle';
       const toggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.show);
       toggleBtn.appendChild(toggleIcon);
+      const labelToggleBtn = document.createElement('button');
+      labelToggleBtn.type = 'button';
+      labelToggleBtn.className = 'drawing-toggle drawing-label-toggle';
+      const labelToggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.labelShow);
+      labelToggleBtn.appendChild(labelToggleIcon);
+      const sizeToggleBtn = document.createElement('button');
+      sizeToggleBtn.type = 'button';
+      sizeToggleBtn.className = 'drawing-toggle drawing-size-toggle';
+      const sizeToggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.size);
+      sizeToggleBtn.appendChild(sizeToggleIcon);
       let aiBtn = null;
       if (!disableEditAi && !isReadOnlyFeature) {
         aiBtn = document.createElement('button');
@@ -5881,64 +9639,148 @@
           aiBtn.style.display = 'none';
         }
       }
-      let label = f.properties.kind || g.type;
+      let poiIconBtn = null;
+      if (isPoiFeature) {
+        poiIconBtn = document.createElement('button');
+        poiIconBtn.type = 'button';
+        poiIconBtn.className = 'drawing-poi-icon-btn';
+        const poiIconLabel = t('messages.poiIconButton', 'POI symbol');
+        poiIconBtn.title = poiIconLabel;
+        poiIconBtn.setAttribute('aria-label', poiIconLabel);
+        const icon = makeButtonIcon(DRAWING_ICON_PATHS.poiIcon);
+        poiIconBtn.appendChild(icon);
+        if (isReadOnlyFeature) {
+          poiIconBtn.disabled = true;
+        } else {
+          poiIconBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openPoiIconModal(f);
+          });
+        }
+      }
       let sizeText = '';
+      let sizeLabel = '';
+      const suppressSizeMeta = isPoiFeature;
       if (g.type === 'LineString') {
         sizeText = fmtLen(lengthMeters(g.coordinates));
-        label = 'line';
+        sizeLabel = 'Length';
       } else if (g.type === 'Polygon') {
         const ring = g.coordinates[0];
         sizeText = fmtArea(areaSqm(ring));
-        label = f.properties.kind || 'polygon';
+        sizeLabel = 'Area';
       } else if (g.type === 'Point') {
-        label = 'poi';
-        sizeText = '';
+        // Intentionally blank; POIs shouldn't show a type line in the sidebar.
       }
-      typeEl.textContent = label;
-      size.textContent = sizeText;
+      if (!sizeLabel && !sizeText && !suppressSizeMeta) {
+        sizeLabel = String(f.properties.kind || g.type || 'Feature');
+      }
+      size.textContent = sizeText ? `${sizeLabel}: ${sizeText}` : sizeLabel;
+      if (!sizeLabel && !sizeText) {
+        meta.hidden = true;
+      }
       const isArrow = f.properties?.kind === 'arrow';
       if (isArrow && editBtn) {
         editBtn.hidden = true;
         editBtn.disabled = true;
         const lenMeters = Number(f.properties?.lengthMeters);
-        if (Number.isFinite(lenMeters)) size.textContent = fmtLen(lenMeters);
+        if (Number.isFinite(lenMeters)) size.textContent = `Length: ${fmtLen(lenMeters)}`;
       }
-      meta.appendChild(typeEl); meta.appendChild(size);
-      // Place as grid items: name (col 1, row 1), actions (col 2, row 1), meta spans both columns in row 2
-      row.appendChild(nameWrap);
-      actions.appendChild(colorWrap);
+      meta.appendChild(size);
+      row.appendChild(header);
       if (editBtn) actions.appendChild(editBtn);
+      if (poiIconBtn) actions.appendChild(poiIconBtn);
       actions.appendChild(toggleBtn);
+      actions.appendChild(labelToggleBtn);
+      actions.appendChild(sizeToggleBtn);
       if (aiBtn) actions.appendChild(aiBtn);
       actions.appendChild(del);
-      row.appendChild(actions);
-      row.appendChild(meta);
+      if (poiHasSymbol) {
+        colorWrap.hidden = true;
+        colorWrap.setAttribute('aria-hidden', 'true');
+      }
+      actionsRow.appendChild(colorWrap);
+      actionsRow.appendChild(actions);
+      if (!isPoiFeature) {
+        row.appendChild(meta);
+      }
+      row.appendChild(actionsRow);
       row.addEventListener('mouseenter', () => setHighlight(f.properties.id));
       row.addEventListener('mouseleave', () => setHighlight(null));
-      const clampNameInNode = () => {
-        const current = nameEl.textContent || '';
-        const sanitized = sanitizeFeatureName(current, { allowImportEllipsis: true });
+      const focusNameEditor = () => {
+        try { nameEl.focus(); } catch {}
+        try {
+          const selection = window.getSelection?.();
+          const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+          if (!range || !nameEl.contains(range.startContainer)) {
+            placeCaretAtEnd(nameEl);
+          }
+        } catch {
+          try { placeCaretAtEnd(nameEl); } catch {}
+        }
+      };
+      const setNameEditing = (editing) => {
+        if (!canEditName) return;
+        const next = !!editing;
+        if (nameEl.isContentEditable === next) return;
+        nameEl.contentEditable = next ? 'true' : 'false';
+        nameEl.setAttribute('aria-readonly', String(!next));
+        if (next) focusNameEditor();
+      };
+      const clampNameInNode = ({ draft = false } = {}) => {
+        const current = normalizeLineBreaks(nameEl.textContent || '');
+        const sanitized = draft
+          ? sanitizeFeatureNameDraft(current)
+          : sanitizeFeatureName(current, { allowImportEllipsis: true });
         if (sanitized !== current) {
           nameEl.textContent = sanitized;
           placeCaretAtEnd(nameEl);
         }
         return sanitized;
       };
-      const commitName = () => {
-        const value = clampNameInNode();
+      const commitName = ({ draft = false } = {}) => {
+        const value = clampNameInNode({ draft });
         f.properties = f.properties || {};
         f.properties.name = value;
         return value;
       };
+      nameEl.addEventListener('click', (e) => {
+        if (!canEditName) return;
+        e.stopPropagation();
+        setNameEditing(true);
+      });
       nameEl.addEventListener('blur', () => {
+        if (!nameEl.isContentEditable) return;
         commitName();
+        setNameEditing(false);
         setDirty(true);
         refreshDraw();
         notifyFeatureModified('Feature renamed');
       });
-      nameEl.addEventListener('input', () => { commitName(); setDirty(true); refreshDrawMapOnly(); });
+      nameEl.addEventListener('input', () => {
+        if (!nameEl.isContentEditable) return;
+        commitName({ draft: true });
+        setDirty(true);
+        refreshDrawMapOnly();
+      });
       nameEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+        if (!nameEl.isContentEditable) return;
+        if (e.key !== 'Enter') return;
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          nameEl.blur();
+          return;
+        }
+        e.preventDefault();
+        insertEditableText(nameEl, '\n');
+        nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      nameEl.addEventListener('paste', (e) => {
+        if (!nameEl.isContentEditable) return;
+        const text = e.clipboardData?.getData('text/plain');
+        if (text == null) return;
+        e.preventDefault();
+        insertEditableText(nameEl, normalizeLineBreaks(text));
+        nameEl.dispatchEvent(new Event('input', { bubbles: true }));
       });
       del.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -5999,7 +9841,32 @@
         row.classList.toggle('drawing-row--hidden', hidden);
         if (hidden && hoveredId === f.properties?.id) setHighlight(null);
       };
+      const applyLabelToggleState = () => {
+        const labelHidden = !!(f.properties && f.properties._featureLabelHidden);
+        const key = labelHidden ? 'features.showLabels' : 'features.hideLabels';
+        const labelText = t(key, labelHidden ? 'Show labels' : 'Hide labels');
+        labelToggleIcon.src = labelHidden ? DRAWING_ICON_PATHS.labelHide : DRAWING_ICON_PATHS.labelShow;
+        labelToggleBtn.dataset.i18nTitle = key;
+        labelToggleBtn.dataset.i18nAriaLabel = key;
+        labelToggleBtn.title = labelText;
+        labelToggleBtn.setAttribute('aria-label', labelText);
+        labelToggleBtn.setAttribute('aria-pressed', String(labelHidden));
+        labelToggleBtn.classList.toggle('is-hidden', labelHidden);
+      };
+      const applySizeToggleState = () => {
+        const sizeHidden = !!(f.properties && f.properties._featureSizeHidden);
+        const key = sizeHidden ? 'features.showSize' : 'features.hideSize';
+        const labelText = t(key, sizeHidden ? 'Show size' : 'Hide size');
+        sizeToggleBtn.dataset.i18nTitle = key;
+        sizeToggleBtn.dataset.i18nAriaLabel = key;
+        sizeToggleBtn.title = labelText;
+        sizeToggleBtn.setAttribute('aria-label', labelText);
+        sizeToggleBtn.setAttribute('aria-pressed', String(sizeHidden));
+        sizeToggleBtn.classList.toggle('is-hidden', sizeHidden);
+      };
       applyToggleState();
+      applyLabelToggleState();
+      applySizeToggleState();
       if (g.type === 'LineString') syncLineEndpointVisibility(f);
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -6021,6 +9888,28 @@
           refreshDraw();
         }
         notifyFeatureModified(nextHidden ? 'messages.featureHidden' : 'messages.featureShown', nextHidden ? 'Feature hidden' : 'Feature shown');
+      });
+      labelToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        f.properties = f.properties || {};
+        const currentlyHidden = !!f.properties._featureLabelHidden;
+        const nextHidden = !currentlyHidden;
+        f.properties._featureLabelHidden = nextHidden;
+        applyLabelToggleState();
+        setDirty(true);
+        refreshDrawMapOnly();
+        notifyFeatureModified(t(nextHidden ? 'messages.featureLabelsHidden' : 'messages.featureLabelsShown', nextHidden ? 'Feature labels hidden' : 'Feature labels shown'));
+      });
+      sizeToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        f.properties = f.properties || {};
+        const currentlyHidden = !!f.properties._featureSizeHidden;
+        const nextHidden = !currentlyHidden;
+        f.properties._featureSizeHidden = nextHidden;
+        applySizeToggleState();
+        setDirty(true);
+        refreshDrawMapOnly();
+        notifyFeatureModified(t(nextHidden ? 'messages.featureSizeHidden' : 'messages.featureSizeShown', nextHidden ? 'Feature size hidden' : 'Feature size shown'));
       });
       aiBtn?.addEventListener('click', (e) => {
         if (!aiEnabled) return;
@@ -6163,6 +10052,7 @@
         clone.properties.name = '';
       }
       if (opts.readOnly) clone.properties.isReadOnly = true;
+      if (opts.allowNameEdit) clone.properties.allowNameEdit = true;
       if (opts.importSource) clone.properties.importSource = opts.importSource;
       if (opts.badgeLabel) clone.properties.importBadge = opts.badgeLabel;
       if (opts.extraProps && typeof opts.extraProps === 'object') {
@@ -6410,6 +10300,7 @@
         const normalized = normalizeImportedFeature(feature, existingIds, {
           setName: friendlyName,
           readOnly: true,
+          allowNameEdit: true,
           importSource: 'gpx',
           badgeLabel: 'GPX'
         });
@@ -6697,117 +10588,6 @@
 
   }
 
-  function setStatus(state, path) {
-    if (serialStatusDot) serialStatusDot.dataset.state = state;
-    if (serialConnectBtn) {
-      const labelKey = state === 'connected' ? 'serial.status.connected' : state === 'connecting' ? 'serial.status.connecting' : 'serial.connectButton';
-      const computedLabel = t(labelKey, state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : 'Connect');
-      serialConnectBtn.setAttribute('aria-label', computedLabel);
-      serialConnectBtn.setAttribute('title', computedLabel);
-      if (state === 'connected') {
-        serialConnectBtn.disabled = true;
-        serialConnectBtn.setAttribute('aria-disabled', 'true');
-      } else if (state === 'connecting') {
-        serialConnectBtn.disabled = true;
-        serialConnectBtn.setAttribute('aria-disabled', 'true');
-      } else {
-        serialConnectBtn.disabled = false;
-        serialConnectBtn.removeAttribute('aria-disabled');
-      }
-    }
-
-    if (state === 'connected') {
-      serialConnected = true;
-      serialConnecting = false;
-      trackerDataSeen = trackerStore.size > 0;
-    } else if (state === 'connecting') {
-      serialConnected = false;
-      serialConnecting = true;
-      trackerDataSeen = false;
-    } else {
-      serialConnected = false;
-      serialConnecting = false;
-      trackerDataSeen = trackerStore.size > 0;
-    }
-
-    if (state !== 'connected' && trackersRecordingState.active) {
-      trackersRecordingState.active = false;
-    }
-
-    updateTrackersPanelState();
-  }
-
-  async function refreshPortsList() {
-    try {
-      if (portsContainer) {
-        portsContainer.innerHTML = '';
-        const scanning = ce('div', 'muted');
-        bindText(scanning, 'connectModal.scanning', 'Scanning ports…');
-        portsContainer.appendChild(scanning);
-      }
-      const ports = await window.serial.listPorts();
-      if (!ports || ports.length === 0) {
-        if (portsContainer) {
-          portsContainer.innerHTML = '';
-          const empty = ce('div', 'muted');
-          bindText(empty, 'connectModal.noPorts', 'No ports found');
-          portsContainer.appendChild(empty);
-        }
-        selectedPath = null;
-        return;
-      }
-      portsContainer.innerHTML = '';
-      ports.forEach((p, idx) => {
-        const row = ce('label', 'port-row');
-        row.setAttribute('role', 'option');
-        const input = ce('input');
-        input.type = 'radio';
-        input.name = 'port';
-        input.value = p.path;
-        if (idx === 0) { input.checked = true; selectedPath = p.path; }
-        input.addEventListener('change', () => { selectedPath = input.value; });
-        const meta = ce('div', 'port-meta');
-        const title = ce('div', 'port-title');
-        title.textContent = p.path;
-        const sub = ce('div', 'port-sub');
-        sub.textContent = [p.manufacturer, p.productId && `PID:${p.productId}`, p.vendorId && `VID:${p.vendorId}`].filter(Boolean).join(' • ');
-        meta.appendChild(title); meta.appendChild(sub);
-        row.appendChild(input); row.appendChild(meta);
-        portsContainer.appendChild(row);
-      });
-    } catch (e) {
-      portsContainer.innerHTML = `<div class="muted">Error listing ports: ${String(e)}</div>`;
-    }
-  }
-
-  function openConnectModal() {
-    connectModal.hidden = false;
-    connectModal.querySelector('.modal-panel').focus?.();
-    refreshPortsList();
-  }
-  function closeConnectModal() { connectModal.hidden = true; }
-
-  async function connectSelected() {
-    if (!selectedPath) return;
-    setStatus('connecting');
-    connectBtnAction.disabled = true;
-    try {
-      const baud = Number(connectBaud.value || 115200);
-      setSerialMonitorVisible(false); // ensure hidden until confirmed connected
-      await window.serial.open(selectedPath, baud);
-      setStatus('connected', selectedPath);
-      setSerialMonitorVisible(true);
-      if (serialConnPath) serialConnPath.textContent = selectedPath;
-      closeConnectModal();
-    } catch (e) {
-      setStatus('disconnected');
-      setSerialMonitorVisible(false);
-      alert(`Failed to open ${selectedPath}: ${String(e)}`);
-    } finally {
-      connectBtnAction.disabled = false;
-    }
-  }
-
   // Wire buttons
   featuresActionsToggleBtn?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -6844,23 +10624,41 @@
       closeTrackersMenu();
     }
   });
-  serialConnectBtn?.addEventListener('click', openConnectModal);
-  connectClose?.addEventListener('click', closeConnectModal);
-  connectModal?.addEventListener('click', (e) => {
-    const target = e.target;
-    if (target && target.dataset && target.dataset.action === 'close') closeConnectModal();
-  });
-  refreshPorts?.addEventListener('click', refreshPortsList);
-  connectBtnAction?.addEventListener('click', connectSelected);
-
   trackersRecordBtn?.addEventListener('click', handleTrackersRecordClick);
   trackersSaveBtn?.addEventListener('click', handleTrackersSave);
   trackersOpenBtn?.addEventListener('click', handleTrackersOpen);
+  teamsStartSessionBtn?.addEventListener('click', openTeamsStartSessionModal);
+  teamsResumeSessionBtn?.addEventListener('click', openTeamsResumeSessionModal);
+  mapSessionStartBtn?.addEventListener('click', openTeamsStartSessionModal);
+  mapSessionResumeBtn?.addEventListener('click', openTeamsResumeSessionModal);
+  mapSessionStopBtn?.addEventListener('click', () => { void endTeamsSession(); });
+  mapSessionTitleEl?.addEventListener('focus', handleMapSessionTitleFocus);
+  mapSessionTitleEl?.addEventListener('keydown', handleMapSessionTitleKeydown);
+  mapSessionTitleEl?.addEventListener('blur', () => { void commitMapSessionTitle(); });
+  teamsAddBtn?.addEventListener('click', openTeamMemberModal);
+  teamsStartSessionClose?.addEventListener('click', closeTeamsStartSessionModal);
+  teamsStartSessionCancel?.addEventListener('click', closeTeamsStartSessionModal);
+  teamsStartSessionForm?.addEventListener('submit', handleTeamsStartSessionSubmit);
+  teamsStartSessionModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTeamsStartSessionModal();
+  });
+  teamsResumeSessionClose?.addEventListener('click', closeTeamsResumeSessionModal);
+  teamsResumeSessionCancel?.addEventListener('click', closeTeamsResumeSessionModal);
+  teamsResumeSessionModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTeamsResumeSessionModal();
+  });
+  teamMemberClose?.addEventListener('click', closeTeamMemberModal);
+  teamMemberDone?.addEventListener('click', closeTeamMemberModal);
+  teamMemberStart?.addEventListener('click', startTrackingFromModal);
+  teamMemberModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTeamMemberModal();
+  });
 
   refreshTrackersControlsState();
-
-  // Ensure the serial monitor button starts hidden
-  try { setSerialMonitorVisible(false); } catch {}
+  updateTeamsSessionUI();
 
   // deprecated: old floating monitor toggle (removed)
 
@@ -7006,7 +10804,6 @@
   // --- Features sidebar: sizing, collapse ---
   function initSidebar(){
     const root = document.documentElement;
-    const minW = 280, maxW = 400;
     let sidebarOpen = false;
 
     let resizeTimer = null;
@@ -7014,17 +10811,12 @@
       try { if (resizeTimer) clearTimeout(resizeTimer); } catch {}
       resizeTimer = setTimeout(() => { try { getMap()?.resize(); } catch {} }, delay);
     };
-    const readW = () => {
-      const saved = Number(localStorage.getItem('ui.sidebar.w'));
-      return Number.isFinite(saved) ? Math.min(maxW, Math.max(minW, saved)) : 320;
-    };
     const applyOpen = (open) => {
       const show = !!open;
       sidebarOpen = show;
       closeFeaturesActionsMenu();
       if (show) {
-        const w = readW();
-        root.style.setProperty('--sidebar-w', w + 'px');
+        root.style.setProperty('--sidebar-w', `${FEATURES_PANEL_WIDTH}px`);
         if (featuresSidebar) {
           featuresSidebar.hidden = false;
           featuresSidebar.classList.remove('anim-exit','anim-exit-active');
@@ -7060,34 +10852,6 @@
     const initialOpen = localStorage.getItem('ui.sidebar.open') !== '0';
     applyOpen(initialOpen);
 
-    if (featuresResizer) {
-      let startX=0, startW=readW(), dragging=false;
-      const onMove = (e) => {
-        if (!dragging) return;
-        const clientX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
-        const dx = clientX - startX;
-        const w = Math.min(maxW, Math.max(minW, startW + dx));
-        root.style.setProperty('--sidebar-w', w + 'px');
-        try { localStorage.setItem('ui.sidebar.w', String(w)); } catch {}
-        e.preventDefault?.();
-        scheduleResize(50);
-      };
-      const onUp = () => { if (!dragging) return; dragging=false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp); };
-      const onDown = (e) => {
-        if (!sidebarOpen) return;
-        dragging=true;
-        startX = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
-        startW = parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-w')) || readW();
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        document.addEventListener('touchmove', onMove, { passive:false });
-        document.addEventListener('touchend', onUp);
-        e.preventDefault?.();
-      };
-      featuresResizer.addEventListener('mousedown', onDown);
-      featuresResizer.addEventListener('touchstart', onDown, { passive:false });
-    }
-
     setFeatureLabelsToggleState(true);
     featuresLabelsToggle?.addEventListener('click', () => {
       setFeatureLabelsToggleState(!featureLabelsVisible);
@@ -7106,7 +10870,6 @@
     const sidebarEl = trackersSidebar || q('#trackersSidebar');
     const toggleBtn = trackersToggleBtn || q('#trackersToggleBtn');
     const collapseEl = trackersCollapse || q('#trackersCollapse');
-    const connectBtnEl = trackersConnectBtn || q('#trackersConnectBtn');
     if (!sidebarEl && !toggleBtn) return;
     const root = document.documentElement;
 
@@ -7142,13 +10905,13 @@
         toggleBtn.hidden = show;
         toggleBtn.classList.toggle('is-open', show);
         toggleBtn.setAttribute('aria-expanded', String(show));
-        toggleBtn.setAttribute('aria-label', show ? 'Hide trackers panel' : 'Show trackers panel');
-        toggleBtn.title = show ? 'Hide trackers panel' : 'Show trackers panel';
+        toggleBtn.setAttribute('aria-label', show ? 'Hide teams panel' : 'Show teams panel');
+        toggleBtn.title = show ? 'Hide teams panel' : 'Show teams panel';
       }
       if (collapseEl) {
         collapseEl.setAttribute('aria-expanded', String(show));
-        collapseEl.title = show ? 'Hide tracker sidebar' : 'Show tracker sidebar';
-        collapseEl.setAttribute('aria-label', show ? 'Hide tracker sidebar' : 'Show tracker sidebar');
+        collapseEl.title = show ? 'Hide teams panel' : 'Show teams panel';
+        collapseEl.setAttribute('aria-label', show ? 'Hide teams panel' : 'Show teams panel');
       }
     };
 
@@ -7166,10 +10929,6 @@
 
     toggleBtn?.addEventListener('click', () => setOpen(true));
 
-    connectBtnEl?.addEventListener('click', () => {
-      try { (window).openTrackersPanel && (window).openTrackersPanel(); } catch {}
-      openConnectModal();
-    });
 
     renderTrackersList();
     updateTrackersPanelState();
@@ -7183,32 +10942,15 @@
     document.addEventListener('DOMContentLoaded', () => {
       try { initSidebar(); } catch {}
       try { initTrackersSidebar(); } catch {}
+      try { ensureSymbolsLoaded(); } catch {}
       initMap();
     }, { once: true });
   } else {
     try { initSidebar(); } catch {}
     try { initTrackersSidebar(); } catch {}
+    try { ensureSymbolsLoaded(); } catch {}
     initMap();
   }
-
-  // Serial event listeners
-  window.serial.onStatus((payload) => {
-    // Hide monitor button by default; only show on connected
-    setSerialMonitorVisible(false);
-    if (!payload) return;
-    if (payload.state === 'connected') {
-      setStatus('connected', payload.path);
-      setSerialMonitorVisible(true);
-      if (serialConnPath) serialConnPath.textContent = payload.path || 'connected';
-      showToast(`Serial connected: ${payload.path || 'port'}`);
-    } else if (payload.state === 'disconnected' || payload.state === 'connecting' || payload.state === 'error') {
-      setStatus(payload.state === 'connecting' ? 'connecting' : 'disconnected');
-      if (payload.state === 'error') console.error('Serial error:', payload.message);
-      if (serialMonitorModal && serialMonitorModal.hidden === false) serialMonitorModal.hidden = true;
-    }
-  });
-
-  const maxLines = 500;
 
   // ---- File menu interactions ----
   // Save request from main -> send data back
@@ -7352,15 +11094,19 @@
     const setActiveTool = (tool) => {
       const previousTool = (window)._currentTool;
       (window)._currentTool = tool;
+      if (previousTool === 'team-goto' && tool !== 'team-goto') {
+        clearActiveTrackerGoTo({ skipToolReset: true });
+      }
       if (previousTool === 'arrow' && tool !== 'arrow') {
         window._cleanupArrowInteraction?.();
       }
-      const all = [toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI, toolWeather, toolCrosshair];
+      const all = [toolEdit, toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI, toolWeather, toolCrosshair];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
       // no POI palette in the toolbar
       switch (tool) {
+        case 'edit': toolEdit?.classList.add('active'); toolEdit?.setAttribute('aria-pressed', String(true)); break;
         case 'rect': toolRect?.classList.add('active'); toolRect?.setAttribute('aria-pressed', String(true)); break;
         case 'poly': toolPoly?.classList.add('active'); toolPoly?.setAttribute('aria-pressed', String(true)); break;
         case 'circle': toolCircle?.classList.add('active'); toolCircle?.setAttribute('aria-pressed', String(true)); break;
@@ -7385,11 +11131,15 @@
       } else if (previousTool === 'crosshair') {
         setCrosshairMode(false);
       }
-      if (tool && tool !== 'poi' && tool !== 'weather' && tool !== 'crosshair') ensureFeaturesVisible();
+      if (tool && tool !== 'poi' && tool !== 'weather' && tool !== 'crosshair' && tool !== 'team-goto') {
+        ensureFeaturesVisible();
+      }
+      try { (window)._setEditToolActive && (window)._setEditToolActive(tool === 'edit'); } catch {}
     };
     // Expose for global key handlers
     (window).setActiveTool = setActiveTool;
     toolRect?.addEventListener('click', () => setActiveTool((window)._currentTool === 'rect' ? null : 'rect'));
+    toolEdit?.addEventListener('click', () => setActiveTool((window)._currentTool === 'edit' ? null : 'edit'));
     toolPoly?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poly' ? null : 'poly'));
     toolCircle?.addEventListener('click', () => setActiveTool((window)._currentTool === 'circle' ? null : 'circle'));
     toolLine?.addEventListener('click', () => {
@@ -7422,12 +11172,10 @@
       if (!map || !Number.isFinite(scaleValue) || scaleValue <= 0) return false;
       const center = map.getCenter?.();
       if (!center || !Number.isFinite(center.lat)) return false;
-      const latRad = center.lat * DEG_TO_RAD;
-      const cosLat = Math.cos(latRad);
-      if (!Number.isFinite(cosLat) || Math.abs(cosLat) < 1e-6) return false;
       const targetMetersPerPixel = (scaleValue * 0.0254) / 96;
       if (!Number.isFinite(targetMetersPerPixel) || targetMetersPerPixel <= 0) return false;
-      const metersPerPixelAtLat = 156543.03392 * cosLat;
+      const metersPerPixelAtLat = getMetersPerPixelAtLatitude(map, center.lat, 0);
+      if (!Number.isFinite(metersPerPixelAtLat) || metersPerPixelAtLat <= 0) return false;
       const zoom = Math.log2(metersPerPixelAtLat / targetMetersPerPixel);
       if (!Number.isFinite(zoom)) return false;
       const clampedZoom = Math.max(0, Math.min(24, zoom));
@@ -7514,6 +11262,11 @@
       event?.preventDefault?.();
       openScaleDialog();
     });
+    const adjustLabelScale = (delta) => {
+      setLabelScale(labelScale + delta);
+    };
+    toolLabelIncrease?.addEventListener('click', () => adjustLabelScale(LABEL_SCALE_STEP));
+    toolLabelDecrease?.addEventListener('click', () => adjustLabelScale(-LABEL_SCALE_STEP));
 
     const waitForMapIdle = (map, timeout = 4000) => {
       if (!map) return Promise.resolve(false);
@@ -7638,8 +11391,11 @@
         : null;
       const latForScale = Number.isFinite(center?.lat) ? center.lat : 0;
       const metersPerPixel = Number.isFinite(zoom)
-        ? 156543.03392 * Math.cos(latForScale * DEG_TO_RAD) / Math.pow(2, zoom)
+        ? getMetersPerPixelAtLatitude(map, latForScale, zoom)
         : null;
+      const metersPerPixelForScaleBar = (Number.isFinite(metersPerPixel) && Number.isFinite(pxScale) && pxScale > 0)
+        ? metersPerPixel / pxScale
+        : metersPerPixel;
       const scaleDenominator = Number.isFinite(metersPerPixel)
         ? (metersPerPixel * 96) / 0.0254
         : null;
@@ -7837,7 +11593,7 @@
         };
 
         const drawInlineScaleBar = () => {
-          if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return;
+          if (!Number.isFinite(metersPerPixelForScaleBar) || metersPerPixelForScaleBar <= 0) return;
           ctx.font = labelFont;
           ctx.fillStyle = '#94a3b8';
           ctx.fillText('SCALE', textX, cursorY);
@@ -7847,12 +11603,12 @@
           const niceSteps = [1, 2, 5];
           let bestMeters = null;
           let bestWidthPx = 0;
-          const targetMeters = metersPerPixel * maxBarWidthPx;
+          const targetMeters = metersPerPixelForScaleBar * maxBarWidthPx;
           for (let exp = -3; exp <= 6; exp++) {
             const base = Math.pow(10, exp);
             niceSteps.forEach((step) => {
               const lengthMeters = step * base;
-              const widthPx = lengthMeters / metersPerPixel;
+              const widthPx = lengthMeters / metersPerPixelForScaleBar;
               if (widthPx <= maxBarWidthPx && widthPx > bestWidthPx) {
                 bestWidthPx = widthPx;
                 bestMeters = lengthMeters;
@@ -7866,7 +11622,7 @@
               const base = Math.pow(10, exp);
               niceSteps.forEach((step) => {
                 const lengthMeters = step * base;
-                const widthPx = lengthMeters / metersPerPixel;
+                const widthPx = lengthMeters / metersPerPixelForScaleBar;
                 if (widthPx > maxBarWidthPx && widthPx < minOverflow) {
                   minOverflow = widthPx;
                   minLength = lengthMeters;
@@ -7874,7 +11630,7 @@
               });
             }
             bestMeters = minLength || targetMeters || 1000;
-            bestWidthPx = bestMeters / metersPerPixel;
+            bestWidthPx = bestMeters / metersPerPixelForScaleBar;
           }
           if (!Number.isFinite(bestMeters) || !Number.isFinite(bestWidthPx) || bestWidthPx <= 0) {
             cursorY += blockGap;
@@ -8307,14 +12063,6 @@
       }
     };
 
-    const openSerialMonitorFromShortcut = () => {
-      if (serialMonitorBtn && !serialMonitorBtn.hidden) {
-        serialMonitorBtn.click();
-      } else if (serialMonitorModal) {
-        serialMonitorModal.hidden = false;
-      }
-    };
-
     const handleKeyboardShortcuts = (event) => {
       if (!tabMapInput?.checked) return;
       if (event.defaultPrevented) return;
@@ -8375,6 +12123,11 @@
           toggleFeaturesSidebarViaShortcut();
           event.preventDefault();
           return;
+        case 'E':
+        case 'e':
+          toggleToolShortcut('edit');
+          event.preventDefault();
+          return;
         case 'T':
         case 't':
           toggleTrackersSidebarViaShortcut();
@@ -8393,18 +12146,9 @@
           openGotoModal();
           event.preventDefault();
           return;
-        case 'M':
-        case 'm':
-          openSerialMonitorFromShortcut();
-          event.preventDefault();
-          return;
         case 'S':
         case 's':
-          if (event.shiftKey) {
-            openConnectModal();
-          } else {
-            toolSearch?.click();
-          }
+          toolSearch?.click();
           event.preventDefault();
           return;
         case 'P':
@@ -8426,6 +12170,15 @@
         statCenter.dataset.i18nTitle = 'messages.clickToEnterCoordinates';
         statCenter.title = t('messages.clickToEnterCoordinates', 'Click to enter coordinates');
         statCenter.addEventListener('click', openGotoModal);
+      }
+    } catch {}
+
+    try {
+      if (statScale) {
+        statScale.style.cursor = 'pointer';
+        statScale.dataset.i18nTitle = 'messages.clickToSetScale';
+        statScale.title = t('messages.clickToSetScale', 'Click to set scale');
+        statScale.addEventListener('click', openScaleDialog);
       }
     } catch {}
 
@@ -8530,12 +12283,20 @@
       closeColorModal();
       return true;
     }
-    if (serialMonitorModal && serialMonitorModal.hidden === false) {
-      serialMonitorModal.hidden = true;
+    if (poiIconModal && poiIconModal.hidden === false) {
+      closePoiIconModal();
       return true;
     }
-    if (connectModal && connectModal.hidden === false) {
-      closeConnectModal();
+    if (teamMemberModal && teamMemberModal.hidden === false) {
+      closeTeamMemberModal();
+      return true;
+    }
+    if (teamsStartSessionModal && teamsStartSessionModal.hidden === false) {
+      closeTeamsStartSessionModal();
+      return true;
+    }
+    if (teamsResumeSessionModal && teamsResumeSessionModal.hidden === false) {
+      closeTeamsResumeSessionModal();
       return true;
     }
     if (searchModal && searchModal.hidden === false) {
@@ -8637,6 +12398,7 @@
         const m = getM(); if (!m) return;
         m.getCanvas().style.cursor = '';
         m.dragPan.enable();
+        (window)._editVertexDragging = false;
         m.off('mousemove', onMove);
         m.off('mouseup', onUp);
         document.removeEventListener('mousemove', onMove, true);
@@ -8645,6 +12407,7 @@
         document.removeEventListener('touchend', onUp, { capture:true });
       } catch {}
       try { (window)._refreshDraw && (window)._refreshDraw(); } catch {}
+      try { if ((window)._currentTool === 'edit') { setDirty(true); notifyFeatureModified('Feature updated'); } } catch {}
     };
     // Begin drag helpers
     const beginDrag = () => {
@@ -8652,6 +12415,7 @@
         const m = getM(); if (!m) return;
         m.getCanvas().style.cursor = 'grabbing';
         m.dragPan.disable();
+        (window)._editVertexDragging = true;
         document.addEventListener('mousemove', onMove, true);
         document.addEventListener('mouseup', onUp, true);
         document.addEventListener('touchmove', onMove, { capture:true, passive:false });
@@ -8735,86 +12499,4 @@
     try { (window)._bindEditInteractions(); } catch {}
   })();
 
-  window.serial.onData((line) => {
-    const outEl = serialMonitorBody;
-    if (outEl) {
-      const atBottom = Math.abs(outEl.scrollHeight - outEl.scrollTop - outEl.clientHeight) < 8;
-      const text = typeof line === 'string' ? line : String(line);
-      outEl.append(document.createTextNode(text.replace(/\r?\n$/, '')));
-      outEl.append(document.createTextNode('\n'));
-      const all = outEl.textContent || '';
-      const lines = all.split('\n');
-      if (lines.length > maxLines) {
-        const trimmed = lines.slice(lines.length - maxLines).join('\n');
-        outEl.textContent = trimmed;
-      }
-      if (atBottom) outEl.scrollTop = outEl.scrollHeight;
-    }
-    try { processTrackerLine(line); } catch (err) { console.error('tracker parse failed', err); }
-  });
-  if (typeof window.serial.onAutoProbe === 'function') {
-    window.serial.onAutoProbe((payload) => {
-      const path = payload?.path || '—';
-      const responseRaw = String(payload?.response || '').trim();
-      let handled = false;
-      if (responseRaw.includes(':')) {
-        const [typePart, ...rest] = responseRaw.split(':');
-        const idPart = rest.join(':');
-        const normalizedId = normalizeTrackerIdFromAutoProbe(typePart, idPart);
-        if (normalizedId) {
-          ensureTrackerStub(normalizedId, { name: normalizedId === 'CO-ROOT' ? 'CO-ROOT' : null });
-          const template = t('status.autoProbeAdded', 'Auto probe discovered {id} on {path}');
-          const msg = template
-            .replace('{id}', normalizedId)
-            .replace('{path}', path);
-          showToast(msg);
-          handled = true;
-        }
-      }
-      if (!handled) {
-        const template = t('status.autoProbeResponse', 'Auto probe response from {path}: {response}');
-        const message = template
-          .replace('{path}', path)
-          .replace('{response}', responseRaw);
-        showToast(message);
-      }
-    });
-  }
-  if (typeof window.serial.onAutoProbeError === 'function') {
-    window.serial.onAutoProbeError((payload) => {
-      const template = t('status.autoProbeError', 'Auto probe failed for {path}: {error}');
-      const message = template
-        .replace('{path}', payload?.path || '—')
-        .replace('{error}', String(payload?.error || '').trim() || '—');
-      showToast(message, 'error');
-    });
-  }
-})();
-
-// Serial monitor modal wiring
-(function initSerialMonitor(){
-  const btn = document.querySelector('#serialMonitorBtn');
-  const modal = document.querySelector('#serialMonitorModal');
-  const closeBtn = document.querySelector('#serialMonitorClose');
-  const disconnectBtn = document.querySelector('#serialDisconnectBtn');
-  const clearBtn = document.querySelector('#serialMonitorClear');
-  const monitorBody = document.querySelector('#serialMonitorBody');
-  if (btn && modal) {
-    btn.addEventListener('click', () => { modal.hidden = false; });
-    closeBtn?.addEventListener('click', () => { modal.hidden = true; });
-    modal.addEventListener('click', (e) => { const t=e.target; if (t && t.dataset && t.dataset.action==='close') modal.hidden = true; });
-  }
-  if (disconnectBtn) {
-    disconnectBtn.addEventListener('click', async () => {
-      try { await window.serial.close(); } catch {}
-      try { modal.hidden = true; } catch {}
-    });
-  }
-  if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
-      try {
-        if (monitorBody) monitorBody.textContent = '';
-      } catch {}
-    });
-  }
 })();
