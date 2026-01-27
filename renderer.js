@@ -36,7 +36,6 @@
   let teamsSessionSubscription = null;
   let teamsSessionTitleUpdateInFlight = false;
   let teamsSessionEndInFlight = false;
-  let mapSessionTitleBeforeEdit = '';
   const generateTrackerId = () => generateSessionId();
   const DRAWING_ICON_PATHS = {
     edit: './assets/icons/regular/pencil-simple.svg',
@@ -49,10 +48,15 @@
     delete: './assets/icons/regular/x.svg',
     poiIcon: './assets/icons/regular/image-square.svg'
   };
+  const TEAMS_SESSION_ICON_PATHS = {
+    delete: './assets/icons/regular/trash-simple.svg'
+  };
   const FEATURE_NAME_MAX = 26;
   const FEATURE_IMPORT_BASE = 24;
   const FEATURE_NAME_ELLIPSIS = '...';
   const FEATURE_IMPORT_MAX = FEATURE_IMPORT_BASE + FEATURE_NAME_ELLIPSIS.length;
+  const SESSION_TITLE_OVERLAY_MAX = 44;
+  const SESSION_TITLE_ELLIPSIS = '...';
   const SYMBOLS_JSON_PATH = './assets/symbolsCombine.json';
   const SYMBOLS_ICON_ROOT = './assets/symbols/final';
   const SYMBOLS_ICON_FALLBACK_ROOT = '';
@@ -123,6 +127,17 @@
       return sanitizeFeatureName(`${base}${FEATURE_NAME_ELLIPSIS}`, { allowImportEllipsis: true });
     }
     return trimmed;
+  };
+  const formatOverlaySessionTitle = (value) => {
+    const normalized = normalizeLineBreaks(value || '');
+    const cleaned = normalized.replace(/\s+/g, ' ').trim();
+    if (!cleaned) return { text: '', full: '', truncated: false };
+    if (cleaned.length <= SESSION_TITLE_OVERLAY_MAX) {
+      return { text: cleaned, full: cleaned, truncated: false };
+    }
+    const limit = Math.max(1, SESSION_TITLE_OVERLAY_MAX - SESSION_TITLE_ELLIPSIS.length);
+    const sliced = cleaned.slice(0, limit).trimEnd();
+    return { text: `${sliced}${SESSION_TITLE_ELLIPSIS}`, full: cleaned, truncated: true };
   };
   const makeButtonIcon = (src) => {
     const img = document.createElement('img');
@@ -865,8 +880,6 @@
   const toolLabelIncrease = q('#toolLabelIncrease');
   const toolLabelDecrease = q('#toolLabelDecrease');
   const toolPrint = q('#toolPrint');
-  const toolPushLive = q('#toolPushLive');
-  const toolPushLiveDivider = q('#toolPushLiveDivider');
   const toolShortcuts = q('#toolShortcuts');
   const mapUtilityToolbar = q('#mapUtilityToolbar');
   const mapStyleToolbar = q('#mapStyleToolbar');
@@ -877,7 +890,6 @@
   const mapSessionIdEl = q('#mapSessionId');
   const mapSessionStartBtn = q('#mapSessionStartBtn');
   const mapSessionResumeBtn = q('#mapSessionResumeBtn');
-  const mapSessionStopBtn = q('#mapSessionStopBtn');
   const mapUtilityButtons = Array.from(document.querySelectorAll('.map-utility-btn'));
   const weatherUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'cloud-sun');
   const satelliteUtilityBtn = mapUtilityButtons.find((btn) => btn?.dataset?.tool === 'satellite');
@@ -901,7 +913,6 @@
   const settingAccessToken = q('#settingAccessToken');
   const settingGoogleKey = q('#settingGoogleKey');
   const settingOpenAIKey = q('#settingOpenAIKey');
-  const settingCynoopsLiveKey = q('#settingCynoopsLiveKey');
   const settingFirebaseConfig = q('#settingFirebaseConfig');
   const settingStyleUrl = q('#settingStyleUrl');
   const settingSatelliteStyleUrl = q('#settingSatelliteStyleUrl');
@@ -915,7 +926,6 @@
   const defaultAccessToken = settingAccessToken?.defaultValue || '';
   const defaultGoogleKey = settingGoogleKey?.defaultValue || '';
   const defaultOpenAIKey = settingOpenAIKey?.defaultValue || '';
-  const defaultCynoopsLiveKey = settingCynoopsLiveKey?.defaultValue || '';
   const FIREBASE_SETTINGS_STORAGE_KEY = 'firebase.settingsRaw';
   const DEFAULT_SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/standard-satellite';
   const DEFAULT_TERRAIN_STYLE_URL = 'mapbox://styles/mapbox/outdoors-v12';
@@ -1251,7 +1261,6 @@
       [toolLabelIncrease, 'toolbar.increaseLabelSize'],
       [toolLabelDecrease, 'toolbar.decreaseLabelSize'],
       [toolPrint, 'toolbar.saveSnapshot'],
-      [toolPushLive, 'toolbar.pushLiveUpdates'],
       [toolShortcuts, 'toolbar.shortcuts']
     ];
     toolbarBindings.forEach(([btn, key]) => {
@@ -1369,10 +1378,6 @@
     const openaiHelp = helpOf(settingOpenAIKey);
     bindAttr(openaiHelp, 'aria-label', 'settings.openaiKey.help', openaiHelp?.getAttribute('aria-label') || '');
     bindAttr(openaiHelp, 'data-tooltip', 'settings.openaiKey.help', openaiHelp?.getAttribute('data-tooltip') || '');
-    bindText(labelOf(settingCynoopsLiveKey), 'settings.cynoopsLiveKey', labelOf(settingCynoopsLiveKey)?.textContent || 'CYNOOPS Live API Key');
-    const cynoopsHelp = helpOf(settingCynoopsLiveKey);
-    bindAttr(cynoopsHelp, 'aria-label', 'settings.cynoopsLiveKey.help', cynoopsHelp?.getAttribute('aria-label') || '');
-    bindAttr(cynoopsHelp, 'data-tooltip', 'settings.cynoopsLiveKey.help', cynoopsHelp?.getAttribute('data-tooltip') || '');
     bindText(labelOf(settingFirebaseConfig), 'settings.firebaseConfig', labelOf(settingFirebaseConfig)?.textContent || 'Firebase Settings (JSON)');
     bindText(labelOf(settingStyleUrl), 'settings.streetStyleUrl', labelOf(settingStyleUrl)?.textContent || 'Street Map Style URL');
     bindText(labelOf(settingSatelliteStyleUrl), 'settings.satelliteStyleUrl', labelOf(settingSatelliteStyleUrl)?.textContent || 'Satellite Map Style URL');
@@ -1418,15 +1423,6 @@
     bindText(labelOf(gotoPoiName), 'gotoModal.poiName', labelOf(gotoPoiName)?.textContent || 'POI name');
     bindAttrAuto(gotoPoiName, 'placeholder', 'gotoModal.poiPlaceholder');
     bindTextAuto(gotoSubmit, 'gotoModal.go');
-
-    bindTextAuto(document.getElementById('pushLiveTitle'), 'pushLiveModal.title');
-    bindAttrAuto(pushLiveClose, 'title', 'common.close');
-    bindTextAuto(pushLiveStatus, 'pushLiveModal.idle');
-    bindAttrAuto(pushLiveQr, 'alt', 'pushLiveModal.imageAlt');
-    bindTextAuto(pushLiveStart, 'pushLiveModal.startButton');
-    bindTextAuto(pushLiveEnd, 'pushLiveModal.endButton');
-    bindTextAuto(pushLiveCancel, 'pushLiveModal.cancelButton');
-    bindAttrAuto(pushLiveCancel, 'title', 'pushLiveModal.cancelButton');
 
     bindTextAuto(document.getElementById('shortcutsTitle'), 'shortcutsModal.title');
     bindAttrAuto(shortcutsClose, 'title', 'common.close');
@@ -1489,22 +1485,30 @@
   const teamsLoadSessionStatus = q('#teamsLoadSessionStatus');
   const teamsLoadSessionList = q('#teamsLoadSessionList');
   const teamsResumeSessionCancel = q('#teamsResumeSessionCancel');
-  const pushLiveModal = q('#pushLiveModal');
-  const pushLiveClose = q('#pushLiveClose');
-  const pushLiveLoading = q('#pushLiveLoading');
-  const pushLiveStatus = q('#pushLiveStatus');
-  const pushLivePreview = q('#pushLivePreview');
-  const pushLiveQr = q('#pushLiveQr');
-  const pushLiveStart = q('#pushLiveStart');
-  const pushLiveEnd = q('#pushLiveEnd');
-  const pushLiveCancel = q('#pushLiveCancel');
+  const teamsSessionActionsModal = q('#teamsSessionActionsModal');
+  const teamsSessionActionsClose = q('#teamsSessionActionsClose');
+  const teamsSessionActionsId = q('#teamsSessionActionsId');
+  const teamsSessionRenameForm = q('#teamsSessionRenameForm');
+  const teamsSessionRenameInput = q('#teamsSessionRenameInput');
+  const teamsSessionRenameSubmit = q('#teamsSessionRenameSubmit');
+  const teamsSessionStopAction = q('#teamsSessionStopAction');
+  const teamsSessionCloseAction = q('#teamsSessionCloseAction');
+  const teamsDeleteSessionModal = q('#teamsDeleteSessionModal');
+  const teamsDeleteSessionClose = q('#teamsDeleteSessionClose');
+  const teamsDeleteSessionMessage = q('#teamsDeleteSessionMessage');
+  const teamsDeleteSessionWarning = q('#teamsDeleteSessionWarning');
+  const teamsDeleteSessionMeta = q('#teamsDeleteSessionMeta');
+  const teamsDeleteSessionStatus = q('#teamsDeleteSessionStatus');
+  const teamsDeleteSessionCancel = q('#teamsDeleteSessionCancel');
+  const teamsDeleteSessionConfirm = q('#teamsDeleteSessionConfirm');
   const shortcutsModal = q('#shortcutsModal');
   const shortcutsClose = q('#shortcutsClose');
   const shortcutsList = q('#shortcutsList');
   if (teamMemberModal) teamMemberModal.setAttribute('aria-hidden', 'true');
   if (teamsStartSessionModal) teamsStartSessionModal.setAttribute('aria-hidden', 'true');
   if (teamsResumeSessionModal) teamsResumeSessionModal.setAttribute('aria-hidden', 'true');
-  if (pushLiveModal) pushLiveModal.setAttribute('aria-hidden', 'true');
+  if (teamsSessionActionsModal) teamsSessionActionsModal.setAttribute('aria-hidden', 'true');
+  if (teamsDeleteSessionModal) teamsDeleteSessionModal.setAttribute('aria-hidden', 'true');
   if (shortcutsModal) shortcutsModal.setAttribute('aria-hidden', 'true');
   // Sidebar elements
   const featuresSidebar = q('#featuresSidebar');
@@ -1675,7 +1679,6 @@
     { key: '-', labelKey: 'shortcuts.zoomOut', fallback: 'Zoom out' },
     { key: 'F', labelKey: 'shortcuts.featuresPanel', fallback: 'Toggle features panel' },
     { key: 'T', labelKey: 'shortcuts.trackersPanel', fallback: 'Toggle teams panel' },
-    { key: 'L', labelKey: 'shortcuts.pushLiveUpdates', fallback: 'Push LIVE updates' },
     { key: 'P', labelKey: 'shortcuts.saveSnapshot', fallback: 'Save snapshot' }
   ];
   const renderShortcutsList = () => {
@@ -2818,14 +2821,14 @@
   };
 
   const notifyFeatureAdded = (kind = 'Feature') => {
-    requestLiveFeaturesSync(0);
+    requestFirestoreFeaturesSync(0);
     if (suppressFeatureToasts) return;
     const label = labelForKind(kind);
     showToast(`${label} added`);
   };
 
   const notifyFeatureModified = (label = 'Feature updated') => {
-    requestLiveFeaturesSync(0);
+    requestFirestoreFeaturesSync(0);
     if (suppressFeatureToasts) return;
     const now = Date.now();
     if (now - lastFeatureModifiedToast < featureToastCooldown) return;
@@ -2895,11 +2898,9 @@
   };
   const readGoogleKey = () => (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
   const readOpenAIKey = () => (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
-  const readCynoopsLiveKey = () => (localStorage.getItem('cynoops.liveApiKey') || defaultCynoopsLiveKey || '').trim();
 
   let googleServicesEnabled = false;
   let aiEnabled = false;
-  let liveUpdatesEnabled = false;
   let lastKnownCenter = null;
   let lastKnownAddress = '';
 
@@ -2918,30 +2919,8 @@
     const hasMapbox = !!readMapboxToken();
     googleServicesEnabled = !!readGoogleKey();
     aiEnabled = !!readOpenAIKey();
-    liveUpdatesEnabled = !!readCynoopsLiveKey();
 
     if (mapWelcome) mapWelcome.hidden = hasMapbox;
-
-    if (toolPushLive) {
-      const shouldShowLive = !!liveUpdatesEnabled;
-      toolPushLive.hidden = !shouldShowLive;
-      toolPushLive.disabled = !shouldShowLive;
-      toolPushLive.setAttribute('aria-disabled', String(!shouldShowLive));
-      if (toolPushLiveDivider) toolPushLiveDivider.hidden = !shouldShowLive;
-      if (shouldShowLive) {
-        toolPushLive.removeAttribute('aria-hidden');
-        const skipStatus = pushLiveModal?.hidden !== false;
-        applyLiveSessionState({ skipStatus });
-      } else {
-        toolPushLive.setAttribute('aria-hidden', 'true');
-        abortLiveRequest();
-        if (pushLiveModal) {
-          pushLiveModal.hidden = true;
-          pushLiveModal.setAttribute('aria-hidden', 'true');
-        }
-        applyLiveSessionState();
-      }
-    }
 
     if (toolSearch) {
       toolSearch.disabled = !googleServicesEnabled;
@@ -2968,251 +2947,23 @@
     updateTrackersPanelState();
   };
 
-  const LIVE_SESSION_STORAGE_KEY = 'cynoops.liveSession';
-  let pushLiveAbortController = null;
-  let pushLiveRequestToken = 0;
-  let currentLiveSession = null;
-
-  const loadStoredLiveSession = () => {
-    try {
-      const raw = localStorage.getItem(LIVE_SESSION_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && parsed.id) {
-        if (!parsed.qrPayload) {
-          const recovered = extractLiveQrPayload(parsed.payload ?? parsed.data ?? parsed);
-          if (recovered) parsed.qrPayload = recovered;
-        }
-        return parsed;
-      }
-    } catch (err) {
-      console.warn('Failed to load stored LIVE session', err);
-      try { localStorage.removeItem(LIVE_SESSION_STORAGE_KEY); } catch {}
-    }
-    return null;
-  };
-
-  const storeLiveSession = (session) => {
-    try { localStorage.setItem(LIVE_SESSION_STORAGE_KEY, JSON.stringify(session)); }
-    catch (err) { console.warn('Failed to store LIVE session metadata', err); }
-  };
-
-  const clearStoredLiveSession = () => {
-    try { localStorage.removeItem(LIVE_SESSION_STORAGE_KEY); }
-    catch (err) { console.warn('Failed clearing LIVE session metadata', err); }
-  };
-
-  const abortLiveRequest = () => {
-    if (pushLiveAbortController) {
-      try { pushLiveAbortController.abort(); } catch {}
-      pushLiveAbortController = null;
-    }
-    pushLiveRequestToken++;
-    if (pushLiveLoading) pushLiveLoading.hidden = true;
-  };
-
-  const setPushLiveStatus = (key, fallback, state = 'info') => {
-    if (!pushLiveStatus) return;
-    if (key) {
-      pushLiveStatus.dataset.i18n = key;
-      pushLiveStatus.textContent = t(key, fallback);
-    } else {
-      delete pushLiveStatus.dataset.i18n;
-      pushLiveStatus.textContent = fallback ?? '';
-    }
-    pushLiveStatus.dataset.state = state;
-    if (state === 'info') pushLiveStatus.classList.add('muted');
-    else pushLiveStatus.classList.remove('muted');
-  };
-
-  const resolveSessionId = (payload) => {
-    if (!payload || typeof payload !== 'object') return null;
-    const candidates = [
-      payload.sessionId,
-      payload.sessionID,
-      payload.session_id,
-      payload.id,
-      payload.session,
-      payload.liveSessionId,
-      payload.live_session_id,
-      payload.liveApiDocId,
-    ];
-    for (const value of candidates) {
-      if (typeof value === 'string' && value.trim()) return value.trim();
-    }
-    if (payload.data && typeof payload.data === 'object') {
-      const nested = resolveSessionId(payload.data);
-      if (nested) return nested;
-    }
-    return null;
-  };
-
-  const findValueByKey = (input, key, visited = new Set(), depth = 0) => {
-    if (!input || typeof input !== 'object') return undefined;
-    if (visited.has(input) || depth > 12) return undefined;
-    visited.add(input);
-    if (Object.prototype.hasOwnProperty.call(input, key)) {
-      const value = input[key];
-      if (typeof value === 'string' && value.trim()) return value;
-      if (value && typeof value === 'object') {
-        const nested = findValueByKey(value, key, visited, depth + 1);
-        if (nested !== undefined && nested !== null) return nested;
-      }
-    }
-    for (const value of Object.values(input)) {
-      if (!value || typeof value !== 'object') continue;
-      const result = findValueByKey(value, key, visited, depth + 1);
-      if (result !== undefined && result !== null) return result;
-    }
-    return undefined;
-  };
-
-  const buildLiveQrPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return null;
-    const pick = (...keys) => {
-      for (const key of keys) {
-        const value = findValueByKey(payload, key);
-        if (typeof value === 'string' && value.trim()) return value.trim();
-      }
-      return null;
-    };
-
-    const liveApiDocId = pick('liveApiDocId', 'docId', 'liveDocId', 'documentId');
-    const authToken = pick('authToken', 'authorizationToken', 'auth_token');
-    const firebaseAuthToken = pick('firebaseAuthToken', 'firebaseToken', 'firebase_auth_token');
-    const updatesCollectionPath = pick('updatesCollectionPath', 'collectionPath', 'updatesPath');
-
-    if (!liveApiDocId || !authToken || !firebaseAuthToken || !updatesCollectionPath) return null;
-
-    try {
-      return JSON.stringify({
-        liveApiDocId,
-        authToken,
-        firebaseAuthToken,
-        updatesCollectionPath
-      });
-    } catch (err) {
-      console.error('Failed to build LIVE QR payload', err);
-      return null;
-    }
-  };
-
-  const extractLiveQrPayload = (input, visited = new Set(), depth = 0) => {
-    if (input && typeof input === 'object') {
-      const built = buildLiveQrPayload(input);
-      if (built) return built;
-    }
-    if (input == null) return null;
-    if (typeof input === 'string') {
-      const trimmed = input.trim();
-      if (!trimmed) return null;
-      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-        if (depth > 8) return null;
-        try {
-          const parsed = JSON.parse(trimmed);
-          return extractLiveQrPayload(parsed, visited, depth + 1) ?? trimmed;
-        } catch {
-          return trimmed;
-        }
-      }
-      return trimmed;
-    }
-    if (typeof input !== 'object') return null;
-    if (visited.has(input)) return null;
-    if (depth > 8) return null;
-    visited.add(input);
-
-    const probe = (value) => extractLiveQrPayload(value, visited, depth + 1);
-    const candidateKeys = [
-      'qrPayload',
-      'qrString',
-      'qr',
-      'qr_code',
-      'qrCode',
-      'qrcode',
-      'qrUrl',
-      'qrURL',
-      'url',
-      'link',
-      'data',
-      'payload',
-      'value'
-    ];
-
-    if (!Array.isArray(input)) {
-      for (const key of candidateKeys) {
-        if (Object.prototype.hasOwnProperty.call(input, key)) {
-          const candidate = probe(input[key]);
-          if (candidate) return candidate;
-        }
-      }
-      for (const value of Object.values(input)) {
-        const candidate = probe(value);
-        if (candidate) return candidate;
-      }
-    } else {
-      for (const value of input) {
-        const candidate = probe(value);
-        if (candidate) return candidate;
-      }
-    }
-    return null;
-  };
-
-  const LIVE_FEATURES_UPLOAD_DELAY = 800;
-  const LIVE_TRACKERS_UPLOAD_DELAY = 1500;
-  const FIRESTORE_FEATURES_UPLOAD_DELAY = LIVE_FEATURES_UPLOAD_DELAY;
-  let liveSyncActive = false;
-  let liveSyncSessionId = null;
-  let liveSyncApiKey = null;
-  let liveFeaturesUploadTimer = null;
-  let liveFeaturesUploadInFlight = false;
-  let liveFeaturesUploadPending = false;
+  const FIRESTORE_FEATURES_UPLOAD_DELAY = 800;
   let firestoreFeaturesUploadTimer = null;
   let firestoreFeaturesUploadInFlight = false;
   let firestoreFeaturesUploadPending = false;
-  let liveTrackersUploadTimer = null;
-  let liveTrackersUploadInFlight = false;
-  let liveTrackersUploadPending = false;
-  const liveTrackerLocations = new Map();
-  const liveTrackerMetadata = new Map();
 
-  const cloneForLiveSync = (value) => {
+  const cloneForSessionSync = (value) => {
     try {
       if (typeof structuredClone === 'function') return structuredClone(value);
     } catch (err) {
-      console.warn('structuredClone failed for live sync, using JSON clone', err);
+      console.warn('structuredClone failed for session sync, using JSON clone', err);
     }
     try {
       return JSON.parse(JSON.stringify(value));
     } catch (err) {
-      console.error('Failed to clone value for live sync', err);
+      console.error('Failed to clone value for session sync', err);
       return null;
     }
-  };
-
-  const resetLiveSyncBuffers = () => {
-    if (liveFeaturesUploadTimer) {
-      clearTimeout(liveFeaturesUploadTimer);
-      liveFeaturesUploadTimer = null;
-    }
-    if (liveTrackersUploadTimer) {
-      clearTimeout(liveTrackersUploadTimer);
-      liveTrackersUploadTimer = null;
-    }
-    liveFeaturesUploadInFlight = false;
-    liveFeaturesUploadPending = false;
-    liveTrackersUploadInFlight = false;
-    liveTrackersUploadPending = false;
-    liveTrackerLocations.clear();
-    liveTrackerMetadata.clear();
-  };
-
-  const teardownLiveSync = () => {
-    resetLiveSyncBuffers();
-    liveSyncActive = false;
-    liveSyncSessionId = null;
-    liveSyncApiKey = null;
   };
 
   const buildFeaturesPayload = () => {
@@ -3220,7 +2971,7 @@
     try { storeRef = (window)._drawStore || drawStore; }
     catch { storeRef = null; }
     if (!storeRef) return null;
-    return cloneForLiveSync(storeRef);
+    return cloneForSessionSync(storeRef);
   };
 
   const filterSessionFeatures = (features) => {
@@ -3305,157 +3056,7 @@
       if (trimmed) ids.add(trimmed);
     };
     addId(teamsSessionId);
-    addId(liveSyncSessionId);
-    addId(currentLiveSession?.id);
     return Array.from(ids);
-  };
-
-  const writeLiveSessionDocument = async (sessionId, startedAt) => {
-    const trimmed = String(sessionId || '').trim();
-    if (!trimmed) return false;
-    const sdkInfo = resolveFirebaseSdk();
-    const db = firestoreInstance || initFirestoreConnection();
-    if (!sdkInfo || !db) {
-      console.warn('Firestore not available for LIVE session document.');
-      return false;
-    }
-    const features = buildSessionFeaturesPayload();
-    const payload = {
-      startedAt: Number.isFinite(startedAt) ? Number(startedAt) : Date.now(),
-      features
-    };
-    try {
-      if (sdkInfo.type === 'compat') {
-        if (typeof db.doc !== 'function') {
-          console.warn('Firebase compat SDK missing doc().');
-          return false;
-        }
-        const docRef = db.doc(`sessions/${trimmed}`);
-        await docRef.set(payload, { merge: true });
-      } else {
-        const { doc, setDoc } = sdkInfo.sdk || {};
-        if (typeof doc !== 'function' || typeof setDoc !== 'function') {
-          console.warn('Firebase modular SDK missing doc/setDoc.');
-          return false;
-        }
-        const docRef = doc(db, 'sessions', trimmed);
-        await setDoc(docRef, payload, { merge: true });
-      }
-      return true;
-    } catch (err) {
-      console.warn('Failed to write LIVE session document', trimmed, err);
-      return false;
-    }
-  };
-
-  const trackerMetadataEqual = (a, b) => {
-    if (a === b) return true;
-    if (!a || !b) return false;
-    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-    for (const key of keys) {
-      if (a[key] !== b[key]) return false;
-    }
-    return true;
-  };
-
-  const sanitizeTrackerMetadata = (tracker) => {
-    if (!tracker || typeof tracker !== 'object') return null;
-    const metadata = {
-      name: typeof tracker.name === 'string' ? tracker.name.trim() || null : null,
-      title: typeof tracker.title === 'string' ? tracker.title.trim() || null : null,
-      color: typeof tracker.color === 'string' ? tracker.color.trim() || null : null,
-      poiIcon: typeof tracker.poiIcon === 'string' ? tracker.poiIcon.trim() || null : null,
-      visible: tracker.visible === false ? false : true,
-      battery: Number.isFinite(tracker.battery) ? Number(tracker.battery) : null,
-      altitude: Number.isFinite(tracker.altitude) ? Number(tracker.altitude) : null,
-      hops: Number.isFinite(tracker.hops) ? Number(tracker.hops) : null,
-      updatedAt: Number.isFinite(tracker.updatedAt) ? Number(tracker.updatedAt) : null,
-      longitude: Number.isFinite(tracker.longitude) ? Number(tracker.longitude) : null,
-      latitude: Number.isFinite(tracker.latitude) ? Number(tracker.latitude) : null
-    };
-    return metadata;
-  };
-
-  const buildTrackerSyncPayload = () => {
-    const aggregated = new Map();
-    liveTrackerLocations.forEach((locations, trackerId) => {
-      if (!trackerId || !Array.isArray(locations) || locations.length === 0) return;
-      const trimmedId = String(trackerId).trim();
-      if (!trimmedId) return;
-      const sanitized = locations.map((entry) => {
-        const lng = Number(entry.longitude);
-        const lat = Number(entry.latitude);
-        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-        const record = {
-          longitude: lng,
-          latitude: lat,
-          timestamp: Number.isFinite(entry.timestamp) ? Number(entry.timestamp) : Date.now()
-        };
-        if (Number.isFinite(entry.altitude)) record.altitude = Number(entry.altitude);
-        if (Number.isFinite(entry.battery)) record.battery = Number(entry.battery);
-        if (Number.isFinite(entry.hops)) record.hops = Number(entry.hops);
-        return record;
-      }).filter(Boolean);
-      if (!sanitized.length) return;
-      const payload = aggregated.get(trimmedId) || {};
-      payload.locations = sanitized;
-      aggregated.set(trimmedId, payload);
-    });
-    liveTrackerMetadata.forEach((metadata, trackerId) => {
-      if (!trackerId || !metadata || typeof metadata !== 'object') return;
-      const trimmedId = String(trackerId).trim();
-      if (!trimmedId) return;
-      const payload = aggregated.get(trimmedId) || {};
-      payload.metadata = metadata;
-      aggregated.set(trimmedId, payload);
-    });
-    if (aggregated.size === 0) return null;
-    const result = {};
-    aggregated.forEach((payload, trackerId) => {
-      if (!payload || Object.keys(payload).length === 0) return;
-      result[trackerId] = payload;
-    });
-    return Object.keys(result).length > 0 ? result : null;
-  };
-
-  const ensureLiveSyncReady = () => {
-    if (!liveSyncActive || !liveSyncSessionId || !liveSyncApiKey) return false;
-    return true;
-  };
-
-  const pushLiveFeatures = async () => {
-    if (!ensureLiveSyncReady()) return;
-    const payload = buildFeaturesPayload();
-    if (!payload) return;
-    liveFeaturesUploadInFlight = true;
-    try {
-      const response = await fetch('https://cynoops.com/api/live', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: liveSyncApiKey,
-          'live-type': 'features'
-        },
-        body: JSON.stringify({
-          sessionId: liveSyncSessionId,
-          data: {
-            data: payload
-          }
-        })
-      });
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`HTTP ${response.status} ${text}`);
-      }
-    } catch (err) {
-      console.error('Failed to push LIVE features update', err);
-    } finally {
-      liveFeaturesUploadInFlight = false;
-      if (liveFeaturesUploadPending) {
-        liveFeaturesUploadPending = false;
-        scheduleLiveFeaturesUpload();
-      }
-    }
   };
 
   const pushFirestoreFeatures = async () => {
@@ -3509,52 +3110,6 @@
     }
   };
 
-  const pushLiveTrackerUpdates = async () => {
-    if (!ensureLiveSyncReady()) return;
-    const payload = buildTrackerSyncPayload();
-    if (!payload) return;
-    liveTrackersUploadInFlight = true;
-    try {
-      const response = await fetch('https://cynoops.com/api/live', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: liveSyncApiKey,
-          'live-type': 'trackers'
-        },
-        body: JSON.stringify({
-          sessionId: liveSyncSessionId,
-          data: payload
-        })
-      });
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`HTTP ${response.status} ${text}`);
-      }
-    } catch (err) {
-      console.error('Failed to push LIVE tracker update', err);
-    } finally {
-      liveTrackersUploadInFlight = false;
-      if (liveTrackersUploadPending) {
-        liveTrackersUploadPending = false;
-        scheduleLiveTrackersUpload();
-      }
-    }
-  };
-
-  const scheduleLiveFeaturesUpload = (delay = LIVE_FEATURES_UPLOAD_DELAY) => {
-    if (!ensureLiveSyncReady()) return;
-    if (liveFeaturesUploadInFlight) {
-      liveFeaturesUploadPending = true;
-      return;
-    }
-    if (liveFeaturesUploadTimer) clearTimeout(liveFeaturesUploadTimer);
-    liveFeaturesUploadTimer = setTimeout(() => {
-      liveFeaturesUploadTimer = null;
-      pushLiveFeatures();
-    }, Math.max(0, Number.isFinite(delay) ? delay : LIVE_FEATURES_UPLOAD_DELAY));
-  };
-
   const scheduleFirestoreFeaturesUpload = (delay = FIRESTORE_FEATURES_UPLOAD_DELAY) => {
     if (firestoreFeaturesUploadInFlight) {
       firestoreFeaturesUploadPending = true;
@@ -3569,333 +3124,9 @@
     }, Math.max(0, Number.isFinite(delay) ? delay : FIRESTORE_FEATURES_UPLOAD_DELAY));
   };
 
-  const scheduleLiveTrackersUpload = (delay = LIVE_TRACKERS_UPLOAD_DELAY) => {
-    if (!ensureLiveSyncReady()) return;
-    if (liveTrackersUploadInFlight) {
-      liveTrackersUploadPending = true;
-      return;
-    }
-    if (liveTrackersUploadTimer) clearTimeout(liveTrackersUploadTimer);
-    liveTrackersUploadTimer = setTimeout(() => {
-      liveTrackersUploadTimer = null;
-      pushLiveTrackerUpdates();
-    }, Math.max(0, Number.isFinite(delay) ? delay : LIVE_TRACKERS_UPLOAD_DELAY));
-  };
-
   const requestFirestoreFeaturesSync = (delay) => {
     scheduleFirestoreFeaturesUpload(typeof delay === 'number' ? delay : FIRESTORE_FEATURES_UPLOAD_DELAY);
   };
-
-  const requestLiveFeaturesSync = (delay) => {
-    requestFirestoreFeaturesSync(delay);
-    if (!ensureLiveSyncReady()) return;
-    scheduleLiveFeaturesUpload(typeof delay === 'number' ? delay : LIVE_FEATURES_UPLOAD_DELAY);
-  };
-
-  const requestLiveTrackersSync = (delay) => {
-    if (!ensureLiveSyncReady()) return;
-    scheduleLiveTrackersUpload(typeof delay === 'number' ? delay : LIVE_TRACKERS_UPLOAD_DELAY);
-  };
-
-  const recordLiveTrackerMetadata = (tracker, { skipSchedule = false, delay } = {}) => {
-    if (!ensureLiveSyncReady()) return;
-    if (!tracker || !tracker.id) return;
-    const id = String(tracker.id).trim();
-    if (!id) return;
-    const metadata = sanitizeTrackerMetadata(tracker);
-    if (!metadata) return;
-    const previous = liveTrackerMetadata.get(id);
-    if (trackerMetadataEqual(previous, metadata)) return;
-    liveTrackerMetadata.set(id, metadata);
-    if (!skipSchedule) {
-      requestLiveTrackersSync(typeof delay === 'number' ? delay : LIVE_TRACKERS_UPLOAD_DELAY);
-    }
-  };
-
-  const recordLiveTrackerLocation = (tracker, { skipSchedule = false, delay } = {}) => {
-    if (!ensureLiveSyncReady()) return;
-    if (!tracker || !tracker.id) return;
-    const id = String(tracker.id).trim();
-    if (!id) return;
-    const lng = Number(tracker.longitude);
-    const lat = Number(tracker.latitude);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-    const location = {
-      longitude: lng,
-      latitude: lat,
-      timestamp: Number.isFinite(tracker.updatedAt) ? Number(tracker.updatedAt) : Date.now()
-    };
-    if (Number.isFinite(tracker.altitude)) location.altitude = Number(tracker.altitude);
-    if (Number.isFinite(tracker.battery)) location.battery = Number(tracker.battery);
-    if (Number.isFinite(tracker.hops)) location.hops = Number(tracker.hops);
-    const entry = liveTrackerLocations.get(id) || [];
-    const last = entry[entry.length - 1];
-    if (last && last.longitude === location.longitude && last.latitude === location.latitude && last.timestamp === location.timestamp) {
-      return;
-    }
-    entry.push(location);
-    liveTrackerLocations.set(id, entry);
-    recordLiveTrackerMetadata(tracker, { skipSchedule: true });
-    if (!skipSchedule) {
-      requestLiveTrackersSync(typeof delay === 'number' ? delay : LIVE_TRACKERS_UPLOAD_DELAY);
-    }
-  };
-
-  const seedLiveTrackerLocations = () => {
-    liveTrackerLocations.clear();
-    liveTrackerMetadata.clear();
-    let storeRef = null;
-    try { storeRef = trackerStore; }
-    catch { storeRef = null; }
-    if (!storeRef || typeof storeRef.forEach !== 'function') return;
-    storeRef.forEach((tracker) => {
-      recordLiveTrackerMetadata(tracker, { skipSchedule: true });
-      recordLiveTrackerLocation(tracker, { skipSchedule: true });
-    });
-  };
-
-  const activateLiveSync = (session, apiKey) => {
-    if (!session || !session.id || !apiKey) {
-      teardownLiveSync();
-      return;
-    }
-    liveSyncSessionId = session.id;
-    liveSyncApiKey = apiKey;
-    liveSyncActive = true;
-    resetLiveSyncBuffers();
-    seedLiveTrackerLocations();
-    requestLiveFeaturesSync(0);
-    requestLiveTrackersSync(200);
-  };
-
-  const applyLiveSessionState = ({ skipStatus = false } = {}) => {
-    const hasApiKey = !!liveUpdatesEnabled;
-    const hasSession = !!currentLiveSession;
-    if (pushLiveLoading) pushLiveLoading.hidden = true;
-
-    if (pushLiveStart) {
-      pushLiveStart.disabled = !hasApiKey || hasSession;
-      pushLiveStart.hidden = false;
-    }
-    if (pushLiveEnd) {
-      pushLiveEnd.hidden = !hasSession;
-      pushLiveEnd.disabled = !hasSession || !hasApiKey;
-    }
-    if (pushLivePreview) pushLivePreview.hidden = !hasSession;
-    if (!hasSession && pushLiveQr) pushLiveQr.src = '';
-
-    if (hasSession) {
-      let qrPayload = currentLiveSession.qrPayload ?? currentLiveSession.payload ?? currentLiveSession.data ?? currentLiveSession;
-      let qrText = '';
-      const resolved = extractLiveQrPayload(qrPayload);
-      if (resolved) {
-        qrText = resolved;
-        if (!currentLiveSession.qrPayload || currentLiveSession.qrPayload !== resolved) {
-          currentLiveSession.qrPayload = resolved;
-          storeLiveSession(currentLiveSession);
-        }
-      } else if (typeof qrPayload === 'string') {
-        qrText = qrPayload;
-      } else {
-        try { qrText = JSON.stringify(qrPayload); }
-        catch (err) { console.error('Failed to stringify LIVE session payload', err); }
-      }
-      if (qrText) {
-        const dataUrl = generateQrDataUrl(qrText, 600, 6);
-        if (dataUrl && pushLiveQr) {
-          pushLiveQr.src = dataUrl;
-          if (pushLivePreview) pushLivePreview.hidden = false;
-          if (!skipStatus) {
-            if (hasApiKey) {
-              setPushLiveStatus('pushLiveModal.ready', 'Scan the QR code to start the LIVE connection.', 'success');
-            } else {
-              setPushLiveStatus('pushLiveModal.noKey', 'Add your CYNOOPS Live API key to start a LIVE session.', 'error');
-            }
-          }
-          return;
-        }
-      }
-      if (pushLivePreview) pushLivePreview.hidden = true;
-      if (pushLiveQr) pushLiveQr.src = '';
-      if (!skipStatus) setPushLiveStatus('pushLiveModal.qrError', 'Unable to render LIVE QR code.', 'error');
-      return;
-    }
-
-    if (!skipStatus) {
-      if (!hasApiKey) {
-        setPushLiveStatus('pushLiveModal.noKey', 'Add your CYNOOPS Live API key to start a LIVE session.', 'error');
-      } else {
-        setPushLiveStatus('pushLiveModal.idle', 'Start a LIVE session to generate a QR code.', 'info');
-      }
-    }
-  };
-
-  const startLiveSession = async () => {
-    if (currentLiveSession) {
-      const existingKey = readCynoopsLiveKey();
-      if (existingKey) {
-        activateLiveSync(currentLiveSession, existingKey);
-        requestLiveFeaturesSync(0);
-        requestLiveTrackersSync(200);
-      } else {
-        teardownLiveSync();
-        requestFirestoreFeaturesSync(0);
-      }
-      applyLiveSessionState();
-      setPushLiveStatus('pushLiveModal.ready', 'Scan the QR code to start the LIVE connection.', 'success');
-      return;
-    }
-    if (!liveUpdatesEnabled) {
-      teardownLiveSync();
-      applyLiveSessionState();
-      return;
-    }
-    const apiKey = readCynoopsLiveKey();
-    if (!apiKey) {
-      teardownLiveSync();
-      applyLiveSessionState({ skipStatus: true });
-      setPushLiveStatus('pushLiveModal.noKey', 'Add your CYNOOPS Live API key to start a LIVE session.', 'error');
-      return;
-    }
-
-    abortLiveRequest();
-    const controller = (typeof AbortController === 'function') ? new AbortController() : null;
-    pushLiveAbortController = controller;
-    const requestToken = ++pushLiveRequestToken;
-
-    if (pushLiveLoading) pushLiveLoading.hidden = false;
-    if (pushLiveStart) pushLiveStart.disabled = true;
-    if (pushLiveEnd) pushLiveEnd.disabled = true;
-    setPushLiveStatus('pushLiveModal.starting', 'Starting LIVE updates…', 'info');
-
-    try {
-      const response = await fetch('https://cynoops.com/api/live', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: apiKey
-        },
-        body: JSON.stringify({ command: 'start' }),
-        signal: controller?.signal
-      });
-
-      if (requestToken !== pushLiveRequestToken) return;
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const payload = await response.json();
-      if (requestToken !== pushLiveRequestToken) return;
-
-      if (!payload || typeof payload !== 'object') throw new Error('Invalid LIVE response');
-      const payloadData = (payload && payload.data && typeof payload.data === 'object') ? payload.data : null;
-      const sessionId = resolveSessionId(payload) || (payloadData ? resolveSessionId(payloadData) : null);
-      if (!sessionId) throw new Error('Missing LIVE session ID');
-
-      const qrPayload = extractLiveQrPayload(payload) ?? (payloadData ? extractLiveQrPayload(payloadData) : null);
-      if (!qrPayload) throw new Error('Missing LIVE QR payload');
-
-      const sessionStartedAt = Date.now();
-      currentLiveSession = { id: sessionId, payload, storedAt: sessionStartedAt, qrPayload };
-      storeLiveSession(currentLiveSession);
-      await writeLiveSessionDocument(sessionId, sessionStartedAt);
-      activateLiveSync(currentLiveSession, apiKey);
-      applyLiveSessionState({ skipStatus: true });
-      setPushLiveStatus('pushLiveModal.ready', 'Scan the QR code to start the LIVE connection.', 'success');
-    } catch (err) {
-      if (controller?.signal?.aborted) return;
-      console.error('Failed to start CynoOps LIVE updates', err);
-      applyLiveSessionState({ skipStatus: true });
-      setPushLiveStatus('pushLiveModal.error', 'Failed to start LIVE updates. Please try again.', 'error');
-    } finally {
-      if (requestToken === pushLiveRequestToken) {
-        if (!currentLiveSession && pushLiveStart) pushLiveStart.disabled = !liveUpdatesEnabled;
-        if (pushLiveEnd) pushLiveEnd.disabled = !currentLiveSession;
-        if (pushLiveAbortController === controller) pushLiveAbortController = null;
-        if (pushLiveLoading) pushLiveLoading.hidden = true;
-      }
-    }
-  };
-
-  const endLiveSession = async ({ silent = false } = {}) => {
-    if (!currentLiveSession) {
-      applyLiveSessionState({ skipStatus: silent });
-      teardownLiveSync();
-      return;
-    }
-    const apiKey = readCynoopsLiveKey();
-    if (!apiKey) {
-      if (silent) {
-        clearStoredLiveSession();
-        currentLiveSession = null;
-        applyLiveSessionState({ skipStatus: true });
-        teardownLiveSync();
-        return;
-      }
-      setPushLiveStatus('pushLiveModal.noKey', 'Add your CYNOOPS Live API key to start a LIVE session.', 'error');
-      return;
-    }
-
-    abortLiveRequest();
-    const controller = (typeof AbortController === 'function') ? new AbortController() : null;
-    pushLiveAbortController = controller;
-    const requestToken = ++pushLiveRequestToken;
-
-    if (!silent) {
-      if (pushLiveLoading) pushLiveLoading.hidden = false;
-      if (pushLiveStart) pushLiveStart.disabled = true;
-      if (pushLiveEnd) pushLiveEnd.disabled = true;
-      setPushLiveStatus('pushLiveModal.ending', 'Ending LIVE session…', 'info');
-    }
-
-    const sessionId = currentLiveSession?.id ?? null;
-
-    try {
-      const response = await fetch('https://cynoops.com/api/live', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: apiKey
-        },
-        body: JSON.stringify({ sessionId }),
-        signal: controller?.signal
-      });
-
-      if (requestToken !== pushLiveRequestToken) return;
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      clearStoredLiveSession();
-      currentLiveSession = null;
-      applyLiveSessionState({ skipStatus: true });
-      teardownLiveSync();
-      if (!silent) {
-        setPushLiveStatus('pushLiveModal.ended', 'LIVE session ended.', 'success');
-      }
-    } catch (err) {
-      if (controller?.signal?.aborted) return;
-      console.error('Failed to end CynoOps LIVE session', err);
-      clearStoredLiveSession();
-      currentLiveSession = null;
-      applyLiveSessionState({ skipStatus: true });
-      teardownLiveSync();
-      if (!silent) {
-        setPushLiveStatus('pushLiveModal.endError', 'Failed to end LIVE session. Please try again.', 'error');
-      }
-    } finally {
-      if (requestToken === pushLiveRequestToken) {
-        if (pushLiveStart) pushLiveStart.disabled = !liveUpdatesEnabled || !!currentLiveSession;
-        if (pushLiveEnd) pushLiveEnd.disabled = !currentLiveSession;
-        if (pushLiveAbortController === controller) pushLiveAbortController = null;
-        if (pushLiveLoading) pushLiveLoading.hidden = true;
-      }
-    }
-  };
-
-  currentLiveSession = loadStoredLiveSession();
-  applyLiveSessionState({ skipStatus: true });
-  if (currentLiveSession) {
-    endLiveSession({ silent: true }).catch((err) => {
-      console.warn('Automatic LIVE session shutdown failed', err);
-    });
-  }
 
   const scheduleMapResize = (delay = 0) => {
     try {
@@ -4471,25 +3702,39 @@
     if (mapSessionActive) mapSessionActive.hidden = !hasSession;
     if (mapSessionStartBtn) mapSessionStartBtn.hidden = hasSession;
     if (mapSessionResumeBtn) mapSessionResumeBtn.hidden = hasSession;
-    if (mapSessionStopBtn) {
-      mapSessionStopBtn.hidden = !hasSession;
-      mapSessionStopBtn.disabled = teamsSessionEndInFlight;
-      mapSessionStopBtn.setAttribute('aria-disabled', String(!hasSession || teamsSessionEndInFlight));
-    }
     if (mapSessionTitleEl) {
-      mapSessionTitleEl.setAttribute('contenteditable', hasSession ? 'true' : 'false');
+      mapSessionTitleEl.disabled = !hasSession;
       mapSessionTitleEl.setAttribute('aria-disabled', String(!hasSession));
       if (!hasSession) {
         mapSessionTitleEl.textContent = '';
+        mapSessionTitleEl.removeAttribute('title');
+        mapSessionTitleEl.removeAttribute('aria-label');
         delete mapSessionTitleEl.dataset.i18n;
-      } else if (document.activeElement !== mapSessionTitleEl) {
+      } else {
         const title = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
         if (title) {
           delete mapSessionTitleEl.dataset.i18n;
-          mapSessionTitleEl.textContent = title;
+          const formatted = formatOverlaySessionTitle(title);
+          mapSessionTitleEl.textContent = formatted.text;
+          if (formatted.truncated) {
+            mapSessionTitleEl.title = formatted.full;
+            mapSessionTitleEl.setAttribute('aria-label', formatted.full);
+          } else {
+            mapSessionTitleEl.removeAttribute('title');
+            mapSessionTitleEl.removeAttribute('aria-label');
+          }
         } else {
           mapSessionTitleEl.dataset.i18n = 'teams.sessionTitleFallback';
-          mapSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
+          const fallback = t('teams.sessionTitleFallback', 'Untitled session');
+          const formatted = formatOverlaySessionTitle(fallback);
+          mapSessionTitleEl.textContent = formatted.text;
+          if (formatted.truncated) {
+            mapSessionTitleEl.title = formatted.full;
+            mapSessionTitleEl.setAttribute('aria-label', formatted.full);
+          } else {
+            mapSessionTitleEl.removeAttribute('title');
+            mapSessionTitleEl.removeAttribute('aria-label');
+          }
         }
       }
     }
@@ -4522,73 +3767,77 @@
     if (teamsResumeSessionBtn) teamsResumeSessionBtn.hidden = hasSession;
     updateTeamsEmptyState();
     updateMapSessionOverlay();
+    updateSessionActionsModalState();
   }
 
-  const applyMapSessionTitleText = (value) => {
-    if (!mapSessionTitleEl) return;
-    const trimmed = typeof value === 'string' ? value.trim() : '';
-    if (trimmed) {
-      delete mapSessionTitleEl.dataset.i18n;
-      mapSessionTitleEl.textContent = trimmed;
-    } else {
-      mapSessionTitleEl.dataset.i18n = 'teams.sessionTitleFallback';
-      mapSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
+  const updateSessionActionsModalState = () => {
+    const hasSession = !!teamsSessionId;
+    if (teamsSessionActionsId) teamsSessionActionsId.textContent = hasSession ? teamsSessionId : '—';
+    const renameDisabled = !hasSession || teamsSessionTitleUpdateInFlight;
+    if (teamsSessionRenameInput) {
+      teamsSessionRenameInput.disabled = renameDisabled;
+      teamsSessionRenameInput.setAttribute('aria-disabled', String(renameDisabled));
+    }
+    if (teamsSessionRenameSubmit) {
+      teamsSessionRenameSubmit.disabled = renameDisabled;
+      teamsSessionRenameSubmit.setAttribute('aria-disabled', String(renameDisabled));
+    }
+    const stopped = !!teamsSessionInfo?.endDate;
+    const stopDisabled = !hasSession || teamsSessionEndInFlight || stopped;
+    if (teamsSessionStopAction) {
+      teamsSessionStopAction.disabled = stopDisabled;
+      teamsSessionStopAction.setAttribute('aria-disabled', String(stopDisabled));
+    }
+    if (teamsSessionCloseAction) {
+      const closeDisabled = !hasSession;
+      teamsSessionCloseAction.disabled = closeDisabled;
+      teamsSessionCloseAction.setAttribute('aria-disabled', String(closeDisabled));
     }
   };
 
-  const handleMapSessionTitleFocus = () => {
-    if (!mapSessionTitleEl || !teamsSessionId) return;
-    mapSessionTitleBeforeEdit = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
-    if (!mapSessionTitleBeforeEdit) {
-      mapSessionTitleEl.textContent = '';
-      delete mapSessionTitleEl.dataset.i18n;
+  const openTeamsSessionActionsModal = () => {
+    if (!teamsSessionActionsModal || !teamsSessionId) return;
+    if (teamsSessionRenameInput) {
+      const currentTitle = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+      teamsSessionRenameInput.value = currentTitle;
     }
+    updateSessionActionsModalState();
+    teamsSessionActionsModal.hidden = false;
+    teamsSessionActionsModal.setAttribute('aria-hidden', 'false');
     try {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(mapSessionTitleEl);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
+      teamsSessionRenameInput?.focus();
+      teamsSessionRenameInput?.select();
     } catch {}
   };
 
-  const handleMapSessionTitleKeydown = (event) => {
-    if (!event) return;
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      mapSessionTitleEl?.blur();
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      applyMapSessionTitleText(mapSessionTitleBeforeEdit);
-      mapSessionTitleEl?.blur();
-    }
+  const closeTeamsSessionActionsModal = () => {
+    if (!teamsSessionActionsModal) return;
+    teamsSessionActionsModal.hidden = true;
+    teamsSessionActionsModal.setAttribute('aria-hidden', 'true');
   };
 
-  const commitMapSessionTitle = async () => {
-    if (!mapSessionTitleEl) return;
-    if (!teamsSessionId) {
-      updateMapSessionOverlay();
-      return;
-    }
-    const nextTitle = String(mapSessionTitleEl.textContent || '').trim();
-    const currentTitle = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+  const handleTeamsSessionRenameSubmit = async (event) => {
+    if (event?.preventDefault) event.preventDefault();
+    if (!teamsSessionId || !teamsSessionRenameInput) return;
+    const nextTitle = String(teamsSessionRenameInput.value || '').trim();
     if (!nextTitle) {
-      applyMapSessionTitleText(currentTitle);
+      showToast(t('teams.sessionTitleRequired', 'Please enter a session title.'), 'error');
+      try { teamsSessionRenameInput.focus(); } catch {}
       return;
     }
+    teamsSessionRenameInput.value = nextTitle;
+    const currentTitle = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
     if (nextTitle === currentTitle || teamsSessionTitleUpdateInFlight) {
-      applyMapSessionTitleText(currentTitle || nextTitle);
+      if (teamsSessionRenameInput) teamsSessionRenameInput.value = currentTitle || nextTitle;
       return;
     }
     teamsSessionTitleUpdateInFlight = true;
-    mapSessionTitleEl.setAttribute('aria-busy', 'true');
+    updateSessionActionsModalState();
     try {
       const ok = await writeTeamsSessionDocument(teamsSessionId, { title: nextTitle });
       if (!ok) {
         showToast(t('teams.sessionTitleUpdateFailed', 'Unable to update session title. Check Firebase settings.'), 'error');
-        applyMapSessionTitleText(currentTitle);
+        if (teamsSessionRenameInput) teamsSessionRenameInput.value = currentTitle;
         return;
       }
       if (!teamsSessionInfo || typeof teamsSessionInfo !== 'object') {
@@ -4599,7 +3848,7 @@
       updateTeamsSessionUI();
     } finally {
       teamsSessionTitleUpdateInFlight = false;
-      mapSessionTitleEl.removeAttribute('aria-busy');
+      updateSessionActionsModalState();
     }
   };
 
@@ -5124,6 +4373,9 @@
 
   let teamsStartSessionInFlight = false;
   let teamsResumeSessionInFlight = false;
+  let teamsDeleteSessionInFlight = false;
+  let teamsDeleteSessionTargetId = null;
+  let teamsDeleteSessionTargetTitle = '';
   let teamsLoadSessionInFlight = false;
 
   const formatSessionDateTime = (value) => {
@@ -5161,6 +4413,17 @@
     }
     teamsLoadSessionStatus.hidden = false;
     teamsLoadSessionStatus.textContent = t(key, fallback);
+  };
+
+  const setTeamsDeleteSessionStatus = (key, fallback) => {
+    if (!teamsDeleteSessionStatus) return;
+    if (!key) {
+      teamsDeleteSessionStatus.hidden = true;
+      teamsDeleteSessionStatus.textContent = '';
+      return;
+    }
+    teamsDeleteSessionStatus.hidden = false;
+    teamsDeleteSessionStatus.textContent = t(key, fallback);
   };
 
   const setTeamsLoadSessionBusy = (busy) => {
@@ -5212,6 +4475,74 @@
     }
   };
 
+  const deleteTeamsSessionSubcollection = async (sessionId, subcollection) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed || !subcollection) return false;
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    try {
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.collection !== 'function') return false;
+        const colRef = db.collection('sessions').doc(trimmed).collection(subcollection);
+        const snap = await colRef.get();
+        const deletions = [];
+        snap.forEach((docSnap) => {
+          if (docSnap?.ref && typeof docSnap.ref.delete === 'function') {
+            deletions.push(docSnap.ref.delete());
+          }
+        });
+        await Promise.all(deletions);
+        return true;
+      }
+      const { collection, getDocs, deleteDoc } = sdkInfo.sdk || {};
+      if (typeof collection !== 'function' || typeof getDocs !== 'function' || typeof deleteDoc !== 'function') return false;
+      const colRef = collection(db, 'sessions', trimmed, subcollection);
+      const snap = await getDocs(colRef);
+      const deletions = [];
+      snap.forEach((docSnap) => {
+        deletions.push(deleteDoc(docSnap.ref));
+      });
+      await Promise.all(deletions);
+      return true;
+    } catch (err) {
+      console.warn('Failed to delete session subcollection', trimmed, subcollection, err);
+      return false;
+    }
+  };
+
+  const deleteTeamsSessionById = async (sessionId) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return { ok: false, reason: 'missing' };
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return { ok: false, reason: 'firestore' };
+    const { sdkInfo, db } = handle;
+    try {
+      const subcollections = ['trackers', 'updates'];
+      const subResults = await Promise.all(
+        subcollections.map((name) => deleteTeamsSessionSubcollection(trimmed, name))
+      );
+      if (subResults.some((ok) => !ok)) {
+        return { ok: false, reason: 'subcollection' };
+      }
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.doc !== 'function') return { ok: false, reason: 'sdk' };
+        const docRef = db.doc(`sessions/${trimmed}`);
+        if (typeof docRef.delete !== 'function') return { ok: false, reason: 'sdk' };
+        await docRef.delete();
+        return { ok: true };
+      }
+      const { doc, deleteDoc } = sdkInfo.sdk || {};
+      if (typeof doc !== 'function' || typeof deleteDoc !== 'function') return { ok: false, reason: 'sdk' };
+      const docRef = doc(db, 'sessions', trimmed);
+      await deleteDoc(docRef);
+      return { ok: true };
+    } catch (err) {
+      console.warn('Failed to delete team session', trimmed, err);
+      return { ok: false, reason: 'error', error: err };
+    }
+  };
+
   const resumeTeamsSessionById = async (sessionId) => {
     if (teamsResumeSessionInFlight || teamsSessionId) return;
     const trimmed = String(sessionId || '').trim();
@@ -5246,11 +4577,97 @@
     }
   };
 
+  const openTeamsDeleteSessionModal = (sessionId, title) => {
+    if (!teamsDeleteSessionModal) return;
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return;
+    teamsDeleteSessionTargetId = trimmed;
+    teamsDeleteSessionTargetTitle = String(title || '').trim();
+    setTeamsDeleteSessionStatus(null);
+    if (teamsDeleteSessionConfirm) teamsDeleteSessionConfirm.disabled = false;
+    if (teamsDeleteSessionMeta) {
+      const titleFallback = t('teams.sessionTitleFallback', 'Untitled session');
+      const idLabel = t('teams.loadSessionModal.idLabel', 'ID');
+      const sessionLabel = t('teams.deleteSessionModal.sessionLabel', 'Session');
+      const titleText = teamsDeleteSessionTargetTitle || titleFallback;
+      teamsDeleteSessionMeta.textContent = `${sessionLabel}: ${titleText} - ${idLabel}: ${trimmed}`;
+    }
+    teamsDeleteSessionModal.hidden = false;
+    teamsDeleteSessionModal.setAttribute('aria-hidden', 'false');
+    try { teamsDeleteSessionConfirm?.focus(); } catch {}
+  };
+
+  const closeTeamsDeleteSessionModal = () => {
+    if (!teamsDeleteSessionModal) return;
+    teamsDeleteSessionModal.hidden = true;
+    teamsDeleteSessionModal.setAttribute('aria-hidden', 'true');
+    teamsDeleteSessionTargetId = null;
+    teamsDeleteSessionTargetTitle = '';
+    if (teamsDeleteSessionMeta) teamsDeleteSessionMeta.textContent = '';
+    setTeamsDeleteSessionStatus(null);
+  };
+
+  const handleTeamsDeleteSessionConfirm = async () => {
+    if (teamsDeleteSessionInFlight) return;
+    const trimmed = String(teamsDeleteSessionTargetId || '').trim();
+    if (!trimmed) return;
+    teamsDeleteSessionInFlight = true;
+    if (teamsDeleteSessionConfirm) teamsDeleteSessionConfirm.disabled = true;
+    setTeamsDeleteSessionStatus('teams.deleteSessionModal.deleting', 'Deleting session...');
+    setTeamsLoadSessionBusy(true);
+    try {
+      const result = await deleteTeamsSessionById(trimmed);
+      if (!result.ok) {
+        setTeamsDeleteSessionStatus('teams.deleteSessionModal.error', 'Unable to delete session. Check Firebase settings.');
+        showToast(t('teams.deleteSessionModal.errorToast', 'Unable to delete session.'), 'error');
+        return;
+      }
+      closeTeamsDeleteSessionModal();
+      showToast(t('teams.deleteSessionModal.deleted', 'Session deleted.'));
+      await refreshTeamsLoadSessionList();
+    } finally {
+      teamsDeleteSessionInFlight = false;
+      if (teamsDeleteSessionConfirm) teamsDeleteSessionConfirm.disabled = false;
+      setTeamsLoadSessionBusy(false);
+    }
+  };
+
   const renderTeamsLoadSessionList = (entries) => {
     if (!teamsLoadSessionList) return;
     clearTeamsLoadSessionList();
     if (!entries.length) {
-      setTeamsLoadSessionStatus('teams.loadSessionModal.empty', 'No sessions found.');
+      setTeamsLoadSessionStatus(null);
+      const emptyWrap = document.createElement('div');
+      emptyWrap.className = 'session-empty';
+      emptyWrap.setAttribute('role', 'listitem');
+
+      const emptyTitle = document.createElement('div');
+      emptyTitle.className = 'session-empty-title';
+      emptyTitle.textContent = t('teams.loadSessionModal.emptyTitle', 'No sessions yet');
+
+      const emptyBody = document.createElement('div');
+      emptyBody.className = 'session-empty-body';
+      emptyBody.textContent = t(
+        'teams.loadSessionModal.emptyBody',
+        'Start a new session to begin tracking and share updates.'
+      );
+
+      const emptyActions = document.createElement('div');
+      emptyActions.className = 'session-empty-actions';
+      const startBtn = document.createElement('button');
+      startBtn.type = 'button';
+      startBtn.className = 'btn btn-primary';
+      startBtn.textContent = t('teams.loadSessionModal.emptyAction', 'Start Session');
+      startBtn.addEventListener('click', () => {
+        closeTeamsResumeSessionModal();
+        openTeamsStartSessionModal();
+      });
+      emptyActions.appendChild(startBtn);
+
+      emptyWrap.appendChild(emptyTitle);
+      emptyWrap.appendChild(emptyBody);
+      emptyWrap.appendChild(emptyActions);
+      teamsLoadSessionList.appendChild(emptyWrap);
       return;
     }
     setTeamsLoadSessionStatus(null);
@@ -5266,11 +4683,14 @@
       running: t('teams.loadSessionModal.statusRunning', 'Running')
     };
     entries.forEach((entry) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'session-row-wrap';
+      wrap.setAttribute('role', 'listitem');
+
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'session-row';
       row.dataset.sessionId = entry.id;
-      row.setAttribute('role', 'listitem');
       row.addEventListener('click', () => resumeTeamsSessionById(entry.id));
 
       const main = document.createElement('div');
@@ -5345,7 +4765,23 @@
       row.appendChild(main);
       row.appendChild(stats);
       row.appendChild(dates);
-      teamsLoadSessionList.appendChild(row);
+
+      const deleteLabel = t('teams.loadSessionModal.deleteLabel', 'Delete session');
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn-icon btn-icon-danger session-row-delete';
+      deleteBtn.setAttribute('aria-label', deleteLabel);
+      deleteBtn.title = deleteLabel;
+      deleteBtn.appendChild(makeButtonIcon(TEAMS_SESSION_ICON_PATHS.delete));
+      deleteBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openTeamsDeleteSessionModal(entry.id, titleText);
+      });
+
+      wrap.appendChild(row);
+      wrap.appendChild(deleteBtn);
+      teamsLoadSessionList.appendChild(wrap);
     });
   };
 
@@ -5467,35 +4903,83 @@
     await resumeTeamsSessionById(sessionId);
   };
 
-  const clearTeamsSessionMapState = () => {
-    try { (window).draw?.clear?.(); } catch {}
+  const filterGpxFeaturesForSessionClose = (features) => {
+    if (!Array.isArray(features)) return [];
+    const gpxLineIds = new Set();
+    features.forEach((feature) => {
+      if (feature?.properties?.importSource === 'gpx') {
+        const id = feature.properties?.id;
+        if (id) gpxLineIds.add(id);
+      }
+    });
+    return features.filter((feature) => {
+      if (!feature || !feature.properties) return false;
+      if (feature.properties.importSource === 'gpx') return true;
+      if (feature.properties.isLineEndpoint && gpxLineIds.has(feature.properties.relatedLineId)) return true;
+      return false;
+    });
+  };
+
+  const clearTeamsSessionMapState = ({ keepGpx = false } = {}) => {
+    try {
+      let storeRef = null;
+      try { storeRef = (window)._drawStore || drawStore; } catch { storeRef = null; }
+      if (storeRef && Array.isArray(storeRef.features)) {
+        storeRef.features = keepGpx ? filterGpxFeaturesForSessionClose(storeRef.features) : [];
+        if (typeof window._refreshDraw === 'function') window._refreshDraw();
+      } else if (!keepGpx) {
+        (window).draw?.clear?.();
+      }
+    } catch {}
     try { if (typeof setDirty === 'function') setDirty(false); } catch {}
   };
 
-  const endTeamsSession = async () => {
-    if (teamsSessionEndInFlight || !teamsSessionId) return;
+  const stopTeamsSession = async () => {
+    if (teamsSessionEndInFlight || !teamsSessionId || teamsSessionInfo?.endDate) return;
     const confirmMessage = t('teams.sessionEndConfirm', 'Stop this session?');
     let confirmed = true;
     try { confirmed = window.confirm(confirmMessage); } catch { confirmed = true; }
     if (!confirmed) return;
     const sessionId = String(teamsSessionId || '').trim();
     if (!sessionId) return;
+    const endDate = new Date();
     teamsSessionEndInFlight = true;
     updateMapSessionOverlay();
+    updateSessionActionsModalState();
     try {
-      const ok = await writeTeamsSessionDocument(sessionId, { endDate: new Date() });
+      const ok = await writeTeamsSessionDocument(sessionId, { endDate });
       if (!ok) {
         showToast(t('teams.sessionEndFailed', 'Unable to end session. Check Firebase settings.'), 'error');
         return;
       }
-      resetTeamsSessionData();
-      setTeamsSessionState(null);
-      clearTeamsSessionMapState();
+      const currentTitle = typeof teamsSessionInfo?.title === 'string' ? teamsSessionInfo.title.trim() : '';
+      const currentStart = teamsSessionInfo?.startDate || null;
+      const currentCoords = teamsSessionInfo?.coordinates || null;
+      if (!teamsSessionInfo || typeof teamsSessionInfo !== 'object') {
+        teamsSessionInfo = { id: sessionId, title: currentTitle, startDate: currentStart, endDate, coordinates: currentCoords };
+      } else {
+        teamsSessionInfo.endDate = endDate;
+      }
+      updateTeamsSessionUI();
       showToast(t('teams.sessionEnded', 'Session ended.'), 'success');
     } finally {
       teamsSessionEndInFlight = false;
       updateMapSessionOverlay();
+      updateSessionActionsModalState();
     }
+  };
+
+  const closeTeamsSession = async () => {
+    if (!teamsSessionId) return;
+    const confirmMessage = t('teams.sessionCloseConfirm', 'Close this session and reset the map, features, and teams?');
+    let confirmed = true;
+    try { confirmed = window.confirm(confirmMessage); } catch { confirmed = true; }
+    if (!confirmed) return;
+    resetTeamsSessionData();
+    setTeamsSessionState(null);
+    clearTeamsSessionMapState({ keepGpx: true });
+    closeTeamsSessionActionsModal();
+    showToast(t('teams.sessionClosed', 'Session closed.'), 'success');
   };
 
   const buildTeamMemberPayload = (trackerId) => {
@@ -5533,7 +5017,6 @@
       };
       trackerStore.set(trimmed, tracker);
       ensureTrackerHistoryEntry(trimmed);
-      recordLiveTrackerMetadata(tracker, { delay: 0 });
       updateTrackerSource();
       updateTrackerPathSource();
       renderTrackersList();
@@ -5638,7 +5121,6 @@
     }
     if (changed) {
       trackerStore.set(trimmedId, next);
-      recordLiveTrackerMetadata(next, { delay: 0 });
       updateTrackerSource();
       updateTrackerPathSource();
       renderTrackersList();
@@ -5798,7 +5280,6 @@
     updateTrackerSource();
     renderTrackersList();
     updateTrackersPanelState();
-    recordLiveTrackerLocation(merged);
     maybeRevealTrackerOnMap(trimmedId, coords, { force: !hasPrev });
     try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
   };
@@ -6324,8 +5805,6 @@
           visible: merged.visible === false ? false : true
         });
         const currentTracker = trackerStore.get(item.id);
-        recordLiveTrackerMetadata(currentTracker, { skipSchedule: true });
-        recordLiveTrackerLocation(currentTracker, { skipSchedule: true });
       }
     });
     trackersRecordingHasData = trackersRecordingState.entries.size > 0;
@@ -6916,7 +6395,6 @@
     if (!current) return;
     const next = { ...current, ...updates };
     trackerStore.set(id, next);
-    recordLiveTrackerMetadata(next, { delay: 0 });
     if (Object.prototype.hasOwnProperty.call(updates || {}, 'color') && updates.color && trackerPositionsStore.has(id)) {
       const entry = trackerPositionsStore.get(id);
       if (entry && Array.isArray(entry.segments)) {
@@ -7384,9 +6862,6 @@
       const storedOpenAIKey = localStorage.getItem('openai.key');
       if (settingOpenAIKey) settingOpenAIKey.value = storedOpenAIKey !== null ? storedOpenAIKey : defaultOpenAIKey;
 
-      const storedCynoopsLiveKey = localStorage.getItem('cynoops.liveApiKey');
-      if (settingCynoopsLiveKey) settingCynoopsLiveKey.value = storedCynoopsLiveKey !== null ? storedCynoopsLiveKey : defaultCynoopsLiveKey;
-
       loadFirebaseSettingsFromStorage({ syncInput: true, warnOnError: true });
       initFirestoreConnection();
 
@@ -7441,7 +6916,6 @@
     const accessToken = (settingAccessToken?.value || '').trim();
     const googleKey = (settingGoogleKey?.value || '').trim();
     const openaiKey = (settingOpenAIKey?.value || '').trim();
-    const cynoopsLiveKey = (settingCynoopsLiveKey?.value || '').trim();
     let styleUrl = (settingStyleUrl?.value || '').trim();
     let satelliteStyleUrl = (settingSatelliteStyleUrl?.value || '').trim();
     let terrainStyleUrl = (settingTerrainStyleUrl?.value || '').trim();
@@ -7483,7 +6957,6 @@
       accessToken,
       googleKey,
       openaiKey,
-      cynoopsLiveKey,
       styleUrl,
       homeAddress,
       startPos: coords,
@@ -7553,7 +7026,6 @@
       localStorage.setItem('map.accessToken', values.accessToken);
       localStorage.setItem('map.googleKey', values.googleKey);
       localStorage.setItem('openai.key', values.openaiKey);
-      localStorage.setItem('cynoops.liveApiKey', values.cynoopsLiveKey);
       if (values.firebaseConfigRaw && values.firebaseConfigRaw.trim()) {
         localStorage.setItem(FIREBASE_SETTINGS_STORAGE_KEY, values.firebaseConfigRaw);
       } else {
@@ -8361,7 +7833,7 @@
         });
         if (changed) {
           refreshDraw();
-          requestLiveFeaturesSync();
+          requestFirestoreFeaturesSync();
         }
       } catch (err) {
         console.error('applyTrackerVisibilityToDrawings failed', err);
@@ -8497,7 +7969,7 @@
         }) : [];
         refreshDraw();
         try { ensurePoiIconsLoaded(getMap(), drawStore.features); } catch {}
-        requestLiveFeaturesSync(0);
+        requestFirestoreFeaturesSync(0);
         try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
       } catch(e){ console.error('loadDrawings failed', e); }
     };
@@ -10261,7 +9733,7 @@
         }
         refreshDraw();
         setDirty(true);
-        requestLiveFeaturesSync(0);
+        requestFirestoreFeaturesSync(0);
         if (result.filePath) currentFilePath = result.filePath;
         try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
         const bounds = computeFeatureBounds(normalized);
@@ -10315,7 +9787,7 @@
         }
         refreshDraw();
         setDirty(true);
-        requestLiveFeaturesSync(0);
+        requestFirestoreFeaturesSync(0);
         try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
         focusMapOnBounds(computeFeatureBounds([normalized]));
         showToast(t('messages.gpxImported', 'GPX feature added'));
@@ -10335,7 +9807,7 @@
       refreshDraw();
       setDirty(true);
       showToast('Features cleared');
-      requestLiveFeaturesSync(0);
+      requestFirestoreFeaturesSync(0);
     };
 
     const updateDrawingsPanel = () => {
@@ -10631,10 +10103,7 @@
   teamsResumeSessionBtn?.addEventListener('click', openTeamsResumeSessionModal);
   mapSessionStartBtn?.addEventListener('click', openTeamsStartSessionModal);
   mapSessionResumeBtn?.addEventListener('click', openTeamsResumeSessionModal);
-  mapSessionStopBtn?.addEventListener('click', () => { void endTeamsSession(); });
-  mapSessionTitleEl?.addEventListener('focus', handleMapSessionTitleFocus);
-  mapSessionTitleEl?.addEventListener('keydown', handleMapSessionTitleKeydown);
-  mapSessionTitleEl?.addEventListener('blur', () => { void commitMapSessionTitle(); });
+  mapSessionTitleEl?.addEventListener('click', openTeamsSessionActionsModal);
   teamsAddBtn?.addEventListener('click', openTeamMemberModal);
   teamsStartSessionClose?.addEventListener('click', closeTeamsStartSessionModal);
   teamsStartSessionCancel?.addEventListener('click', closeTeamsStartSessionModal);
@@ -10648,6 +10117,21 @@
   teamsResumeSessionModal?.addEventListener('click', (e) => {
     const target = e.target;
     if (target && target.dataset && target.dataset.action === 'close') closeTeamsResumeSessionModal();
+  });
+  teamsSessionActionsClose?.addEventListener('click', closeTeamsSessionActionsModal);
+  teamsSessionRenameForm?.addEventListener('submit', handleTeamsSessionRenameSubmit);
+  teamsSessionStopAction?.addEventListener('click', () => { void stopTeamsSession(); });
+  teamsSessionCloseAction?.addEventListener('click', () => { void closeTeamsSession(); });
+  teamsSessionActionsModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTeamsSessionActionsModal();
+  });
+  teamsDeleteSessionClose?.addEventListener('click', closeTeamsDeleteSessionModal);
+  teamsDeleteSessionCancel?.addEventListener('click', closeTeamsDeleteSessionModal);
+  teamsDeleteSessionConfirm?.addEventListener('click', handleTeamsDeleteSessionConfirm);
+  teamsDeleteSessionModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTeamsDeleteSessionModal();
   });
   teamMemberClose?.addEventListener('click', closeTeamMemberModal);
   teamMemberDone?.addEventListener('click', closeTeamMemberModal);
@@ -11845,56 +11329,6 @@
     });
     syncGotoPoiControls();
 
-    const openPushLiveModal = () => {
-      if (!pushLiveModal) return;
-      abortLiveRequest();
-      if (!currentLiveSession) currentLiveSession = loadStoredLiveSession();
-      const shouldAutoStart = !currentLiveSession;
-      applyLiveSessionState({ skipStatus: shouldAutoStart });
-      pushLiveModal.hidden = false;
-      pushLiveModal.setAttribute('aria-hidden', 'false');
-      if (pushLiveClose) {
-        setTimeout(() => {
-          try { pushLiveClose.focus(); } catch {}
-        }, 0);
-      }
-      if (shouldAutoStart) {
-        startLiveSession().catch((err) => {
-          console.error('startLiveSession failed', err);
-        });
-      }
-    };
-    const closePushLiveModal = () => {
-      if (!pushLiveModal) return;
-      abortLiveRequest();
-      pushLiveModal.hidden = true;
-      pushLiveModal.setAttribute('aria-hidden', 'true');
-      applyLiveSessionState({ skipStatus: true });
-    };
-    toolPushLive?.addEventListener('click', openPushLiveModal);
-    pushLiveClose?.addEventListener('click', closePushLiveModal);
-    pushLiveModal?.addEventListener('click', (e) => {
-      const t = e.target;
-      if (t && t.dataset && t.dataset.action === 'close') closePushLiveModal();
-    });
-    pushLiveModal?.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closePushLiveModal();
-        e.stopPropagation();
-      }
-    });
-    pushLiveStart?.addEventListener('click', () => {
-      startLiveSession().catch((err) => {
-        console.error('startLiveSession failed', err);
-      });
-    });
-    pushLiveEnd?.addEventListener('click', () => {
-      endLiveSession().catch((err) => {
-        console.error('endLiveSession failed', err);
-      });
-    });
-    pushLiveCancel?.addEventListener('click', closePushLiveModal);
-
     const openShortcutsModal = () => {
       if (!shortcutsModal) return;
       renderShortcutsList();
@@ -12133,14 +11567,6 @@
           toggleTrackersSidebarViaShortcut();
           event.preventDefault();
           return;
-        case 'L':
-        case 'l':
-          if (!toolPushLive?.hidden && !toolPushLive?.disabled) {
-            openPushLiveModal();
-            event.preventDefault();
-            return;
-          }
-          break;
         case 'C':
         case 'c':
           openGotoModal();
@@ -12297,6 +11723,10 @@
     }
     if (teamsResumeSessionModal && teamsResumeSessionModal.hidden === false) {
       closeTeamsResumeSessionModal();
+      return true;
+    }
+    if (teamsSessionActionsModal && teamsSessionActionsModal.hidden === false) {
+      closeTeamsSessionActionsModal();
       return true;
     }
     if (searchModal && searchModal.hidden === false) {

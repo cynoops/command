@@ -74,6 +74,14 @@
   --trackers-sidebar-w: 0px;
   --radius: 12px;
   --shadow: 0 8px 24px rgba(0,0,0,.25);
+  --dialog-bg: #0f172a;
+  --dialog-text: #e2e8f0;
+  --dialog-border: rgba(148, 163, 184, 0.25);
+  --dialog-shadow: 0 20px 45px rgba(15, 23, 42, 0.35);
+  --dialog-backdrop: rgba(15, 23, 42, 0.45);
+  --dialog-header-text: #f8fafc;
+  --dialog-header-border: rgba(148, 163, 184, 0.18);
+  --dialog-radius: 14px;
 }
 
 *{ box-sizing: border-box; }
@@ -496,6 +504,7 @@ body:not(.sidebar-ready) .trackers-sidebar{
 }
 .map-session-active[hidden]{ display: none; }
 .map-session-title{
+  display: block;
   margin: 0;
   font-size: 13px;
   font-weight: 600;
@@ -503,13 +512,28 @@ body:not(.sidebar-ready) .trackers-sidebar{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
+  width: 100%;
   min-height: 18px;
 }
-.map-session-title[contenteditable="true"]{
-  cursor: text;
+.map-session-title-button{
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.map-session-title:focus{
-  outline: 1px solid color-mix(in oklab, var(--accent) 55%, transparent 45%);
+.map-session-title-button:hover{
+  color: var(--accent);
+}
+.map-session-title-button:disabled{
+  cursor: default;
+  opacity: 0.7;
+}
+.map-session-title-button:focus-visible{
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, transparent 45%);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -533,28 +557,6 @@ body:not(.sidebar-ready) .trackers-sidebar{
   border-radius: 999px;
   font-size: 12px;
   letter-spacing: 0.01em;
-}
-.map-session-action--icon{
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-#mapSessionStopBtn{
-  border-radius: 999px;
-  height: 24px;
-  border-color: var(--line);
-}
-.map-session-action--icon .icon{
-  width: 12px;
-  height: 12px;
-  filter: invert(1);
-}
-.map-session-overlay:not(.has-session) #mapSessionStopBtn{
-  display: none;
 }
 .map-utility-toolbar .map-utility-btn{
   position: relative;
@@ -1490,17 +1492,29 @@ input:focus, select:focus{ border-color: var(--accent); }
 /* ---------------- Modal ---------------- */
 .modal[hidden]{ display:none; }
 .modal{ position: fixed; inset: 0; z-index: 50; }
-.modal-backdrop{ position: absolute; inset: 0; background: #0008; backdrop-filter: blur(2px); }
+.modal-backdrop{ position: absolute; inset: 0; background: var(--dialog-backdrop); backdrop-filter: none; }
 .modal-panel{
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: min(680px, 92vw);
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--dialog-bg);
+  color: var(--dialog-text);
+  border: 1px solid var(--dialog-border);
+  border-radius: var(--dialog-radius);
+  box-shadow: var(--dialog-shadow);
 }
-.modal-header{ display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-.modal-header h3{ margin: 0; font-size: 14px; }
+.modal-header{ display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--dialog-header-border); }
+.modal-header h3{ margin: 0; font-size: 14px; letter-spacing: 0.02em; color: var(--dialog-header-text); }
+.modal-header .btn-icon{
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+.modal-header .btn-icon:hover,
+.modal-header .btn-icon:focus-visible{
+  border-color: transparent;
+  background: rgba(148, 163, 184, 0.2);
+  outline: none;
+}
 .modal-body{ padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 
 .shortcut-grid{
@@ -1528,6 +1542,129 @@ input:focus, select:focus{ border-color: var(--accent); }
   min-width: 36px;
 }
 .modal-row{ display: flex; gap: 8px; align-items: center; }
+.modal-text{
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.modal-text-danger{
+  color: var(--danger);
+  font-weight: 600;
+}
+.session-actions-body{
+  gap: 16px;
+}
+.session-actions-meta{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.session-actions-id{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--line) 70%, transparent 30%);
+  background: color-mix(in oklab, var(--bg) 70%, transparent 30%);
+  width: fit-content;
+}
+.session-actions-id-label{
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.session-actions-id-value{
+  font-size: 12px;
+  color: var(--text);
+  font-family: "SFMono-Regular","Menlo","Monaco","Consolas","Liberation Mono",monospace;
+}
+.session-actions-group{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklab, var(--line) 65%, transparent 35%);
+  background: color-mix(in oklab, var(--bg) 65%, transparent 35%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+}
+.session-actions-group--rename{
+  align-items: stretch;
+  border-left: 3px solid color-mix(in oklab, var(--accent) 65%, transparent 35%);
+}
+.session-actions-group--stop{
+  border-left: 3px solid color-mix(in oklab, var(--danger) 70%, transparent 30%);
+}
+.session-actions-group--close{
+  border-left: 3px solid color-mix(in oklab, var(--accent) 70%, transparent 30%);
+}
+.session-actions-rename-row{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  width: 100%;
+}
+.session-actions-rename-row .field{
+  margin: 0;
+}
+.session-actions-rename-row .btn{
+  height: 38px;
+  padding: 0 16px;
+}
+.session-actions-copy{
+  flex: 1;
+  min-width: 0;
+}
+.session-actions-group .modal-text{
+  margin: 0;
+}
+.session-actions-cta{
+  flex: 0 0 auto;
+}
+#teamsSessionActionsModal .modal-panel{
+  background: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  overflow: hidden;
+}
+#teamsSessionActionsModal .modal-header{
+  padding: 12px 16px;
+  background: transparent;
+  border-bottom: 1px solid var(--dialog-header-border);
+  border-radius: var(--dialog-radius) var(--dialog-radius) 0 0;
+}
+#teamsSessionActionsModal .modal-header h3{
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+#teamsSessionActionsModal .btn-icon{
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+}
+@media (max-width: 560px){
+  .session-actions-group{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .session-actions-cta{
+    align-self: stretch;
+  }
+  .session-actions-cta .btn{
+    width: 100%;
+  }
+  .session-actions-rename-row{
+    grid-template-columns: 1fr;
+  }
+  .session-actions-rename-row .btn{
+    width: 100%;
+  }
+}
 .spacer{ flex: 1 1 auto; }
 .muted{ color: var(--muted); }
 .field.small input{ width: 120px; }
@@ -1572,6 +1709,12 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
   --session-dates-col: 260px;
 }
 .session-list.is-busy{ opacity: 0.7; pointer-events: none; }
+.session-row-wrap{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
 .session-row{
   display: flex;
   align-items: center;
@@ -1585,9 +1728,16 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
   font: inherit;
   text-align: left;
   cursor: pointer;
+  flex: 1 1 auto;
 }
 .session-row:hover{ border-color: var(--accent); }
 .session-row:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+.session-row-delete{ flex: 0 0 auto; }
+.btn-icon-danger{
+  border-color: color-mix(in oklab, var(--danger) 45%, var(--line) 55%);
+  color: var(--danger);
+}
+.btn-icon-danger:hover{ border-color: var(--danger); }
 .session-row-main{
   display: flex;
   flex-direction: column;
@@ -1662,8 +1812,36 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
   font-size: 13px;
   font-weight: 600;
 }
+.session-empty{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg-elev) 65%, var(--bg) 35%);
+  text-align: center;
+}
+.session-empty-title{
+  font-size: 14px;
+  font-weight: 600;
+}
+.session-empty-body{
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 420px;
+}
+.session-empty-actions{
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 6px;
+}
 @media (max-width: 640px){
+  .session-row-wrap{ flex-direction: column; align-items: stretch; }
   .session-row{ flex-direction: column; align-items: flex-start; }
+  .session-row-delete{ align-self: flex-end; }
   .session-row-dates{ width: 100%; text-align: left; flex-basis: auto; }
   .session-row-stats{ width: 100%; justify-content: flex-start; flex-basis: auto; }
   .session-row-stat{ align-items: flex-start; min-width: 0; }
@@ -1743,51 +1921,6 @@ textarea{ background: var(--bg); color: var(--text); border: 1px solid var(--lin
   font-weight: 600;
 }
 
-.push-live-body{
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  text-align: center;
-  min-height: 320px;
-}
-.push-live-preview{
-  width: 100%;
-  max-width: min(600px, 90vw);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.push-live-preview img{
-  width: 100%;
-  max-width: min(600px, 90vw);
-  border-radius: 12px;
-  box-shadow: 0 12px 28px rgba(0,0,0,0.3);
-}
-.push-live-preview[hidden]{
-  display: none !important;
-}
-.push-live-loading{
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-.push-live-loading[hidden]{
-  display: none !important;
-}
-.push-live-actions{
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 12px 0 24px;
-}
-.push-live-actions .btn{
-  min-width: 168px;
-}
 .team-member-body{
   display: flex;
   flex-direction: column;

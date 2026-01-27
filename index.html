@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://cynoops.com https://cynoops.com/api https://cynoops.com/live https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com https://firestore.googleapis.com; worker-src 'self' blob:;"
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com https://firestore.googleapis.com; worker-src 'self' blob:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Command - CYNOOPS</title>
@@ -31,7 +31,6 @@
         <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false" data-tooltip="Go to coordinates">
           <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
         </button>
-        <div id="toolPushLiveDivider" class="tool-divider" aria-hidden="true" hidden></div>
         <!-- View controls -->
         <button id="toolZoomIn" class="tool-btn" title="Zoom in" data-tooltip="Zoom in">
           <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
@@ -86,9 +85,6 @@
           <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
         </button>
         <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolPushLive" class="tool-btn" title="Push LIVE Updates" aria-pressed="false" data-tooltip="Push LIVE Updates" hidden>
-          <img class="icon" src="./assets/icons/regular/cloud-arrow-up.svg" alt="" aria-hidden="true" />
-        </button>
         <button id="toolPrint" class="tool-btn" title="Save snapshot" aria-pressed="false" data-tooltip="Save snapshot">
           <img class="icon" src="./assets/icons/regular/printer.svg" alt="" aria-hidden="true" />
         </button>
@@ -189,16 +185,13 @@
               <div class="map-session-info">
                 <div id="mapSessionEmpty" class="map-session-empty" data-i18n="teams.noActiveSession">No active session</div>
                 <div id="mapSessionActive" class="map-session-active" hidden>
-                  <h3 id="mapSessionTitle" class="map-session-title" contenteditable="true" role="textbox" data-i18n-aria-label="sessionOverlay.titleAria" aria-label="Session title" spellcheck="false"></h3>
+                  <button id="mapSessionTitle" class="map-session-title map-session-title-button" type="button" aria-haspopup="dialog" aria-controls="teamsSessionActionsModal"></button>
                   <div id="mapSessionId" class="map-session-id" data-i18n-aria-label="sessionOverlay.idAria" aria-label="Session ID">—</div>
                 </div>
               </div>
               <div class="map-session-actions">
                 <button id="mapSessionStartBtn" class="btn btn-primary map-session-action" type="button" data-i18n="sessionOverlay.startNew">New</button>
                 <button id="mapSessionResumeBtn" class="btn map-session-action" type="button" data-i18n="sessionOverlay.resume">Load</button>
-                <button id="mapSessionStopBtn" class="btn btn-danger map-session-action map-session-action--icon" type="button" data-i18n-aria-label="sessionOverlay.stop" data-i18n-data-tooltip="sessionOverlay.stop" aria-label="Stop" data-tooltip="Stop" hidden>
-                  <img src="./assets/icons/regular/stop.svg" alt="" class="icon" aria-hidden="true" />
-                </button>
               </div>
             </div>
             <div class="map-overlay-separator" aria-hidden="true"></div>
@@ -325,12 +318,6 @@
                     <button type="button" class="label-help" aria-label="How to get an OpenAI API key" data-tooltip="Go to platform.openai.com/account/api-keys, create a new secret key, and paste it here.">info</button>
                   </span>
                   <input id="settingOpenAIKey" type="password" autocomplete="off" placeholder="sk-•••" />
-                </label>
-                <label class="field">
-                  <span class="label label-with-help">CYNOOPS Live API Key
-                    <button type="button" class="label-help" aria-label="Where to find your CYNOOPS Live API key" data-tooltip="Open your CynoOps dashboard, create a Live API key, and paste it here.">info</button>
-                  </span>
-                  <input id="settingCynoopsLiveKey" type="password" autocomplete="off" placeholder="live_•••" />
                 </label>
                 <label class="field">
                   <span class="label" data-i18n="settings.firebaseConfig">Firebase Settings (JSON)</span>
@@ -577,27 +564,68 @@
     </div>
   </div>
 
-  <!-- Push LIVE Updates Modal -->
-  <div id="pushLiveModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="pushLiveTitle" hidden>
+  <!-- Session Actions Modal -->
+  <div id="teamsSessionActionsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamsSessionActionsTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
-    <div class="modal-panel" style="width:min(800px, 96vw);">
+    <div class="modal-panel" style="width:min(520px, 92vw);">
       <div class="modal-header">
-        <h3 id="pushLiveTitle">Push LIVE Updates</h3>
-        <button id="pushLiveClose" class="btn-icon" title="Close">×</button>
+        <h3 id="teamsSessionActionsTitle" data-i18n="teams.sessionActionsModal.title">Session actions</h3>
+        <button id="teamsSessionActionsClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
       </div>
-      <div class="modal-body push-live-body">
-        <div id="pushLiveStatus" class="muted" role="status" aria-live="polite" data-i18n="pushLiveModal.idle">Start a LIVE session to generate a QR code.</div>
-        <div id="pushLiveLoading" class="push-live-loading" hidden aria-hidden="true">
-          <span class="loading-spinner"></span>
+      <div class="modal-body session-actions-body">
+        <div class="session-actions-meta">
+          <div class="session-actions-id">
+            <span class="session-actions-id-label" data-i18n="teams.sessionActionsModal.sessionIdLabel">Session ID</span>
+            <span id="teamsSessionActionsId" class="session-actions-id-value">—</span>
+          </div>
         </div>
-        <div id="pushLivePreview" class="push-live-preview" hidden>
-          <img id="pushLiveQr" src="" data-i18n-alt="pushLiveModal.imageAlt" alt="CYNOOPS LIVE QR code" style="max-width:100%; height:auto;" />
+        <form id="teamsSessionRenameForm" class="session-actions-group session-actions-group--rename">
+          <div class="session-actions-rename-row">
+            <label class="field">
+              <span class="label" data-i18n="teams.sessionActionsModal.renameLabel">Session name</span>
+              <input id="teamsSessionRenameInput" type="text" autocomplete="off" data-i18n-placeholder="teams.sessionActionsModal.renamePlaceholder" placeholder="e.g., Operation Alpha" />
+            </label>
+            <button id="teamsSessionRenameSubmit" class="btn btn-primary" type="submit" data-i18n="features.menu.save">Save</button>
+          </div>
+        </form>
+        <div class="session-actions-group session-actions-group--stop">
+          <div class="session-actions-copy">
+            <p class="modal-text" data-i18n="teams.sessionActionsModal.stopHint">Stop this session by adding an end date.</p>
+          </div>
+          <div class="session-actions-cta">
+            <button id="teamsSessionStopAction" class="btn btn-danger" type="button" data-i18n="teams.sessionActionsModal.stopButton">Stop session</button>
+          </div>
+        </div>
+        <div class="session-actions-group session-actions-group--close">
+          <div class="session-actions-copy">
+            <p class="modal-text" data-i18n="teams.sessionActionsModal.closeHint">Close the session and reset the map, features, and teams. GPX stays.</p>
+          </div>
+          <div class="session-actions-cta">
+            <button id="teamsSessionCloseAction" class="btn" type="button" data-i18n="teams.sessionActionsModal.closeButton">Close session</button>
+          </div>
         </div>
       </div>
-      <div class="modal-footer push-live-actions">
-        <button id="pushLiveStart" class="btn btn-primary" type="button" data-i18n="pushLiveModal.startButton">START LIVE SESSION</button>
-        <button id="pushLiveEnd" class="btn btn-danger" type="button" data-i18n="pushLiveModal.endButton" hidden>END LIVE SESSION</button>
-        <button id="pushLiveCancel" class="btn" type="button" data-i18n="pushLiveModal.closeButton">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- Delete Team Session Modal -->
+  <div id="teamsDeleteSessionModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamsDeleteSessionTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(420px, 90vw);">
+      <div class="modal-header">
+        <h3 id="teamsDeleteSessionTitle" data-i18n="teams.deleteSessionModal.title">Delete session?</h3>
+        <button id="teamsDeleteSessionClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="teamsDeleteSessionMessage" class="modal-text" data-i18n="teams.deleteSessionModal.message">Are you sure you want to delete this session and all its data?</p>
+        <p id="teamsDeleteSessionWarning" class="modal-text modal-text-danger" data-i18n="teams.deleteSessionModal.warning">Danger: this cannot be undone.</p>
+        <div id="teamsDeleteSessionMeta" class="modal-text muted" aria-live="polite"></div>
+        <div id="teamsDeleteSessionStatus" class="muted" role="status" aria-live="polite" hidden></div>
+        <div class="modal-row">
+          <div class="spacer"></div>
+          <button id="teamsDeleteSessionCancel" class="btn" type="button" data-i18n="teams.deleteSessionModal.cancel">Cancel</button>
+          <button id="teamsDeleteSessionConfirm" class="btn btn-danger" type="button" data-i18n="teams.deleteSessionModal.confirm">Delete</button>
+        </div>
       </div>
     </div>
   </div>
