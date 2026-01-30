@@ -51,6 +51,7 @@
   const TEAMS_SESSION_ICON_PATHS = {
     delete: './assets/icons/regular/trash-simple.svg'
   };
+  const TEAMS_SESSION_SUBCOLLECTIONS = ['trackers', 'updates'];
   const FEATURE_NAME_MAX = 26;
   const FEATURE_IMPORT_BASE = 24;
   const FEATURE_NAME_ELLIPSIS = '...';
@@ -799,6 +800,7 @@
   };
 
   let refreshCoordModalContent = null;
+  let refreshWindIndicatorContent = null;
 
   const applyTranslations = () => {
     if (!translationState.data) return;
@@ -832,6 +834,10 @@
       if (typeof refreshCoordModalContent === 'function') {
         try { refreshCoordModalContent(); }
         catch (err) { console.error('refreshCoordModalContent failed', err); }
+      }
+      if (typeof refreshWindIndicatorContent === 'function') {
+        try { refreshWindIndicatorContent(); }
+        catch (err) { console.error('refreshWindIndicatorContent failed', err); }
       }
       if (shortcutsList) {
         try { renderShortcutsList(); }
@@ -867,6 +873,7 @@
   const languageDropdown = q('#languageDropdown');
   const languageToggle = q('#languageToggle');
   const languageMenu = q('#languageMenu');
+  const settingsQuickBtn = q('#settingsQuickBtn');
   const toolEdit = q('#toolEdit');
   const toolRect = q('#toolRect');
   const toolPoly = q('#toolPoly');
@@ -874,15 +881,21 @@
   const toolLine = q('#toolLine');
   const toolArrow = q('#toolArrow');
   const toolPOI = q('#toolPOI');
-  const toolWeather = q('#toolWeather');
   const toolCrosshair = q('#toolCrosshair');
   const toolSetScale = q('#toolSetScale');
+  const overlaySelect = q('#overlaySelect');
   const toolLabelIncrease = q('#toolLabelIncrease');
   const toolLabelDecrease = q('#toolLabelDecrease');
   const toolPrint = q('#toolPrint');
+  const toolExportPdf = q('#toolExportPdf');
   const toolShortcuts = q('#toolShortcuts');
   const mapUtilityToolbar = q('#mapUtilityToolbar');
   const mapStyleToolbar = q('#mapStyleToolbar');
+  const mapContainer = q('#map');
+  const mapWindOverlay = q('#mapWindOverlay');
+  const mapRainOverlay = q('#mapRainOverlay');
+  const mapWindIndicator = q('#mapWindIndicator');
+  const mapWindIndicatorLabel = mapWindIndicator?.querySelector('.map-wind-indicator__label') || null;
   const mapSessionOverlay = q('#mapSessionOverlay');
   const mapSessionEmpty = q('#mapSessionEmpty');
   const mapSessionActive = q('#mapSessionActive');
@@ -898,6 +911,8 @@
   const mapCrosshair = q('#mapCrosshair');
   const toolSearch = q('#toolSearch');
   const toolGoTo = q('#toolGoTo');
+  const exportLoadingModal = q('#exportLoadingModal');
+  const exportLoadingText = q('#exportLoadingText');
   const drawingsList = q('#drawingsList');
   const featuresActions = q('#featuresActions');
   const featuresLabelsToggle = q('#featuresLabelsToggle');
@@ -914,6 +929,47 @@
   const settingGoogleKey = q('#settingGoogleKey');
   const settingOpenAIKey = q('#settingOpenAIKey');
   const settingFirebaseConfig = q('#settingFirebaseConfig');
+  const settingFirestoreRules = q('#settingFirestoreRules');
+  const settingStorageRules = q('#settingStorageRules');
+  const settingFirebaseFunctionIndex = q('#settingFirebaseFunctionIndex');
+  const firebaseAdminSelectBtn = q('#firebaseAdminSelectBtn');
+  const firebaseAdminClearBtn = q('#firebaseAdminClearBtn');
+  const firebaseAdminFileInput = q('#firebaseAdminFileInput');
+  const firebaseAdminStatus = q('#firebaseAdminStatus');
+  const firebaseAdminProject = q('#firebaseAdminProject');
+  const firebaseAdminActionsStatus = q('#firebaseAdminActionsStatus');
+  const firebaseAdminClearSessionsBtn = q('#firebaseAdminClearSessionsBtn');
+  const firebaseAdminClearAnonymousUsersBtn = q('#firebaseAdminClearAnonymousUsersBtn');
+  const firebaseDeployAllBtn = q('#firebaseDeployAllBtn');
+  const firebaseDeployFirestoreRulesBtn = q('#firebaseDeployFirestoreRulesBtn');
+  const firebaseDeployStorageRulesBtn = q('#firebaseDeployStorageRulesBtn');
+  const firebaseDeployFunctionsBtn = q('#firebaseDeployFunctionsBtn');
+  const firebaseCollapseFirestoreRulesBtn = q('#firebaseCollapseFirestoreRulesBtn');
+  const firebaseCollapseStorageRulesBtn = q('#firebaseCollapseStorageRulesBtn');
+  const firebaseCollapseFunctionsBtn = q('#firebaseCollapseFunctionsBtn');
+  const firebaseCollapseConfigBtn = q('#firebaseCollapseConfigBtn');
+  const firestoreRulesEditor = q('#firestoreRulesEditor');
+  const storageRulesEditor = q('#storageRulesEditor');
+  const functionsRulesEditor = q('#functionsRulesEditor');
+  const firebaseConfigEditor = q('#firebaseConfigEditor');
+  const firebaseFirestoreRulesStatus = q('#firebaseFirestoreRulesStatus');
+  const firebaseStorageRulesStatus = q('#firebaseStorageRulesStatus');
+  const firebaseFunctionsStatus = q('#firebaseFunctionsStatus');
+  const firebaseAdminClearSessionsModal = q('#firebaseAdminClearSessionsModal');
+  const firebaseAdminClearSessionsClose = q('#firebaseAdminClearSessionsClose');
+  const firebaseAdminClearSessionsCancel = q('#firebaseAdminClearSessionsCancel');
+  const firebaseAdminClearSessionsConfirm = q('#firebaseAdminClearSessionsConfirm');
+  const firebaseAdminClearSessionsStatus = q('#firebaseAdminClearSessionsStatus');
+  const firebaseAdminClearAnonymousUsersModal = q('#firebaseAdminClearAnonymousUsersModal');
+  const firebaseAdminClearAnonymousUsersClose = q('#firebaseAdminClearAnonymousUsersClose');
+  const firebaseAdminClearAnonymousUsersCancel = q('#firebaseAdminClearAnonymousUsersCancel');
+  const firebaseAdminClearAnonymousUsersConfirm = q('#firebaseAdminClearAnonymousUsersConfirm');
+  const firebaseAdminClearAnonymousUsersStatus = q('#firebaseAdminClearAnonymousUsersStatus');
+  const firebaseDeployModal = q('#firebaseDeployModal');
+  const firebaseDeployModalClose = q('#firebaseDeployModalClose');
+  const firebaseDeployModalDone = q('#firebaseDeployModalDone');
+  const firebaseDeployLog = q('#firebaseDeployLog');
+  const firebaseDeployStatus = q('#firebaseDeployStatus');
   const settingStyleUrl = q('#settingStyleUrl');
   const settingSatelliteStyleUrl = q('#settingSatelliteStyleUrl');
   const settingTerrainStyleUrl = q('#settingTerrainStyleUrl');
@@ -923,10 +979,28 @@
   const settingsForm = q('#settingsForm');
   const settingsSaveBtn = q('#settingsSaveBtn');
   const settingsStatus = q('.settings-status');
+  const settingsCloseBtn = q('#settingsCloseBtn');
+  const settingsGroupButtons = Array.from(document.querySelectorAll('.settings-nav-item[data-settings-group]'));
+  const settingsGroups = Array.from(document.querySelectorAll('.settings-group[data-settings-group]'));
+  const SETTINGS_GROUP_KEY_MAP = {
+    general: 'settings.section.general',
+    'api-keys': 'settings.section.apiKeys',
+    firebase: 'settings.section.firebase',
+    map: 'settings.section.map'
+  };
   const defaultAccessToken = settingAccessToken?.defaultValue || '';
   const defaultGoogleKey = settingGoogleKey?.defaultValue || '';
   const defaultOpenAIKey = settingOpenAIKey?.defaultValue || '';
   const FIREBASE_SETTINGS_STORAGE_KEY = 'firebase.settingsRaw';
+  const FIRESTORE_RULES_STORAGE_KEY = 'firebase.firestoreRules';
+  const STORAGE_RULES_STORAGE_KEY = 'firebase.storageRules';
+  const FUNCTIONS_INDEX_STORAGE_KEY = 'firebase.functionsIndex';
+  const FIRESTORE_RULES_DEPLOY_KEY = 'firebase.firestoreRulesDeploy';
+  const STORAGE_RULES_DEPLOY_KEY = 'firebase.storageRulesDeploy';
+  const FUNCTIONS_INDEX_DEPLOY_KEY = 'firebase.functionsIndexDeploy';
+  const DEFAULT_FIRESTORE_RULES_PATH = 'src/firebase/firebase.rules';
+  const DEFAULT_STORAGE_RULES_PATH = 'src/firebase/storage.rules';
+  const DEFAULT_FUNCTIONS_INDEX_PATH = 'src/firebase/functions/index.js';
   const DEFAULT_SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/standard-satellite';
   const DEFAULT_TERRAIN_STYLE_URL = 'mapbox://styles/mapbox/outdoors-v12';
   const MAP_STYLE_KEYS = ['street', 'satellite', 'terrain'];
@@ -958,7 +1032,10 @@
     return allowedAppLanguages.has(key) ? key : DEFAULT_APP_LANGUAGE;
   };
   let weatherOverlayActive = false;
-  const TOOL_CURSOR_SET = new Set(['rect', 'poly', 'circle', 'line', 'arrow', 'poi', 'weather', 'crosshair']);
+  let lastWindIndicatorDegrees = null;
+  let lastWindIndicatorSpeed = null;
+  let lastWindIndicatorSpeedUnit = 'km/h';
+  const TOOL_CURSOR_SET = new Set(['rect', 'poly', 'circle', 'line', 'arrow', 'poi', 'crosshair']);
   const AI_PRESET_MAP = {
     Point: [
       'Move POI {VALUE} meters north',
@@ -984,7 +1061,7 @@
     const canvas = map?.getCanvas?.();
     const container = map?.getCanvasContainer?.();
     const tool = (window)._currentTool;
-    const shouldCrosshair = TOOL_CURSOR_SET.has(tool) || weatherOverlayActive;
+    const shouldCrosshair = TOOL_CURSOR_SET.has(tool);
     if (canvas) {
       canvas.classList.toggle('cursor-crosshair', shouldCrosshair);
       if (shouldCrosshair) {
@@ -1139,6 +1216,118 @@
     firebaseSettings = parsedFirebase.value;
     return { ok: !!firebaseSettings, raw: parsedFirebase.raw };
   };
+  const readStoredRules = (key) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const fetchRulesText = async (path) => {
+    try {
+      const response = await fetch(path);
+      if (!response.ok) return null;
+      return await response.text();
+    } catch {
+      return null;
+    }
+  };
+  const loadDefaultFirebaseRules = async () => {
+    if (firebaseRulesDefaultsLoaded || firebaseRulesDefaultsInFlight) return;
+    firebaseRulesDefaultsInFlight = true;
+    try {
+      const firestoreStored = readStoredRules(FIRESTORE_RULES_STORAGE_KEY);
+      const storageStored = readStoredRules(STORAGE_RULES_STORAGE_KEY);
+      const functionsStored = readStoredRules(FUNCTIONS_INDEX_STORAGE_KEY);
+      const needsFirestore = settingFirestoreRules && !settingFirestoreRules.value.trim() && firestoreStored === null;
+      const needsStorage = settingStorageRules && !settingStorageRules.value.trim() && storageStored === null;
+      const needsFunctions = settingFirebaseFunctionIndex
+        && !settingFirebaseFunctionIndex.value.trim()
+        && functionsStored === null;
+      if (needsFirestore) {
+        const firestoreText = await fetchRulesText(DEFAULT_FIRESTORE_RULES_PATH);
+        if (firestoreText && settingFirestoreRules && !settingFirestoreRules.value.trim()) {
+          withSuppressedSettingsEvents(() => {
+            settingFirestoreRules.value = firestoreText;
+          });
+        }
+      }
+      if (needsStorage) {
+        const storageText = await fetchRulesText(DEFAULT_STORAGE_RULES_PATH);
+        if (storageText && settingStorageRules && !settingStorageRules.value.trim()) {
+          withSuppressedSettingsEvents(() => {
+            settingStorageRules.value = storageText;
+          });
+        }
+      }
+      if (needsFunctions) {
+        const functionsText = await fetchRulesText(DEFAULT_FUNCTIONS_INDEX_PATH);
+        if (functionsText && settingFirebaseFunctionIndex && !settingFirebaseFunctionIndex.value.trim()) {
+          withSuppressedSettingsEvents(() => {
+            settingFirebaseFunctionIndex.value = functionsText;
+          });
+        }
+      }
+    } finally {
+      firebaseRulesDefaultsLoaded = true;
+      firebaseRulesDefaultsInFlight = false;
+      updateFirebaseAdminActionsState();
+    }
+  };
+  const getStorageBucketFromInput = () => {
+    const raw = normalizeLineBreaks(settingFirebaseConfig?.value || '');
+    if (!raw.trim()) return null;
+    const parsed = parseFirebaseSettingsText(raw);
+    if (parsed.error) return null;
+    return parsed.value?.storageBucket || null;
+  };
+  const getRulesText = (el) => {
+    const raw = normalizeLineBreaks(el?.value || '');
+    return { raw, trimmed: raw.trim() };
+  };
+  const normalizeRulesContent = (value) => normalizeLineBreaks(value || '');
+  const computeContentHash = (value) => {
+    const input = String(value || '');
+    let hash = 0;
+    for (let i = 0; i < input.length; i += 1) {
+      hash = ((hash << 5) - hash) + input.charCodeAt(i);
+      hash |= 0;
+    }
+    return `h${(hash >>> 0).toString(16)}`;
+  };
+  const readDeployState = (key) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.hash === 'string') return parsed;
+    } catch {}
+    return null;
+  };
+  const writeDeployState = (key, hash) => {
+    if (!hash) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ hash, updatedAt: Date.now() }));
+    } catch {}
+  };
+  const getRulesDeployState = (value, key) => {
+    const normalized = normalizeRulesContent(value);
+    const trimmed = normalized.trim();
+    const currentHash = trimmed ? computeContentHash(normalized) : null;
+    const stored = readDeployState(key);
+    const storedHash = stored?.hash || null;
+    if (!currentHash) return { state: 'empty', currentHash, storedHash };
+    if (!storedHash) return { state: 'never', currentHash, storedHash };
+    if (storedHash !== currentHash) return { state: 'pending', currentHash, storedHash };
+    return { state: 'deployed', currentHash, storedHash };
+  };
+  const storeRulesDeployState = (key, value) => {
+    const normalized = normalizeRulesContent(value);
+    if (!normalized.trim()) return null;
+    const hash = computeContentHash(normalized);
+    writeDeployState(key, hash);
+    return hash;
+  };
   const resolveFirebaseSdk = () => {
     if (window.firebaseSdk && typeof window.firebaseSdk === 'object') {
       return { type: 'modular', sdk: window.firebaseSdk };
@@ -1236,6 +1425,397 @@
   };
   const labelOf = (input) => input?.closest('label')?.querySelector('.label');
   const helpOf = (input) => input?.closest('label')?.querySelector('.label-help');
+  let firebaseAdminCredentialsReady = false;
+  let firebaseAdminClearSessionsInFlight = false;
+  let firebaseAdminClearAnonymousUsersInFlight = false;
+  let firebaseRulesDefaultsLoaded = false;
+  let firebaseRulesDefaultsInFlight = false;
+  let firebaseDeployInProgress = false;
+  let firebaseDeploySessionId = null;
+  const appendDeployLog = (message) => {
+    if (!firebaseDeployLog) return;
+    const line = String(message ?? '').trim();
+    if (!line) return;
+    firebaseDeployLog.textContent += `${line}\n`;
+    firebaseDeployLog.scrollTop = firebaseDeployLog.scrollHeight;
+  };
+  const setDeployModalState = (inProgress) => {
+    firebaseDeployInProgress = !!inProgress;
+    if (firebaseDeployModalClose) {
+      firebaseDeployModalClose.disabled = firebaseDeployInProgress;
+      firebaseDeployModalClose.setAttribute('aria-disabled', String(firebaseDeployInProgress));
+    }
+    if (firebaseDeployModalDone) {
+      firebaseDeployModalDone.disabled = firebaseDeployInProgress;
+      firebaseDeployModalDone.setAttribute('aria-disabled', String(firebaseDeployInProgress));
+    }
+  };
+  const openDeployModal = (titleText) => {
+    if (!firebaseDeployModal || !firebaseDeployLog) return;
+    if (firebaseDeployModal.hidden) firebaseDeployModal.hidden = false;
+    if (firebaseDeployLog) firebaseDeployLog.textContent = '';
+    if (firebaseDeployStatus) {
+      const key = 'settings.firebaseDeployingHint';
+      firebaseDeployStatus.textContent = t(key, 'Deployment in progress. Logs below.');
+      firebaseDeployStatus.dataset.i18n = key;
+    }
+    if (titleText) {
+      const titleEl = q('#firebaseDeployTitle');
+      if (titleEl) {
+        titleEl.textContent = titleText;
+        titleEl.dataset.i18n = '';
+      }
+    }
+    setDeployModalState(true);
+  };
+  const finishDeployModal = (finalMessage) => {
+    if (firebaseDeployStatus && finalMessage) {
+      firebaseDeployStatus.textContent = finalMessage;
+      firebaseDeployStatus.dataset.i18n = '';
+    }
+    setDeployModalState(false);
+    firebaseDeploySessionId = null;
+  };
+  const closeDeployModal = () => {
+    if (firebaseDeployInProgress) return;
+    if (firebaseDeployModal) firebaseDeployModal.hidden = true;
+  };
+  const setRulesEditorExpanded = (editorEl, buttonEl, expanded = true) => {
+    if (!editorEl || !buttonEl) return;
+    editorEl.classList.toggle('is-collapsed', !expanded);
+    const key = expanded ? 'settings.firebaseRulesCollapseLabel' : 'settings.firebaseRulesExpandLabel';
+    buttonEl.textContent = expanded ? '▴' : '▾';
+    buttonEl.setAttribute('aria-label', t(key, expanded ? 'Collapse editor' : 'Expand editor'));
+    buttonEl.setAttribute('aria-expanded', String(!!expanded));
+  };
+  const setupDeployLogListener = () => {
+    if (!window.firebaseAdmin?.onDeployLog) return;
+    window.firebaseAdmin.onDeployLog((payload) => {
+      if (!payload) return;
+      if (firebaseDeploySessionId && payload.id && payload.id !== firebaseDeploySessionId) return;
+      appendDeployLog(payload.message || payload.line || '');
+    });
+  };
+  const toggleRulesEditor = (editorEl, buttonEl) => {
+    if (!editorEl || !buttonEl) return;
+    const isCollapsed = editorEl.classList.toggle('is-collapsed');
+    const key = isCollapsed ? 'settings.firebaseRulesExpandLabel' : 'settings.firebaseRulesCollapseLabel';
+    buttonEl.textContent = isCollapsed ? '▾' : '▴';
+    buttonEl.setAttribute('aria-label', t(key, isCollapsed ? 'Expand editor' : 'Collapse editor'));
+    buttonEl.setAttribute('aria-expanded', String(!isCollapsed));
+  };
+  const setFirebaseAdminStatus = (message, { isError = false, i18nKey = null } = {}) => {
+    if (!firebaseAdminStatus) return;
+    if (typeof message === 'string') firebaseAdminStatus.textContent = message;
+    firebaseAdminStatus.classList.toggle('is-error', !!isError);
+    if (i18nKey) {
+      firebaseAdminStatus.dataset.i18n = i18nKey;
+    } else {
+      firebaseAdminStatus.dataset.i18n = '';
+    }
+  };
+  const setFirebaseAdminActionsStatus = (message, { i18nKey = null } = {}) => {
+    if (!firebaseAdminActionsStatus) return;
+    if (typeof message === 'string') firebaseAdminActionsStatus.textContent = message;
+    if (i18nKey) {
+      firebaseAdminActionsStatus.dataset.i18n = i18nKey;
+    } else {
+      firebaseAdminActionsStatus.dataset.i18n = '';
+    }
+  };
+  const setFirebaseRulesStatus = (el, message, { isError = false, i18nKey = null } = {}) => {
+    if (!el) return;
+    if (typeof message === 'string') el.textContent = message;
+    el.classList.toggle('is-error', !!isError);
+    if (i18nKey) {
+      el.dataset.i18n = i18nKey;
+    } else {
+      el.dataset.i18n = '';
+    }
+  };
+  const setDefaultRulesStatus = (el, message, options = {}) => {
+    if (!el) return;
+    if (el.textContent && el.textContent.trim()) return;
+    setFirebaseRulesStatus(el, message, options);
+  };
+  const clearRulesStatusIfDefault = (el) => {
+    if (!el) return;
+    const key = el.dataset?.i18n || '';
+    if (key === 'settings.firebaseRulesStatus.unavailable' || key === 'settings.firebaseRulesStatus.needsAdmin') {
+      setFirebaseRulesStatus(el, '');
+    }
+    el.classList.remove('is-success-icon');
+    el.classList.remove('is-pending-icon');
+  };
+  const setFirebaseAdminProject = (projectId) => {
+    if (!firebaseAdminProject) return;
+    if (projectId) {
+      firebaseAdminProject.hidden = false;
+      firebaseAdminProject.textContent = `${t('settings.firebaseAdminProjectLabel', 'Project')}: ${projectId}`;
+    } else {
+      firebaseAdminProject.hidden = true;
+      firebaseAdminProject.textContent = '';
+    }
+  };
+  const setFirebaseAdminClearButton = (visible) => {
+    if (!firebaseAdminClearBtn) return;
+    firebaseAdminClearBtn.hidden = !visible;
+  };
+  const isDeployStatusLocked = (el) => {
+    const key = el?.dataset?.i18n || '';
+    return key === 'status.firebaseRulesDeployingFirestore'
+      || key === 'status.firebaseRulesDeployingStorage'
+      || key === 'status.firebaseFunctionsDeploying';
+  };
+  const clearDeployTrackingStatus = (el) => {
+    if (!el) return;
+    const key = el.dataset?.i18n || '';
+    if (key === 'settings.firebaseRulesStatus.neverDeployed'
+      || key === 'settings.firebaseRulesStatus.pendingChanges'
+      || key === 'status.firebaseRulesDeployedFirestore'
+      || key === 'status.firebaseRulesDeployedStorage'
+      || key === 'status.firebaseFunctionsDeployed') {
+      setFirebaseRulesStatus(el, '');
+    }
+    el.classList.remove('is-success-icon');
+    el.classList.remove('is-pending-icon');
+  };
+  const applyDeployStateStatus = (el, state, deployedKey, deployedFallback, { useSuccessIcon = false } = {}) => {
+    if (!el) return;
+    el.classList.toggle('is-success-icon', false);
+    el.classList.toggle('is-pending-icon', false);
+    if (state === 'never') {
+      setFirebaseRulesStatus(el, '', { i18nKey: null });
+      el.classList.add('is-pending-icon');
+      return;
+    }
+    if (state === 'pending') {
+      setFirebaseRulesStatus(el, '', { i18nKey: null });
+      el.classList.add('is-pending-icon');
+      return;
+    }
+    if (state === 'deployed') {
+      if (useSuccessIcon) {
+        setFirebaseRulesStatus(el, '', { i18nKey: null });
+        el.classList.add('is-success-icon');
+      } else {
+        setFirebaseRulesStatus(el, t(deployedKey, deployedFallback), { i18nKey: deployedKey });
+      }
+      return;
+    }
+    clearDeployTrackingStatus(el);
+  };
+  const clearRulesStatusError = (el) => {
+    if (!el || !el.classList.contains('is-error')) return;
+    setFirebaseRulesStatus(el, '');
+    el.classList.remove('is-success-icon');
+    el.classList.remove('is-pending-icon');
+  };
+  const updateFirebaseDeployStatuses = ({ firestoreReady = false, storageReady = false, functionsReady = false } = {}) => {
+    const items = [
+      {
+        ready: firestoreReady,
+        el: firebaseFirestoreRulesStatus,
+        value: settingFirestoreRules?.value || '',
+        storageKey: FIRESTORE_RULES_DEPLOY_KEY,
+        deployedKey: 'status.firebaseRulesDeployedFirestore',
+        deployedFallback: 'Firestore rules deployed.'
+      },
+      {
+        ready: storageReady,
+        el: firebaseStorageRulesStatus,
+        value: settingStorageRules?.value || '',
+        storageKey: STORAGE_RULES_DEPLOY_KEY,
+        deployedKey: 'status.firebaseRulesDeployedStorage',
+        deployedFallback: 'Storage rules deployed.'
+      },
+      {
+        ready: functionsReady,
+        el: firebaseFunctionsStatus,
+        value: settingFirebaseFunctionIndex?.value || '',
+        storageKey: FUNCTIONS_INDEX_DEPLOY_KEY,
+        deployedKey: 'status.firebaseFunctionsDeployed',
+        deployedFallback: 'Cloud Function deployed.'
+      }
+    ];
+    items.forEach((item) => {
+      if (!item.ready) return;
+      if (isDeployStatusLocked(item.el)) return;
+      if (item.el?.classList.contains('is-error')) return;
+      const state = getRulesDeployState(item.value, item.storageKey).state;
+      const useSuccessIcon = item.el === firebaseStorageRulesStatus
+        || item.el === firebaseFirestoreRulesStatus
+        || item.el === firebaseFunctionsStatus;
+      applyDeployStateStatus(item.el, state, item.deployedKey, item.deployedFallback, { useSuccessIcon });
+    });
+  };
+  const hasMissingFirebaseDeployments = () => {
+    const firestore = readDeployState(FIRESTORE_RULES_DEPLOY_KEY)?.hash;
+    const storage = readDeployState(STORAGE_RULES_DEPLOY_KEY)?.hash;
+    const functions = readDeployState(FUNCTIONS_INDEX_DEPLOY_KEY)?.hash;
+    return !(firestore && storage && functions);
+  };
+  const updateFirebaseAdminActionsState = () => {
+    const hasClearSessionsApi = !!window.firebaseAdmin?.clearSessions;
+    const hasClearAnonymousUsersApi = !!window.firebaseAdmin?.clearAnonymousUsers;
+    const hasAdminApi = hasClearSessionsApi || hasClearAnonymousUsersApi;
+    const canUse = firebaseAdminCredentialsReady;
+    if (firebaseAdminClearSessionsBtn) {
+      const enabled = hasClearSessionsApi && canUse;
+      firebaseAdminClearSessionsBtn.disabled = !enabled;
+      firebaseAdminClearSessionsBtn.setAttribute('aria-disabled', String(!enabled));
+      firebaseAdminClearSessionsBtn.classList.toggle('is-disabled', !enabled);
+    }
+    if (firebaseAdminClearAnonymousUsersBtn) {
+      const enabled = hasClearAnonymousUsersApi && canUse;
+      firebaseAdminClearAnonymousUsersBtn.disabled = !enabled;
+      firebaseAdminClearAnonymousUsersBtn.setAttribute('aria-disabled', String(!enabled));
+      firebaseAdminClearAnonymousUsersBtn.classList.toggle('is-disabled', !enabled);
+    }
+    if (!firebaseAdminActionsStatus) return;
+    if (!hasAdminApi) {
+      setFirebaseAdminActionsStatus(t('settings.firebaseAdminActionsStatus.unavailable', 'Firebase Admin integration is unavailable.'), {
+        i18nKey: 'settings.firebaseAdminActionsStatus.unavailable'
+      });
+    } else if (!firebaseAdminCredentialsReady) {
+      setFirebaseAdminActionsStatus(t('settings.firebaseAdminActionsStatus.needsAdmin', 'Requires Firebase Admin credentials.'), {
+        i18nKey: 'settings.firebaseAdminActionsStatus.needsAdmin'
+      });
+    } else {
+      setFirebaseAdminActionsStatus(t('settings.firebaseAdminActionsStatus.ready', 'Ready to manage Firebase.'), {
+        i18nKey: 'settings.firebaseAdminActionsStatus.ready'
+      });
+    }
+    const rulesUnavailable = t('settings.firebaseRulesStatus.unavailable', 'Firebase Admin integration is unavailable.');
+    const rulesNeedsAdmin = t('settings.firebaseRulesStatus.needsAdmin', 'Requires Firebase Admin credentials.');
+    const hasFirestoreApi = !!window.firebaseAdmin?.deployFirestoreRules;
+    const hasStorageApi = !!window.firebaseAdmin?.deployStorageRules;
+    const hasFunctionsApi = !!window.firebaseAdmin?.deployTrackerUpdatesFunction;
+    const canDeployFirestore = hasFirestoreApi && firebaseAdminCredentialsReady;
+    const canDeployStorage = hasStorageApi && firebaseAdminCredentialsReady;
+    const canDeployFunctions = hasFunctionsApi && firebaseAdminCredentialsReady;
+    if (firebaseDeployFirestoreRulesBtn) {
+      firebaseDeployFirestoreRulesBtn.disabled = !canDeployFirestore;
+      firebaseDeployFirestoreRulesBtn.setAttribute('aria-disabled', String(!canDeployFirestore));
+      firebaseDeployFirestoreRulesBtn.classList.toggle('is-disabled', !canDeployFirestore);
+    }
+    if (firebaseDeployStorageRulesBtn) {
+      firebaseDeployStorageRulesBtn.disabled = !canDeployStorage;
+      firebaseDeployStorageRulesBtn.setAttribute('aria-disabled', String(!canDeployStorage));
+      firebaseDeployStorageRulesBtn.classList.toggle('is-disabled', !canDeployStorage);
+    }
+    if (firebaseDeployFunctionsBtn) {
+      firebaseDeployFunctionsBtn.disabled = !canDeployFunctions;
+      firebaseDeployFunctionsBtn.setAttribute('aria-disabled', String(!canDeployFunctions));
+      firebaseDeployFunctionsBtn.classList.toggle('is-disabled', !canDeployFunctions);
+    }
+    if (firebaseDeployAllBtn) {
+      const enabled = canDeployFirestore && canDeployStorage && canDeployFunctions;
+      firebaseDeployAllBtn.disabled = !enabled;
+      firebaseDeployAllBtn.setAttribute('aria-disabled', String(!enabled));
+      firebaseDeployAllBtn.classList.toggle('is-disabled', !enabled);
+    }
+    if (!hasFirestoreApi) {
+      setDefaultRulesStatus(firebaseFirestoreRulesStatus, rulesUnavailable, { i18nKey: 'settings.firebaseRulesStatus.unavailable' });
+    } else if (!firebaseAdminCredentialsReady) {
+      setDefaultRulesStatus(firebaseFirestoreRulesStatus, rulesNeedsAdmin, { i18nKey: 'settings.firebaseRulesStatus.needsAdmin' });
+    } else {
+      clearRulesStatusIfDefault(firebaseFirestoreRulesStatus);
+    }
+    if (!hasStorageApi) {
+      setDefaultRulesStatus(firebaseStorageRulesStatus, rulesUnavailable, { i18nKey: 'settings.firebaseRulesStatus.unavailable' });
+    } else if (!firebaseAdminCredentialsReady) {
+      setDefaultRulesStatus(firebaseStorageRulesStatus, rulesNeedsAdmin, { i18nKey: 'settings.firebaseRulesStatus.needsAdmin' });
+    } else {
+      clearRulesStatusIfDefault(firebaseStorageRulesStatus);
+    }
+    if (!hasFunctionsApi) {
+      setDefaultRulesStatus(firebaseFunctionsStatus, rulesUnavailable, { i18nKey: 'settings.firebaseRulesStatus.unavailable' });
+    } else if (!firebaseAdminCredentialsReady) {
+      setDefaultRulesStatus(firebaseFunctionsStatus, rulesNeedsAdmin, { i18nKey: 'settings.firebaseRulesStatus.needsAdmin' });
+    } else {
+      clearRulesStatusIfDefault(firebaseFunctionsStatus);
+    }
+    updateFirebaseDeployStatuses({
+      firestoreReady: canDeployFirestore,
+      storageReady: canDeployStorage,
+      functionsReady: canDeployFunctions
+    });
+    updateTeamMemberActionsState();
+    updateTeamsEmptyState();
+    updateWelcomeState();
+  };
+  const formatFirebaseAdminError = (result, fallback) => {
+    if (!result) return fallback;
+    const base = result.error || fallback;
+    const details = result.details;
+    if (!details) return base;
+    if (typeof details === 'string') return `${base} (${details})`;
+    if (details.error_description) return `${base} (${details.error_description})`;
+    if (details.error) return `${base} (${details.error})`;
+    return base;
+  };
+  const applyFirebaseConfigFromAdmin = async () => {
+    if (!window.firebaseAdmin?.getFirebaseConfig) return { ok: false, reason: 'unavailable' };
+    try {
+      const result = await window.firebaseAdmin.getFirebaseConfig();
+      if (!result?.ok || !result?.config) {
+        const message = result?.error || t('alerts.firebaseConfigFetchFailed', 'Unable to generate Firebase settings.');
+        setSettingsStatus(message, 4000);
+        showToast(message, 'error');
+        return { ok: false, error: message };
+      }
+      const configRaw = `${JSON.stringify(result.config, null, 2)}\n`;
+      if (settingFirebaseConfig) {
+        withSuppressedSettingsEvents(() => {
+          settingFirebaseConfig.value = configRaw;
+        });
+      }
+      try {
+        localStorage.setItem(FIREBASE_SETTINGS_STORAGE_KEY, configRaw);
+      } catch {}
+      firebaseSettings = result.config;
+      initFirestoreConnection();
+      setSettingsStatus(t('status.firebaseConfigGenerated', 'Firebase settings generated.'), 4000);
+      return { ok: true, config: result.config };
+    } catch (err) {
+      const message = err?.message || t('alerts.firebaseConfigFetchFailed', 'Unable to generate Firebase settings.');
+      setSettingsStatus(message, 4000);
+      showToast(message, 'error');
+      return { ok: false, error: message };
+    }
+  };
+  const refreshFirebaseAdminStatus = async () => {
+    if (!window.firebaseAdmin?.getStatus) return;
+    try {
+      const result = await window.firebaseAdmin.getStatus();
+      if (result?.ok) {
+        firebaseAdminCredentialsReady = true;
+        setFirebaseAdminStatus(t('settings.firebaseAdminStatus.ready', 'Firebase Admin credentials loaded.'), { i18nKey: 'settings.firebaseAdminStatus.ready' });
+        setFirebaseAdminProject(result.projectId || '');
+        setFirebaseAdminClearButton(true);
+      } else if (result?.missing) {
+        firebaseAdminCredentialsReady = false;
+        setFirebaseAdminStatus(t('settings.firebaseAdminStatus.empty', 'No Firebase Admin credentials loaded.'), { i18nKey: 'settings.firebaseAdminStatus.empty' });
+        setFirebaseAdminProject('');
+        setFirebaseAdminClearButton(false);
+      } else {
+        firebaseAdminCredentialsReady = false;
+        const fallback = t('alerts.firebaseAdminReadFailed', 'Unable to read Firebase Admin credentials.');
+        setFirebaseAdminStatus(formatFirebaseAdminError(result, fallback), { isError: true });
+        setFirebaseAdminProject('');
+        setFirebaseAdminClearButton(false);
+      }
+      updateFirebaseAdminActionsState();
+    } catch (err) {
+      firebaseAdminCredentialsReady = false;
+      const fallback = t('alerts.firebaseAdminReadFailed', 'Unable to read Firebase Admin credentials.');
+      setFirebaseAdminStatus(fallback, { isError: true });
+      setFirebaseAdminProject('');
+      setFirebaseAdminClearButton(false);
+      updateFirebaseAdminActionsState();
+    }
+  };
 
   const bindStaticTranslations = () => {
     bindTextAuto(tabMapLabel, 'nav.map');
@@ -1255,12 +1835,12 @@
       [toolLine, 'toolbar.drawLine'],
       [toolArrow, 'toolbar.drawArrow'],
       [toolPOI, 'toolbar.addPoi'],
-      [toolWeather, 'map.utilities.weather'],
       [toolCrosshair, 'toolbar.showCoordinates'],
       [toolSetScale, 'toolbar.setScale'],
       [toolLabelIncrease, 'toolbar.increaseLabelSize'],
       [toolLabelDecrease, 'toolbar.decreaseLabelSize'],
       [toolPrint, 'toolbar.saveSnapshot'],
+      [toolExportPdf, 'toolbar.exportPdf'],
       [toolShortcuts, 'toolbar.shortcuts']
     ];
     toolbarBindings.forEach(([btn, key]) => {
@@ -1360,10 +1940,17 @@
     bindTextAuto(trackersOpenBtn?.querySelector('span'), 'trackers.open');
 
     bindTextAuto(document.querySelector('.settings-panel h2'), 'settings.title');
-    const settingsGroupHeadings = document.querySelectorAll('.settings-group h3');
-    if (settingsGroupHeadings?.[0]) bindTextAuto(settingsGroupHeadings[0], 'settings.section.general');
-    if (settingsGroupHeadings?.[1]) bindTextAuto(settingsGroupHeadings[1], 'settings.section.apiKeys');
-    if (settingsGroupHeadings?.[2]) bindTextAuto(settingsGroupHeadings[2], 'settings.section.map');
+    const settingsNavTitle = document.querySelector('.settings-nav-title');
+    if (settingsNavTitle) bindTextAuto(settingsNavTitle, 'settings.groupsTitle');
+    document.querySelectorAll('.settings-nav-item[data-settings-group]').forEach((btn) => {
+      const key = SETTINGS_GROUP_KEY_MAP[btn.dataset.settingsGroup];
+      if (key) bindTextAuto(btn, key);
+    });
+    document.querySelectorAll('.settings-group[data-settings-group] h3').forEach((heading) => {
+      const group = heading.closest('.settings-group')?.dataset?.settingsGroup;
+      const key = SETTINGS_GROUP_KEY_MAP[group];
+      if (key) bindTextAuto(heading, key);
+    });
 
     bindText(labelOf(settingLanguage), 'settings.appLanguage', labelOf(settingLanguage)?.textContent || 'App Language');
     bindText(labelOf(settingAccessToken), 'settings.mapboxToken', labelOf(settingAccessToken)?.textContent || 'Mapbox Access Token');
@@ -1470,10 +2057,9 @@
   const gotoPoiName = q('#gotoPoiName');
   const teamMemberModal = q('#teamMemberModal');
   const teamMemberClose = q('#teamMemberClose');
-  const teamMemberDone = q('#teamMemberDone');
   const teamMemberStatus = q('#teamMemberStatus');
+  const teamMemberQrLoading = q('#teamMemberQrLoading');
   const teamMemberQr = q('#teamMemberQr');
-  const teamMemberStart = q('#teamMemberStart');
   const teamsStartSessionModal = q('#teamsStartSessionModal');
   const teamsStartSessionClose = q('#teamsStartSessionClose');
   const teamsStartSessionForm = q('#teamsStartSessionForm');
@@ -1485,6 +2071,8 @@
   const teamsLoadSessionStatus = q('#teamsLoadSessionStatus');
   const teamsLoadSessionList = q('#teamsLoadSessionList');
   const teamsResumeSessionCancel = q('#teamsResumeSessionCancel');
+  const teamsResumeSessionInlineStart = q('#teamsResumeSessionInlineStart');
+  const teamsResumeSessionStart = q('#teamsResumeSessionStart');
   const teamsSessionActionsModal = q('#teamsSessionActionsModal');
   const teamsSessionActionsClose = q('#teamsSessionActionsClose');
   const teamsSessionActionsId = q('#teamsSessionActionsId');
@@ -1509,6 +2097,8 @@
   if (teamsResumeSessionModal) teamsResumeSessionModal.setAttribute('aria-hidden', 'true');
   if (teamsSessionActionsModal) teamsSessionActionsModal.setAttribute('aria-hidden', 'true');
   if (teamsDeleteSessionModal) teamsDeleteSessionModal.setAttribute('aria-hidden', 'true');
+  if (firebaseAdminClearSessionsModal) firebaseAdminClearSessionsModal.setAttribute('aria-hidden', 'true');
+  if (firebaseAdminClearAnonymousUsersModal) firebaseAdminClearAnonymousUsersModal.setAttribute('aria-hidden', 'true');
   if (shortcutsModal) shortcutsModal.setAttribute('aria-hidden', 'true');
   // Sidebar elements
   const featuresSidebar = q('#featuresSidebar');
@@ -1666,7 +2256,6 @@
     { key: '5', labelKey: 'shortcuts.drawArrow', fallback: 'Draw arrow' },
     { key: '6', labelKey: 'shortcuts.addPoi', fallback: 'Add POI' },
     { key: 'E', labelKey: 'shortcuts.edit', fallback: 'Edit features' },
-    { key: '7', labelKey: 'shortcuts.weather', fallback: 'Weather' },
     { key: '8', labelKey: 'shortcuts.showCoordinates', fallback: 'Show coordinates' },
     { key: '9', labelKey: 'shortcuts.setScale', fallback: 'Set scale' },
     { key: '↑', labelKey: 'shortcuts.panUp', fallback: 'Pan map up' },
@@ -1679,6 +2268,7 @@
     { key: '-', labelKey: 'shortcuts.zoomOut', fallback: 'Zoom out' },
     { key: 'F', labelKey: 'shortcuts.featuresPanel', fallback: 'Toggle features panel' },
     { key: 'T', labelKey: 'shortcuts.trackersPanel', fallback: 'Toggle teams panel' },
+    { key: 'G', labelKey: 'shortcuts.gridOverlay', fallback: 'Cycle grid overlay' },
     { key: 'P', labelKey: 'shortcuts.saveSnapshot', fallback: 'Save snapshot' }
   ];
   const renderShortcutsList = () => {
@@ -1993,14 +2583,18 @@
   let weatherOverlayMarkers = [];
   let weatherManualMarkers = [];
   let weatherMoveHandler = null;
+  let weatherMoveStartHandler = null;
+  let weatherWindHandler = null;
   let weatherAbortController = null;
   let weatherRefreshTimer = null;
+  let lastRainOverlayIntensity = 0;
+  let lastRainOverlayDegrees = null;
   const WEATHER_REFRESH_DELAY_MS = 1000;
   let featuresLayersVisible = true;
   let featureLabelsVisible = true;
   let trackersLayersVisible = true;
   const FEATURE_LAYER_IDS = ['draw-fill', 'draw-fill-outline', 'draw-line', 'draw-line-arrows', 'draw-point-circle', 'draw-line-start-inner', 'draw-point-icon-bg', 'draw-point-icon', 'draw-point', 'draw-hl-fill', 'draw-hl-line', 'draw-hl-point'];
-  const LABEL_LAYER_IDS = ['draw-labels-polygon', 'draw-labels-line-name', 'draw-labels-line-length'];
+  const LABEL_LAYER_IDS = ['draw-labels-polygon', 'draw-labels-line-name', 'draw-labels-line-length', 'draw-labels-polygon-side-length'];
   const TRACKER_LAYER_IDS = ['tracker-paths', 'tracker-goto', 'tracker-goto-end', 'tracker-dots', 'tracker-icon-bg', 'tracker-icon', 'tracker-labels'];
   const FEATURE_LABEL_BG_IMAGE_ID = 'feature-label-bg';
   const POI_ICON_BG_IMAGE_ID = 'poi-icon-bg';
@@ -2043,6 +2637,7 @@
     applyLayout('draw-labels-polygon', 'text-size', textSize);
     applyLayout('draw-labels-line-name', 'text-size', textSize);
     applyLayout('draw-labels-line-length', 'text-size', textSize);
+    applyLayout('draw-labels-polygon-side-length', 'text-size', textSize);
     applyLayout('tracker-labels', 'text-size', trackerTextSize);
     applyLayout('draw-point-icon', 'icon-size', poiIconSize);
     applyLayout('draw-point-icon-bg', 'icon-size', poiIconBgSize);
@@ -2271,6 +2866,247 @@
         return 'Weather';
     }
   }
+
+  const rainIntensityFromCode = (code) => {
+    if (!code || typeof code !== 'string') return 0;
+    const normalized = code.toUpperCase();
+    switch (normalized) {
+      case 'HEAVY_RAIN':
+        return 1;
+      case 'MODERATE_RAIN':
+        return 0.75;
+      case 'LIGHT_RAIN':
+        return 0.55;
+      case 'THUNDERSTORM':
+        return 0.85;
+      case 'RAIN_SLEET':
+        return 0.65;
+      default:
+        return normalized.includes('RAIN') ? 0.6 : 0;
+    }
+  };
+
+  const WIND_CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const WIND_CARDINAL_TO_DEGREES = new Map(WIND_CARDINALS.map((label, idx) => [label, idx * 22.5]));
+  const normalizeWindDegrees = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    const normalized = ((num % 360) + 360) % 360;
+    return normalized;
+  };
+  const windDegreesToCardinal = (degrees) => {
+    const normalized = normalizeWindDegrees(degrees);
+    if (!Number.isFinite(normalized)) return '';
+    const idx = Math.round(normalized / 22.5) % WIND_CARDINALS.length;
+    return WIND_CARDINALS[idx];
+  };
+  const parseWindDirectionValue = (value) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim().toUpperCase();
+      if (!trimmed) return null;
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric)) return numeric;
+      if (WIND_CARDINAL_TO_DEGREES.has(trimmed)) return WIND_CARDINAL_TO_DEGREES.get(trimmed);
+      return null;
+    }
+    if (typeof value === 'object') {
+      const maybeDegrees = Number(value.degrees);
+      if (Number.isFinite(maybeDegrees)) return maybeDegrees;
+      const maybeValue = Number(value.value);
+      if (Number.isFinite(maybeValue)) return maybeValue;
+      if (typeof value.cardinal === 'string') return parseWindDirectionValue(value.cardinal);
+      if (value.direction !== undefined) return parseWindDirectionValue(value.direction);
+    }
+    return null;
+  };
+  const parseWindSpeedCandidate = (value, unitHint) => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return { value, unit: unitHint };
+    if (typeof value === 'string') {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return { value: numeric, unit: unitHint };
+      return null;
+    }
+    if (typeof value === 'object') {
+      if (Number.isFinite(value.value)) return { value: value.value, unit: value.unit || value.units || unitHint };
+      if (Number.isFinite(value.speed)) return { value: value.speed, unit: value.unit || value.units || unitHint };
+      if (Number.isFinite(value.metersPerSecond)) return { value: value.metersPerSecond, unit: 'METERS_PER_SECOND' };
+      if (Number.isFinite(value.mps)) return { value: value.mps, unit: 'METERS_PER_SECOND' };
+      if (Number.isFinite(value.kph)) return { value: value.kph, unit: 'KILOMETERS_PER_HOUR' };
+      if (Number.isFinite(value.kmh)) return { value: value.kmh, unit: 'KILOMETERS_PER_HOUR' };
+      if (Number.isFinite(value.mph)) return { value: value.mph, unit: 'MILES_PER_HOUR' };
+      if (Number.isFinite(value.knots)) return { value: value.knots, unit: 'KNOTS' };
+    }
+    return null;
+  };
+  const normalizeWindSpeed = (speedInfo) => {
+    if (!speedInfo || !Number.isFinite(speedInfo.value)) return null;
+    const unitRaw = speedInfo.unit ? String(speedInfo.unit).toUpperCase() : '';
+    let value = Number(speedInfo.value);
+    let unitLabel = 'km/h';
+    if (unitRaw) {
+      if (['KILOMETERS_PER_HOUR', 'KILOMETER_PER_HOUR', 'KPH', 'KM/H', 'KMH'].includes(unitRaw)) {
+        unitLabel = 'km/h';
+      } else if (['METERS_PER_SECOND', 'METER_PER_SECOND', 'M/S', 'MPS'].includes(unitRaw)) {
+        value = value * 3.6;
+        unitLabel = 'km/h';
+      } else if (['MILES_PER_HOUR', 'MILE_PER_HOUR', 'MPH'].includes(unitRaw)) {
+        value = value * 1.609344;
+        unitLabel = 'km/h';
+      } else if (['KNOT', 'KNOTS', 'KT', 'KTS'].includes(unitRaw)) {
+        value = value * 1.852;
+        unitLabel = 'km/h';
+      } else {
+        unitLabel = unitRaw.toLowerCase();
+      }
+    }
+    if (!Number.isFinite(value)) return null;
+    return { value, unitLabel };
+  };
+  const readWindDirectionDegrees = (conditions) => {
+    if (!conditions || typeof conditions !== 'object') return null;
+    const candidates = [
+      conditions.wind?.direction,
+      conditions.windDirection,
+      conditions.wind?.directionDegrees,
+      conditions.wind?.direction?.degrees,
+      conditions.wind?.direction?.value,
+      conditions.windDirectionDegrees,
+      conditions.wind?.bearing,
+      conditions.wind?.degrees
+    ];
+    for (const candidate of candidates) {
+      const parsed = parseWindDirectionValue(candidate);
+      if (Number.isFinite(parsed)) return normalizeWindDegrees(parsed);
+    }
+    return null;
+  };
+  const readWindSpeed = (conditions) => {
+    if (!conditions || typeof conditions !== 'object') return null;
+    const candidates = [
+      { value: conditions.wind?.speed, unit: conditions.wind?.speedUnit },
+      { value: conditions.windSpeed, unit: conditions.windSpeedUnit },
+      { value: conditions.wind?.speed?.value, unit: conditions.wind?.speed?.unit },
+      { value: conditions.wind?.speed?.value, unit: conditions.wind?.speed?.units },
+      { value: conditions.wind?.speed, unit: conditions.wind?.unit },
+      { value: conditions.wind?.speed, unit: conditions.wind?.units }
+    ];
+    for (const candidate of candidates) {
+      const parsed = parseWindSpeedCandidate(candidate.value, candidate.unit);
+      const normalized = normalizeWindSpeed(parsed);
+      if (normalized) return normalized;
+    }
+    return null;
+  };
+  const averageWindDirectionDegrees = (values) => {
+    const filtered = values.filter((value) => Number.isFinite(value));
+    if (!filtered.length) return null;
+    let sumSin = 0;
+    let sumCos = 0;
+    filtered.forEach((deg) => {
+      const rad = (deg * Math.PI) / 180;
+      sumSin += Math.sin(rad);
+      sumCos += Math.cos(rad);
+    });
+    if (!Number.isFinite(sumSin) || !Number.isFinite(sumCos)) return null;
+    if (sumSin === 0 && sumCos === 0) return null;
+    const angle = Math.atan2(sumSin, sumCos) * (180 / Math.PI);
+    return normalizeWindDegrees(angle);
+  };
+  const averageWindSpeedValue = (values) => {
+    const filtered = values.filter((value) => Number.isFinite(value));
+    if (!filtered.length) return null;
+    const total = filtered.reduce((sum, val) => sum + val, 0);
+    const average = total / filtered.length;
+    return Number.isFinite(average) ? average : null;
+  };
+  const isWeatherOverlayEnabled = () => {
+    if (!weatherOverlayActive) return false;
+    if (!weatherUtilityBtn) return true;
+    return weatherUtilityBtn.classList.contains('is-active');
+  };
+  const renderRainOverlay = () => {
+    if (!mapRainOverlay) return;
+    // Rain animation disabled when weather overlay is enabled.
+    mapRainOverlay.hidden = true;
+    mapRainOverlay.setAttribute('aria-hidden', 'true');
+    mapRainOverlay.classList.remove('is-active');
+  };
+  const renderWindIndicator = () => {
+    if (!mapWindIndicator && !mapWindOverlay) return;
+    const hasDirection = Number.isFinite(lastWindIndicatorDegrees);
+    const hasSpeed = Number.isFinite(lastWindIndicatorSpeed);
+    const isVisible = isWeatherOverlayEnabled() && (hasDirection || hasSpeed);
+    if (mapWindIndicator) {
+      mapWindIndicator.hidden = !isVisible;
+      mapWindIndicator.setAttribute('aria-hidden', String(!isVisible));
+    }
+    if (mapWindOverlay) {
+      // Wind animation disabled when weather overlay is enabled.
+      mapWindOverlay.hidden = true;
+      mapWindOverlay.setAttribute('aria-hidden', 'true');
+      mapWindOverlay.classList.remove('is-active');
+    }
+    if (!isVisible) return;
+    if (mapWindIndicator) {
+      mapWindIndicator.classList.toggle('no-direction', !hasDirection);
+    }
+    const windLabel = t('map.weather.wind', 'Wind');
+    const windDirectionLabel = t('map.weather.windDirection', 'Wind direction');
+    const windSpeedLabel = t('map.weather.windSpeed', 'Wind speed');
+    const degrees = normalizeWindDegrees(lastWindIndicatorDegrees);
+    const rounded = Number.isFinite(degrees) ? Math.round(degrees) : null;
+    const cardinal = Number.isFinite(degrees) ? windDegreesToCardinal(degrees) : '';
+    const directionSuffix = cardinal || (Number.isFinite(rounded) ? `${rounded}°` : '');
+    const speedValue = Number.isFinite(lastWindIndicatorSpeed) ? Math.round(lastWindIndicatorSpeed) : null;
+    const speedSuffix = Number.isFinite(speedValue) ? `${speedValue} ${lastWindIndicatorSpeedUnit || 'km/h'}` : '';
+    const parts = [directionSuffix, speedSuffix].filter(Boolean);
+    const displaySuffix = parts.length ? ` ${parts.join(' · ')}` : '';
+    if (mapWindIndicatorLabel) {
+      mapWindIndicatorLabel.textContent = `${windLabel}${displaySuffix}`;
+    }
+    if (hasDirection) {
+      const map = getMap();
+      const bearing = map && typeof map.getBearing === 'function' ? Number(map.getBearing()) : 0;
+      const rotation = normalizeWindDegrees((degrees ?? 0) - (Number.isFinite(bearing) ? bearing : 0));
+      if (mapWindIndicator) {
+        mapWindIndicator.style.setProperty('--wind-rotation', `${rotation}deg`);
+      }
+      if (mapWindOverlay) {
+        mapWindOverlay.style.setProperty('--wind-rotation', `${rotation}deg`);
+      }
+      const speedFactor = Number.isFinite(lastWindIndicatorSpeed)
+        ? Math.max(0.6, Math.min(3.2, lastWindIndicatorSpeed / 14))
+        : 1;
+      const opacity = Number.isFinite(lastWindIndicatorSpeed)
+        ? Math.max(0.2, Math.min(0.42, 0.22 + lastWindIndicatorSpeed / 120))
+        : 0.26;
+      if (mapWindOverlay) {
+        mapWindOverlay.style.setProperty('--wind-speed-factor', speedFactor.toFixed(2));
+        mapWindOverlay.style.setProperty('--wind-opacity', opacity.toFixed(3));
+      }
+    }
+    const ariaDirection = hasDirection
+      ? `${windDirectionLabel}: ${cardinal ? `${cardinal}, ${rounded}°` : `${rounded}°`}`
+      : '';
+    const ariaSpeed = hasSpeed ? `${windSpeedLabel}: ${speedSuffix}` : '';
+    const ariaParts = [ariaDirection, ariaSpeed].filter(Boolean);
+    if (ariaParts.length) {
+      mapWindIndicator.setAttribute('aria-label', ariaParts.join('. '));
+      mapWindIndicator.title = ariaParts.join('. ');
+    }
+    renderRainOverlay();
+  };
+  const setWindIndicatorData = ({ degrees, speedValue, speedUnitLabel } = {}) => {
+    lastWindIndicatorDegrees = Number.isFinite(degrees) ? normalizeWindDegrees(degrees) : null;
+    lastWindIndicatorSpeed = Number.isFinite(speedValue) ? speedValue : null;
+    if (speedUnitLabel) lastWindIndicatorSpeedUnit = speedUnitLabel;
+    renderWindIndicator();
+  };
+  const clearWindIndicator = () => setWindIndicatorData({ degrees: null, speedValue: null });
+  refreshWindIndicatorContent = () => renderWindIndicator();
 
   const removeMarkersFromList = (list) => {
     list.forEach((marker) => {
@@ -2517,13 +3353,21 @@
   let buildFeatureLabelFeatures = () => [];
   let updateFeatureLabels = () => {};
 
+  const POLYGON_SIDE_LABEL_MIN_ZOOM = 17;
   function applyLabelVisibility(mapParam) {
     const map = mapParam || getMap();
     if (!map) return;
     const visibility = (featuresLayersVisible && featureLabelsVisible) ? 'visible' : 'none';
+    const zoom = Number(map.getZoom?.());
+    const polygonSideVisible = Number.isFinite(zoom) ? zoom > POLYGON_SIDE_LABEL_MIN_ZOOM : true;
     LABEL_LAYER_IDS.forEach((layerId) => {
       try {
-        if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
+        if (!map.getLayer(layerId)) return;
+        let nextVisibility = visibility;
+        if (nextVisibility === 'visible' && layerId === 'draw-labels-polygon-side-length' && !polygonSideVisible) {
+          nextVisibility = 'none';
+        }
+        map.setLayoutProperty(layerId, 'visibility', nextVisibility);
       } catch (err) {
         console.warn('applyLabelVisibility failed', layerId, err);
       }
@@ -2618,86 +3462,118 @@
     const code = typeof codeRaw === 'string' ? codeRaw.toUpperCase() : '';
     const description = conditions.weatherCondition?.description?.text || weatherDescription(code);
     const iconUri = conditions.weatherCondition?.iconBaseUri || null;
-    return { ...point, temperature: Number(temperature), code, description, iconUri };
+    const windDegrees = readWindDirectionDegrees(conditions);
+    const windSpeed = readWindSpeed(conditions);
+    return { ...point, temperature: Number(temperature), code, description, iconUri, windDegrees, windSpeed };
   }
 
   function computeWeatherSamplePoints(map) {
     if (!map) return [];
-    const bounds = map.getBounds();
-    if (!bounds) return [];
-    const center = bounds.getCenter();
-    const centerPoint = map.project(center);
-    const canvas = map.getCanvas?.();
-    const width = Number(canvas?.clientWidth || canvas?.width || 1024);
-    const height = Number(canvas?.clientHeight || canvas?.height || 768);
-    if (!centerPoint || !Number.isFinite(centerPoint.x) || !Number.isFinite(centerPoint.y)) {
-      return [center];
-    }
-
-    const base = Math.max(60, Math.min(width, height) * 0.12);
-    const pitch = typeof map.getPitch === 'function' ? Number(map.getPitch()) : 0;
-    const clampedPitch = Math.max(0, Math.min(85, Number.isFinite(pitch) ? pitch : 0));
-    const pitchScale = 1 + (clampedPitch / 60) * 1.4;
-
-    const forwardBias = base * pitchScale;
-    const lateral = base * 0.85;
-    const backward = base * 0.6;
-
-    const offsets = [
-      { dx: 0, dy: -forwardBias },
-      { dx: lateral, dy: -base * 0.4 },
-      { dx: -lateral, dy: -base * 0.4 },
-      { dx: lateral * 0.9, dy: backward },
-      { dx: -lateral * 0.9, dy: backward }
-    ];
-
-    const points = offsets.map(({ dx, dy }) => {
-      const screenPoint = { x: centerPoint.x + dx, y: centerPoint.y + dy };
-      try {
-        const lngLat = map.unproject(screenPoint);
-        if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return null;
-        const lat = Math.max(-85, Math.min(85, lngLat.lat));
-        let { lng } = lngLat;
-        if (lng > 180) lng -= 360;
-        if (lng < -180) lng += 360;
-        return { lng, lat };
-      } catch {
-        return null;
-      }
-    }).filter(Boolean);
-
-    if (points.length) return points;
-
-    const north = bounds.getNorth();
-    const south = bounds.getSouth();
-    let east = bounds.getEast();
-    let west = bounds.getWest();
-    if (east < west) east += 360;
-    const latSpan = Math.abs(north - south);
-    const lngSpan = Math.abs(east - west);
-    const fallbackRadiusLat = Math.max(0.01, latSpan * 0.15);
-    const fallbackRadiusLng = Math.max(0.01, lngSpan * 0.12);
     const clampLat = (lat) => Math.max(-85, Math.min(85, lat));
     const wrapLng = (lng) => {
       if (lng > 180) return lng - 360;
       if (lng < -180) return lng + 360;
       return lng;
     };
+    const projectPoint = (point) => {
+      if (!point || typeof map.unproject !== 'function') return null;
+      try {
+        const lngLat = map.unproject(point);
+        if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return null;
+        return { lng: wrapLng(lngLat.lng), lat: clampLat(lngLat.lat) };
+      } catch {
+        return null;
+      }
+    };
+
+    const canvas = map.getCanvas?.();
+    const width = Number(canvas?.clientWidth || canvas?.width || 0);
+    const height = Number(canvas?.clientHeight || canvas?.height || 0);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      const insetX = Math.max(18, width * 0.15);
+      const insetY = Math.max(18, height * 0.15);
+      const corners = [
+        { x: insetX, y: insetY },
+        { x: width - insetX, y: insetY },
+        { x: width - insetX, y: height - insetY },
+        { x: insetX, y: height - insetY }
+      ];
+      const points = corners.map(projectPoint).filter(Boolean);
+      if (points.length) return points;
+    }
+
+    const bounds = map.getBounds?.();
+    if (!bounds) return [];
+    const north = bounds.getNorth();
+    const south = bounds.getSouth();
+    let east = bounds.getEast();
+    let west = bounds.getWest();
+    if (east < west) east += 360;
     return [
-      { lng: wrapLng(center.lng), lat: clampLat(center.lat + fallbackRadiusLat) },
-      { lng: wrapLng(center.lng), lat: clampLat(center.lat - fallbackRadiusLat) },
-      { lng: wrapLng(center.lng + fallbackRadiusLng), lat: clampLat(center.lat) },
-      { lng: wrapLng(center.lng - fallbackRadiusLng), lat: clampLat(center.lat) }
+      { lng: wrapLng(west), lat: clampLat(north) },
+      { lng: wrapLng(east), lat: clampLat(north) },
+      { lng: wrapLng(east), lat: clampLat(south) },
+      { lng: wrapLng(west), lat: clampLat(south) }
     ];
   }
 
   async function refreshWeatherOverlay() {
     if (!weatherOverlayActive) return;
+    const map = getMap();
+    if (!map) return;
+    const key = (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
+    if (!key) {
+      showToast(t('status.weatherNeedsKey', 'Weather needs Google Maps API key'), 'error');
+      disableWeatherOverlay();
+      return;
+    }
     if (weatherAbortController) {
       try { weatherAbortController.abort(); } catch {}
       weatherAbortController = null;
     }
+    const controller = new AbortController();
+    weatherAbortController = controller;
     clearWeatherOverlayMarkers();
+    const points = computeWeatherSamplePoints(map);
+    if (!points.length) {
+      if (weatherAbortController === controller) weatherAbortController = null;
+      return;
+    }
+    try {
+      const results = await Promise.allSettled(points.map((point) => fetchGoogleWeather(point, key, controller.signal)));
+      if (controller.signal.aborted || !weatherOverlayActive) return;
+      const entries = results
+        .filter((res) => res.status === 'fulfilled' && res.value)
+        .map((res) => res.value);
+      if (!entries.length) {
+        lastRainOverlayIntensity = 0;
+        lastRainOverlayDegrees = null;
+        renderRainOverlay();
+        showToast(t('status.weatherOverlayFailed', 'Weather overlay refresh failed'), 'error');
+        return;
+      }
+      renderWeatherOverlayMarkers(map, entries);
+      const windDegrees = averageWindDirectionDegrees(entries.map((entry) => entry.windDegrees));
+      const speedValues = entries
+        .map((entry) => entry.windSpeed)
+        .filter((speed) => speed && Number.isFinite(speed.value))
+        .map((speed) => speed.value);
+      const windSpeedValue = averageWindSpeedValue(speedValues);
+      const speedUnitLabel = entries.find((entry) => entry.windSpeed?.unitLabel)?.windSpeed?.unitLabel;
+      const rainIntensity = entries.reduce((max, entry) => Math.max(max, rainIntensityFromCode(entry.code)), 0);
+      lastRainOverlayIntensity = rainIntensity;
+      lastRainOverlayDegrees = windDegrees;
+      setWindIndicatorData({ degrees: windDegrees, speedValue: windSpeedValue, speedUnitLabel });
+      renderRainOverlay();
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      console.error('Weather overlay refresh failed', err);
+      showToast(t('status.weatherOverlayFailed', 'Weather overlay refresh failed'), 'error');
+    } finally {
+      if (weatherAbortController === controller) {
+        weatherAbortController = null;
+      }
+    }
   }
 
   function scheduleWeatherRefresh() {
@@ -2729,11 +3605,33 @@
     }
     weatherOverlayActive = true;
     clearWeatherOverlayMarkers();
+    clearWindIndicator();
+    lastRainOverlayIntensity = 0;
+    lastRainOverlayDegrees = null;
+    renderRainOverlay();
     setWeatherButtonState(true);
     refreshWeatherOverlay();
+    if (!weatherMoveStartHandler) {
+      weatherMoveStartHandler = () => {
+        if (!weatherOverlayActive) return;
+        if (weatherAbortController) {
+          try { weatherAbortController.abort(); } catch {}
+          weatherAbortController = null;
+        }
+        clearWeatherOverlayMarkers();
+      };
+      map.on('movestart', weatherMoveStartHandler);
+    }
+    if (!weatherWindHandler) {
+      weatherWindHandler = () => {
+        if (!weatherOverlayActive) return;
+        renderWindIndicator();
+      };
+      map.on('move', weatherWindHandler);
+    }
     if (!weatherMoveHandler) {
-      weatherMoveHandler = () => scheduleWeatherRefresh();
-      map.on('move', weatherMoveHandler);
+      weatherMoveHandler = () => refreshWeatherOverlay();
+      map.on('moveend', weatherMoveHandler);
     }
     updateMapCursor();
     return true;
@@ -2750,11 +3648,23 @@
       try { weatherAbortController.abort(); } catch {}
       weatherAbortController = null;
     }
+    if (weatherMoveStartHandler && map) {
+      try { map.off('movestart', weatherMoveStartHandler); } catch {}
+      weatherMoveStartHandler = null;
+    }
+    if (weatherWindHandler && map) {
+      try { map.off('move', weatherWindHandler); } catch {}
+      weatherWindHandler = null;
+    }
     if (weatherMoveHandler && map) {
-      try { map.off('move', weatherMoveHandler); } catch {}
+      try { map.off('moveend', weatherMoveHandler); } catch {}
       weatherMoveHandler = null;
     }
     removeAllWeatherMarkers();
+    clearWindIndicator();
+    lastRainOverlayIntensity = 0;
+    lastRainOverlayDegrees = null;
+    renderRainOverlay();
     setWeatherButtonState(false);
     updateMapCursor();
   }
@@ -2808,6 +3718,592 @@
       showToast(t('status.weatherFetchFailed', 'Weather fetch failed'), 'error');
     }
   }
+
+  const GRID_OVERLAY_STORAGE_KEY = 'map.gridOverlay';
+  const GRID_OVERLAY_LINE_SOURCE_ID = 'grid-overlay-lines-src';
+  const GRID_OVERLAY_LABEL_SOURCE_ID = 'grid-overlay-labels-src';
+  const GRID_OVERLAY_MINOR_LINE_LAYER_ID = 'grid-overlay-lines-minor';
+  const GRID_OVERLAY_LINE_LAYER_ID = 'grid-overlay-lines';
+  const GRID_OVERLAY_LABEL_LAYER_ID = 'grid-overlay-labels';
+  const GRID_OVERLAY_REFRESH_DELAY_MS = 140;
+  const GRID_OVERLAY_OPTIONS = new Set(['none', 'utm', 'gcs']);
+  const EMPTY_FEATURE_COLLECTION = { type: 'FeatureCollection', features: [] };
+  const normalizeGridOverlayType = (value) => {
+    const key = String(value ?? '').toLowerCase();
+    return GRID_OVERLAY_OPTIONS.has(key) ? key : 'none';
+  };
+  let activeGridOverlay = 'none';
+  try {
+    activeGridOverlay = normalizeGridOverlayType(localStorage.getItem(GRID_OVERLAY_STORAGE_KEY));
+  } catch {}
+  if (overlaySelect) overlaySelect.value = activeGridOverlay;
+  let gridOverlayUpdateTimer = null;
+  let gridOverlayMoveHandler = null;
+  let gridPointerLabelEl = null;
+  let gridPointerMoveHandler = null;
+  let gridPointerLeaveHandler = null;
+
+  const ensureGridPointerLabel = () => {
+    if (gridPointerLabelEl) return gridPointerLabelEl;
+    if (!mapContainer) return null;
+    const el = document.createElement('div');
+    el.className = 'grid-pointer-label';
+    el.setAttribute('aria-hidden', 'true');
+    el.hidden = true;
+    mapContainer.appendChild(el);
+    gridPointerLabelEl = el;
+    return el;
+  };
+
+  const hideGridPointerLabel = () => {
+    if (!gridPointerLabelEl) return;
+    gridPointerLabelEl.hidden = true;
+    gridPointerLabelEl.style.transform = 'translate(-9999px, -9999px)';
+  };
+
+  const GRID_TARGET_PIXEL_SPACING = 130;
+  const GRID_MAX_LINES = 80;
+  const GCS_GRID_STEPS = [60, 30, 20, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001];
+  const UTM_GRID_STEPS = [1000000, 500000, 200000, 100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10];
+  const chooseGridStep = (targetStep, span, candidates) => {
+    if (!Number.isFinite(targetStep) || targetStep <= 0) return candidates[candidates.length - 1];
+    let best = candidates[candidates.length - 1];
+    let bestScore = Infinity;
+    candidates.forEach((step) => {
+      const lines = Number.isFinite(span) && span > 0 ? span / step : null;
+      const tooFewPenalty = (lines !== null && lines < 2) ? (2 - lines) * 3 : 0;
+      const tooManyPenalty = (lines !== null && lines > GRID_MAX_LINES) ? (lines - GRID_MAX_LINES) * 0.08 : 0;
+      const score = Math.abs(Math.log(step / targetStep)) + tooFewPenalty + tooManyPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        best = step;
+      }
+    });
+    return best;
+  };
+  const getGcsGridStep = ({ span, degreesPerPixel }) => {
+    const targetStep = Number.isFinite(degreesPerPixel) ? degreesPerPixel * GRID_TARGET_PIXEL_SPACING : null;
+    return chooseGridStep(targetStep, span, GCS_GRID_STEPS);
+  };
+  const getGcsMinorGridStep = ({ span, degreesPerPixel, majorStep }) => {
+    const targetStep = Number.isFinite(degreesPerPixel) ? (degreesPerPixel * GRID_TARGET_PIXEL_SPACING) / 5 : null;
+    const candidate = chooseGridStep(targetStep, span, GCS_GRID_STEPS);
+    if (!Number.isFinite(candidate) || !Number.isFinite(majorStep)) return null;
+    return candidate < majorStep ? candidate : null;
+  };
+  const getGcsLabelPrecision = (step) => {
+    if (step >= 1) return 0;
+    if (step >= 0.5) return 1;
+    if (step >= 0.25) return 2;
+    if (step >= 0.1) return 1;
+    if (step >= 0.05) return 2;
+    return 3;
+  };
+  const formatDegreeLabel = (value, precision, isLat) => {
+    if (!Number.isFinite(value)) return '';
+    const abs = Math.abs(value);
+    const cardinal = isLat ? (value >= 0 ? 'N' : 'S') : (value >= 0 ? 'E' : 'W');
+    const raw = abs.toFixed(precision);
+    const trimmed = precision ? raw.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') : raw;
+    return `${trimmed}°${cardinal}`;
+  };
+  const getUtmGridStep = ({ spanMeters, metersPerPixel }) => {
+    const targetStep = Number.isFinite(metersPerPixel) ? metersPerPixel * GRID_TARGET_PIXEL_SPACING : null;
+    return chooseGridStep(targetStep, spanMeters, UTM_GRID_STEPS);
+  };
+  const formatUtmLabel = (value, suffix) => {
+    if (!Number.isFinite(value)) return '';
+    return `${Math.round(value).toLocaleString()} ${suffix}`;
+  };
+  const createLineFeature = (coordinates, properties) => ({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates },
+    properties: properties || {}
+  });
+  const createPointFeature = (coordinates, properties) => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates },
+    properties: properties || {}
+  });
+
+  const getGcsPointerPrecision = (map) => {
+    const bounds = map?.getBounds?.();
+    if (!bounds) return 0;
+    let west = Number(bounds.getWest());
+    let east = Number(bounds.getEast());
+    let south = Number(bounds.getSouth());
+    let north = Number(bounds.getNorth());
+    if (!Number.isFinite(west) || !Number.isFinite(east) || !Number.isFinite(south) || !Number.isFinite(north)) return 0;
+    south = clampLatForMercator(south);
+    north = clampLatForMercator(north);
+    if (east < west) east += 360;
+    const spanLng = Math.max(0.000001, east - west);
+    const canvas = map.getCanvas?.();
+    const width = Number(canvas?.clientWidth || canvas?.width || 1024);
+    const degreesPerPixel = Number.isFinite(width) && width > 0 ? spanLng / width : null;
+    const step = getGcsGridStep({ span: spanLng, degreesPerPixel });
+    const basePrecision = getGcsLabelPrecision(step);
+    return Math.max(2, Math.min(6, basePrecision + 2));
+  };
+
+  const formatGridPointerLabel = (lngLat, map) => {
+    if (!lngLat) return '';
+    if (activeGridOverlay === 'utm') {
+      const utmText = formatUtmFooterValue?.(lngLat.lat, lngLat.lng);
+      return utmText || '';
+    }
+    if (activeGridOverlay === 'gcs') {
+      const precision = getGcsPointerPrecision(map);
+      const latText = formatDegreeLabel(lngLat.lat, precision, true);
+      const lngText = formatDegreeLabel(normalizeLongitude(lngLat.lng), precision, false);
+      return latText && lngText ? `${latText} ${lngText}` : '';
+    }
+    return '';
+  };
+
+  const getGridInsertBeforeLayer = (map) => {
+    if (!map) return undefined;
+    const candidates = [
+      'draw-fill',
+      'draw-line',
+      'draw-point',
+      'draw-labels-polygon',
+      'tracker-paths',
+      'tracker-dots',
+      'tracker-labels'
+    ];
+    return candidates.find((id) => map.getLayer(id));
+  };
+
+  const ensureGridOverlayLayers = (map) => {
+    if (!map) return;
+    if (!map.getSource(GRID_OVERLAY_LINE_SOURCE_ID)) {
+      map.addSource(GRID_OVERLAY_LINE_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+    }
+    if (!map.getSource(GRID_OVERLAY_LABEL_SOURCE_ID)) {
+      map.addSource(GRID_OVERLAY_LABEL_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+    }
+    const beforeId = getGridInsertBeforeLayer(map);
+    if (!map.getLayer(GRID_OVERLAY_MINOR_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: GRID_OVERLAY_MINOR_LINE_LAYER_ID,
+        type: 'line',
+        source: GRID_OVERLAY_LINE_SOURCE_ID,
+        filter: ['==', ['get', 'minor'], true],
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#ffffff',
+          'line-opacity': 0.4,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 10, 0.9, 16, 1.2],
+          'line-dasharray': [1, 2.4],
+          'line-blur': 0.2
+        }
+      }, beforeId);
+    }
+    if (!map.getLayer(GRID_OVERLAY_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: GRID_OVERLAY_LINE_LAYER_ID,
+        type: 'line',
+        source: GRID_OVERLAY_LINE_SOURCE_ID,
+        filter: ['!=', ['get', 'minor'], true],
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#ffffff',
+          'line-opacity': 0.72,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 10, 1.2, 16, 1.6],
+          'line-dasharray': [1.5, 1.5],
+          'line-blur': 0.2
+        }
+      }, beforeId);
+    }
+    if (!map.getLayer(GRID_OVERLAY_LABEL_LAYER_ID)) {
+      map.addLayer({
+        id: GRID_OVERLAY_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: GRID_OVERLAY_LABEL_SOURCE_ID,
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 10, 11, 16, 13],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'text-anchor': [
+            'case',
+            ['==', ['get', 'kind'], 'lat'], 'left',
+            ['==', ['get', 'kind'], 'lon'], 'top',
+            ['==', ['get', 'kind'], 'utm-e'], 'top',
+            ['==', ['get', 'kind'], 'utm-n'], 'left',
+            'center'
+          ],
+          'text-offset': [
+            'case',
+            ['==', ['get', 'kind'], 'lat'], ['literal', [0.6, 0]],
+            ['==', ['get', 'kind'], 'utm-n'], ['literal', [0.6, 0]],
+            ['==', ['get', 'kind'], 'lon'], ['literal', [0, 0.6]],
+            ['==', ['get', 'kind'], 'utm-e'], ['literal', [0, 0.6]],
+            ['literal', [0, 0]]
+          ]
+        },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': 'rgba(0, 0, 0, 0.75)',
+          'text-halo-width': 1.6,
+          'text-halo-blur': 0.8
+        }
+      }, beforeId);
+    }
+  };
+
+  const setGridOverlayVisibility = (map, visible) => {
+    if (!map) return;
+    const visibility = visible ? 'visible' : 'none';
+    [GRID_OVERLAY_MINOR_LINE_LAYER_ID, GRID_OVERLAY_LINE_LAYER_ID, GRID_OVERLAY_LABEL_LAYER_ID].forEach((layerId) => {
+      if (!map.getLayer(layerId)) return;
+      try { map.setLayoutProperty(layerId, 'visibility', visibility); } catch {}
+    });
+  };
+
+  const positionGridPointerLabel = (point, map) => {
+    const label = ensureGridPointerLabel();
+    if (!label || !mapContainer || !point) return;
+    const width = mapContainer.clientWidth || 0;
+    const height = mapContainer.clientHeight || 0;
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    const pad = 12;
+    const edgePad = 6;
+    const labelWidth = label.offsetWidth || 0;
+    const labelHeight = label.offsetHeight || 0;
+    let x = point.x + pad;
+    let y = point.y + pad;
+    if (x + labelWidth > width - edgePad) x = point.x - pad - labelWidth;
+    if (y + labelHeight > height - edgePad) y = point.y - pad - labelHeight;
+    x = Math.max(edgePad, Math.min(width - labelWidth - edgePad, x));
+    y = Math.max(edgePad, Math.min(height - labelHeight - edgePad, y));
+    label.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  };
+
+  const updateGridPointerLabel = (event) => {
+    const map = getMap();
+    if (!map || activeGridOverlay === 'none') return;
+    const label = ensureGridPointerLabel();
+    if (!label) return;
+    const lngLat = event?.lngLat;
+    const text = formatGridPointerLabel(lngLat, map);
+    if (!text) {
+      hideGridPointerLabel();
+      return;
+    }
+    label.textContent = text;
+    label.hidden = false;
+    positionGridPointerLabel(event?.point, map);
+  };
+
+  const attachGridPointerListeners = () => {
+    const map = getMap();
+    if (!map || gridPointerMoveHandler) return;
+    gridPointerMoveHandler = (event) => updateGridPointerLabel(event);
+    gridPointerLeaveHandler = () => hideGridPointerLabel();
+    map.on('mousemove', gridPointerMoveHandler);
+    map.on('mouseleave', gridPointerLeaveHandler);
+  };
+
+  const detachGridPointerListeners = () => {
+    const map = getMap();
+    if (!map || !gridPointerMoveHandler) return;
+    map.off('mousemove', gridPointerMoveHandler);
+    map.off('mouseleave', gridPointerLeaveHandler);
+    gridPointerMoveHandler = null;
+    gridPointerLeaveHandler = null;
+    hideGridPointerLabel();
+  };
+
+  const setGridOverlayData = (map, lines, labels) => {
+    if (!map) return;
+    const lineSource = map.getSource(GRID_OVERLAY_LINE_SOURCE_ID);
+    const labelSource = map.getSource(GRID_OVERLAY_LABEL_SOURCE_ID);
+    try {
+      if (lineSource && typeof lineSource.setData === 'function') {
+        lineSource.setData(lines || EMPTY_FEATURE_COLLECTION);
+      }
+      if (labelSource && typeof labelSource.setData === 'function') {
+        labelSource.setData(labels || EMPTY_FEATURE_COLLECTION);
+      }
+    } catch (err) {
+      console.warn('Failed updating grid overlay sources', err);
+    }
+  };
+
+  const buildGcsGridFeatures = (map) => {
+    const bounds = map?.getBounds?.();
+    if (!bounds) return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    let west = Number(bounds.getWest());
+    let east = Number(bounds.getEast());
+    let south = Number(bounds.getSouth());
+    let north = Number(bounds.getNorth());
+    if (!Number.isFinite(west) || !Number.isFinite(east) || !Number.isFinite(south) || !Number.isFinite(north)) {
+      return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    }
+    south = clampLatForMercator(south);
+    north = clampLatForMercator(north);
+    if (east < west) east += 360;
+    const spanLng = Math.max(0.000001, east - west);
+    const canvas = map.getCanvas?.();
+    const width = Number(canvas?.clientWidth || canvas?.width || 1024);
+    const degreesPerPixel = Number.isFinite(width) && width > 0 ? spanLng / width : null;
+    const step = getGcsGridStep({ span: spanLng, degreesPerPixel });
+    const minorStep = getGcsMinorGridStep({ span: spanLng, degreesPerPixel, majorStep: step });
+    const precision = getGcsLabelPrecision(step);
+    const spanLat = Math.max(0.000001, north - south);
+    const offsetLng = spanLng * 0.015;
+    const offsetLat = spanLat * 0.015;
+    const labelLngLeft = west + offsetLng;
+    const labelLatTop = Math.max(south, Math.min(north, north - offsetLat));
+
+    const lines = [];
+    const labels = [];
+    const isMajorLine = (value, major) => {
+      if (!Number.isFinite(value) || !Number.isFinite(major) || major === 0) return false;
+      const ratio = value / major;
+      return Math.abs(ratio - Math.round(ratio)) < 1e-6;
+    };
+    const startLng = Math.floor(west / step) * step;
+    const endLng = Math.ceil(east / step) * step;
+    if (minorStep && minorStep < step) {
+      const minorStartLng = Math.floor(west / minorStep) * minorStep;
+      const minorEndLng = Math.ceil(east / minorStep) * minorStep;
+      for (let lng = minorStartLng; lng <= minorEndLng + minorStep * 0.5; lng += minorStep) {
+        if (!Number.isFinite(lng)) continue;
+        if (isMajorLine(lng, step)) continue;
+        lines.push(createLineFeature([[lng, south], [lng, north]], { kind: 'lon', value: lng, minor: true }));
+      }
+    }
+    for (let lng = startLng; lng <= endLng + step * 0.5; lng += step) {
+      if (!Number.isFinite(lng)) continue;
+      lines.push(createLineFeature([[lng, south], [lng, north]], { kind: 'lon', value: lng }));
+      const displayLng = normalizeLongitude(lng);
+      const text = formatDegreeLabel(displayLng, precision, false);
+      if (text) labels.push(createPointFeature([lng, labelLatTop], { kind: 'lon', label: text }));
+    }
+    const startLat = Math.floor(south / step) * step;
+    const endLat = Math.ceil(north / step) * step;
+    if (minorStep && minorStep < step) {
+      const minorStartLat = Math.floor(south / minorStep) * minorStep;
+      const minorEndLat = Math.ceil(north / minorStep) * minorStep;
+      for (let lat = minorStartLat; lat <= minorEndLat + minorStep * 0.5; lat += minorStep) {
+        const latValue = clampLatForMercator(lat);
+        if (latValue < south - 1e-6 || latValue > north + 1e-6) continue;
+        if (isMajorLine(latValue, step)) continue;
+        lines.push(createLineFeature([[west, latValue], [east, latValue]], { kind: 'lat', value: latValue, minor: true }));
+      }
+    }
+    for (let lat = startLat; lat <= endLat + step * 0.5; lat += step) {
+      const latValue = clampLatForMercator(lat);
+      if (latValue < south - 1e-6 || latValue > north + 1e-6) continue;
+      lines.push(createLineFeature([[west, latValue], [east, latValue]], { kind: 'lat', value: latValue }));
+      const text = formatDegreeLabel(latValue, precision, true);
+      if (text) labels.push(createPointFeature([labelLngLeft, latValue], { kind: 'lat', label: text }));
+    }
+    return {
+      lines: { type: 'FeatureCollection', features: lines },
+      labels: { type: 'FeatureCollection', features: labels }
+    };
+  };
+
+  const buildUtmGridFeatures = (map) => {
+    const center = map?.getCenter?.();
+    if (!center) return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    const centerUtm = utmFromLatLng(center.lat, center.lng);
+    if (!centerUtm) return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    const zoom = Number(map.getZoom?.());
+    const metersPerPixel = getMetersPerPixelAtLatitude(map, center.lat, zoom);
+    if (!Number.isFinite(metersPerPixel)) return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    const canvas = map.getCanvas?.();
+    const width = Number(canvas?.clientWidth || canvas?.width || 1024);
+    const height = Number(canvas?.clientHeight || canvas?.height || 768);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      return { lines: EMPTY_FEATURE_COLLECTION, labels: EMPTY_FEATURE_COLLECTION };
+    }
+    const widthMeters = metersPerPixel * width;
+    const heightMeters = metersPerPixel * height;
+    const spanMeters = Math.max(widthMeters, heightMeters);
+    const step = getUtmGridStep({ spanMeters, metersPerPixel });
+    const clampRange = (value, min, max) => Math.min(max, Math.max(min, value));
+    const minE = clampRange(centerUtm.easting - widthMeters / 2, 0, 1_000_000);
+    const maxE = clampRange(centerUtm.easting + widthMeters / 2, 0, 1_000_000);
+    const minN = clampRange(centerUtm.northing - heightMeters / 2, 0, 10_000_000);
+    const maxN = clampRange(centerUtm.northing + heightMeters / 2, 0, 10_000_000);
+    const startE = Math.floor(minE / step) * step;
+    const endE = Math.ceil(maxE / step) * step;
+    const startN = Math.floor(minN / step) * step;
+    const endN = Math.ceil(maxN / step) * step;
+    const segmentStep = Math.max(5000, Math.min(20000, step));
+    const spanE = Math.max(1, maxE - minE);
+    const spanN = Math.max(1, maxN - minN);
+    const offsetE = Math.max(step * 0.4, spanE * 0.02);
+    const offsetN = Math.max(step * 0.4, spanN * 0.02);
+    const labelEastingLeft = clampRange(minE + offsetE, minE, maxE);
+    const labelNorthingTop = clampRange(maxN - offsetN, minN, maxN);
+
+    const lines = [];
+    const labels = [];
+    for (let easting = startE; easting <= endE + step * 0.5; easting += step) {
+      const coords = [];
+      for (let northing = minN; northing <= maxN + segmentStep; northing += segmentStep) {
+        const point = latLngFromUtm({
+          zoneNumber: centerUtm.zoneNumber,
+          zoneLetter: centerUtm.zoneLetter,
+          easting,
+          northing
+        });
+        if (point) coords.push([point.lng, point.lat]);
+      }
+      if (coords.length >= 2) {
+        lines.push(createLineFeature(coords, { kind: 'utm-e', value: easting }));
+      }
+      const labelPoint = latLngFromUtm({
+        zoneNumber: centerUtm.zoneNumber,
+        zoneLetter: centerUtm.zoneLetter,
+        easting,
+        northing: labelNorthingTop
+      });
+      if (labelPoint) {
+        const label = formatUtmLabel(easting, 'mE');
+        if (label) labels.push(createPointFeature([labelPoint.lng, labelPoint.lat], { kind: 'utm-e', label }));
+      }
+    }
+    for (let northing = startN; northing <= endN + step * 0.5; northing += step) {
+      const coords = [];
+      for (let easting = minE; easting <= maxE + segmentStep; easting += segmentStep) {
+        const point = latLngFromUtm({
+          zoneNumber: centerUtm.zoneNumber,
+          zoneLetter: centerUtm.zoneLetter,
+          easting,
+          northing
+        });
+        if (point) coords.push([point.lng, point.lat]);
+      }
+      if (coords.length >= 2) {
+        lines.push(createLineFeature(coords, { kind: 'utm-n', value: northing }));
+      }
+      const labelPoint = latLngFromUtm({
+        zoneNumber: centerUtm.zoneNumber,
+        zoneLetter: centerUtm.zoneLetter,
+        easting: labelEastingLeft,
+        northing
+      });
+      if (labelPoint) {
+        const label = formatUtmLabel(northing, 'mN');
+        if (label) labels.push(createPointFeature([labelPoint.lng, labelPoint.lat], { kind: 'utm-n', label }));
+      }
+    }
+    const zoneLabelPoint = latLngFromUtm({
+      zoneNumber: centerUtm.zoneNumber,
+      zoneLetter: centerUtm.zoneLetter,
+      easting: labelEastingLeft,
+      northing: labelNorthingTop
+    });
+    if (zoneLabelPoint) {
+      labels.push(createPointFeature([zoneLabelPoint.lng, zoneLabelPoint.lat], {
+        kind: 'utm-zone',
+        label: `${centerUtm.zoneNumber}${centerUtm.zoneLetter}`
+      }));
+    }
+    return {
+      lines: { type: 'FeatureCollection', features: lines },
+      labels: { type: 'FeatureCollection', features: labels }
+    };
+  };
+
+  const updateGridOverlay = () => {
+    const map = getMap();
+    if (!map) return;
+    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return;
+    if (activeGridOverlay === 'none') {
+      if (map.getLayer(GRID_OVERLAY_LINE_LAYER_ID) || map.getLayer(GRID_OVERLAY_LABEL_LAYER_ID)) {
+        setGridOverlayData(map, EMPTY_FEATURE_COLLECTION, EMPTY_FEATURE_COLLECTION);
+        setGridOverlayVisibility(map, false);
+      }
+      hideGridPointerLabel();
+      return;
+    }
+    ensureGridOverlayLayers(map);
+    const data = activeGridOverlay === 'utm' ? buildUtmGridFeatures(map) : buildGcsGridFeatures(map);
+    setGridOverlayData(map, data.lines, data.labels);
+    setGridOverlayVisibility(map, true);
+  };
+
+  const scheduleGridOverlayUpdate = () => {
+    if (activeGridOverlay === 'none') return;
+    if (gridOverlayUpdateTimer) clearTimeout(gridOverlayUpdateTimer);
+    gridOverlayUpdateTimer = setTimeout(() => {
+      gridOverlayUpdateTimer = null;
+      updateGridOverlay();
+    }, GRID_OVERLAY_REFRESH_DELAY_MS);
+  };
+
+  const attachGridOverlayListeners = () => {
+    const map = getMap();
+    if (!map || gridOverlayMoveHandler) return;
+    gridOverlayMoveHandler = () => scheduleGridOverlayUpdate();
+    map.on('moveend', gridOverlayMoveHandler);
+    map.on('zoomend', gridOverlayMoveHandler);
+    map.on('resize', gridOverlayMoveHandler);
+  };
+
+  const detachGridOverlayListeners = () => {
+    const map = getMap();
+    if (!map || !gridOverlayMoveHandler) return;
+    map.off('moveend', gridOverlayMoveHandler);
+    map.off('zoomend', gridOverlayMoveHandler);
+    map.off('resize', gridOverlayMoveHandler);
+    gridOverlayMoveHandler = null;
+  };
+
+  const refreshGridOverlay = () => {
+    if (activeGridOverlay === 'none') {
+      updateGridOverlay();
+      return;
+    }
+    attachGridOverlayListeners();
+    attachGridPointerListeners();
+    updateGridOverlay();
+  };
+
+  const setActiveGridOverlay = (value, { persist = true } = {}) => {
+    const next = normalizeGridOverlayType(value);
+    activeGridOverlay = next;
+    if (overlaySelect && overlaySelect.value !== next) overlaySelect.value = next;
+    if (persist) {
+      try { localStorage.setItem(GRID_OVERLAY_STORAGE_KEY, next); } catch {}
+    }
+    if (next === 'none') {
+      detachGridOverlayListeners();
+      detachGridPointerListeners();
+      updateGridOverlay();
+      return;
+    }
+    refreshGridOverlay();
+  };
+
+  const cycleGridOverlay = () => {
+    const order = ['none', 'utm', 'gcs'];
+    const idx = order.indexOf(activeGridOverlay);
+    const next = order[(idx + 1) % order.length];
+    setActiveGridOverlay(next);
+  };
+
+  if (overlaySelect) {
+    overlaySelect.addEventListener('change', () => {
+      setActiveGridOverlay(overlaySelect.value);
+    });
+  }
+  setActiveGridOverlay(activeGridOverlay, { persist: false });
 
   let suppressFeatureToasts = false;
   let lastFeatureModifiedToast = 0;
@@ -2885,19 +4381,35 @@
   };
 
   const readMapboxToken = () => (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
-  const readFirebaseConfigString = () => {
-    if (firebaseSettings && typeof firebaseSettings === 'object') {
-      try { return JSON.stringify(firebaseSettings); } catch {}
-    }
+  const readFirebaseConfigValue = () => {
+    if (firebaseSettings && typeof firebaseSettings === 'object') return firebaseSettings;
     let raw = '';
     try { raw = localStorage.getItem(FIREBASE_SETTINGS_STORAGE_KEY) || ''; } catch {}
-    const parsed = parseFirebaseSettingsText(raw);
-    if (parsed.error || !parsed.value) return '';
-    try { return JSON.stringify(parsed.value); } catch {}
+    let parsed = parseFirebaseSettingsText(raw);
+    if (!parsed.error && parsed.value) return parsed.value;
+    const fallbackRaw = normalizeLineBreaks(settingFirebaseConfig?.value || '');
+    parsed = parseFirebaseSettingsText(fallbackRaw);
+    if (!parsed.error && parsed.value) return parsed.value;
+    return null;
+  };
+  const readFirebaseConfigString = () => {
+    const value = readFirebaseConfigValue();
+    if (!value) return '';
+    try { return JSON.stringify(value); } catch {}
     return '';
   };
   const readGoogleKey = () => (localStorage.getItem('map.googleKey') || defaultGoogleKey || '').trim();
   const readOpenAIKey = () => (localStorage.getItem('openai.key') || defaultOpenAIKey || '').trim();
+  const shouldShowWelcome = () => {
+    const hasMapbox = !!readMapboxToken();
+    const needsAdmin = !firebaseAdminCredentialsReady;
+    const missingDeploy = hasMissingFirebaseDeployments();
+    return !hasMapbox || needsAdmin || missingDeploy;
+  };
+  const updateWelcomeState = () => {
+    if (!mapWelcome) return;
+    mapWelcome.hidden = !shouldShowWelcome();
+  };
 
   let googleServicesEnabled = false;
   let aiEnabled = false;
@@ -2916,11 +4428,10 @@
   };
 
   const applyServiceAvailability = () => {
-    const hasMapbox = !!readMapboxToken();
     googleServicesEnabled = !!readGoogleKey();
     aiEnabled = !!readOpenAIKey();
 
-    if (mapWelcome) mapWelcome.hidden = hasMapbox;
+    updateWelcomeState();
 
     if (toolSearch) {
       toolSearch.disabled = !googleServicesEnabled;
@@ -3246,49 +4757,10 @@
   const trackerSubscriptionRetries = new Map();
   const TRACKER_SUBSCRIPTION_RETRY_MS = 5000;
   let pendingTeamMemberTrackerId = null;
+  let teamMemberQrInFlight = false;
+  let teamMemberQrRequestId = 0;
   let firestoreUnavailableToasted = false;
   const trackerAutoReveal = new Set();
-  let lastTrackerUpdateTimestamp = 0;
-
-  const nextTrackerUpdateDocId = () => {
-    const now = Date.now();
-    if (!Number.isFinite(now)) return String(Date.now());
-    if (now <= lastTrackerUpdateTimestamp) {
-      lastTrackerUpdateTimestamp += 1;
-      return String(lastTrackerUpdateTimestamp);
-    }
-    lastTrackerUpdateTimestamp = now;
-    return String(now);
-  };
-
-  const writeTrackerUpdateDocument = async ({ trackerId, coords, sessionId, sdkInfo, db } = {}) => {
-    const trimmedTrackerId = String(trackerId || '').trim();
-    const trimmedSessionId = String(sessionId || '').trim();
-    if (!trimmedTrackerId || !trimmedSessionId || !coords) return false;
-    const lng = Number(coords.longitude);
-    const lat = Number(coords.latitude);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
-    const coordinates = Number.isFinite(coords.altitude)
-      ? [lng, lat, Number(coords.altitude)]
-      : [lng, lat];
-    const payload = { trackerId: trimmedTrackerId, coordinates };
-    const docId = nextTrackerUpdateDocId();
-    try {
-      if (sdkInfo?.type === 'compat') {
-        if (typeof db?.doc !== 'function') return false;
-        await db.doc(`sessions/${trimmedSessionId}/updates/${docId}`).set(payload);
-      } else {
-        const { doc, setDoc } = sdkInfo?.sdk || {};
-        if (typeof doc !== 'function' || typeof setDoc !== 'function') return false;
-        const docRef = doc(db, 'sessions', trimmedSessionId, 'updates', docId);
-        await setDoc(docRef, payload);
-      }
-      return true;
-    } catch (err) {
-      console.warn('Failed to write tracker update', trimmedSessionId, trimmedTrackerId, err);
-      return false;
-    }
-  };
 
   const clearTrackerSubscriptionRetry = (trackerId) => {
     const trimmed = String(trackerId || '').trim();
@@ -3674,6 +5146,55 @@
     if (updateUI) updateTeamsEmptyState();
   };
 
+  const getTeamMemberDisabledReason = () => {
+    if (!firebaseAdminCredentialsReady) {
+      return t('teams.addMemberRequiresAdmin', 'Load Firebase Admin credentials to add team members.');
+    }
+    if (teamMemberQrInFlight) {
+      return t('teams.memberModal.generating', 'Generating secure QR code...');
+    }
+    return '';
+  };
+
+  const updateTeamMemberActionsState = () => {
+    const hasSession = !!teamsSessionId;
+    const disabledReason = getTeamMemberDisabledReason();
+    const canAdd = hasSession && !disabledReason;
+    if (teamsAddBtn) {
+      teamsAddBtn.hidden = !hasSession;
+      teamsAddBtn.disabled = !canAdd;
+      teamsAddBtn.setAttribute('aria-disabled', String(!canAdd));
+      if (!canAdd && hasSession && disabledReason) {
+        teamsAddBtn.title = disabledReason;
+        teamsAddBtn.setAttribute('aria-label', disabledReason);
+      } else {
+        teamsAddBtn.removeAttribute('title');
+        teamsAddBtn.removeAttribute('aria-label');
+      }
+    }
+    const qrDisabled = !firebaseAdminCredentialsReady || teamMemberQrInFlight;
+    const qrReason = !firebaseAdminCredentialsReady
+      ? t('teams.addMemberRequiresAdmin', 'Load Firebase Admin credentials to add team members.')
+      : (teamMemberQrInFlight ? t('teams.memberModal.generating', 'Generating secure QR code...') : '');
+    document.querySelectorAll('.tracker-action.tracker-qr').forEach((btn) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.disabled = qrDisabled;
+      btn.classList.toggle('is-disabled', qrDisabled);
+      btn.setAttribute('aria-disabled', String(qrDisabled));
+      if (qrDisabled && qrReason) {
+        btn.title = qrReason;
+        btn.setAttribute('aria-label', qrReason);
+      } else {
+        const defaultTitle = btn.dataset.defaultTitle;
+        const defaultLabel = btn.dataset.defaultAriaLabel;
+        if (defaultTitle) btn.title = defaultTitle;
+        else btn.removeAttribute('title');
+        if (defaultLabel) btn.setAttribute('aria-label', defaultLabel);
+        else btn.removeAttribute('aria-label');
+      }
+    });
+  };
+
   const updateTeamsEmptyState = () => {
     if (!teamsEmptyState || !teamsEmptyTitle || !teamsEmptySubtitle) return;
     const listEl = trackersItems || q('#trackersItems');
@@ -3687,7 +5208,11 @@
     if (teamsEmptyActions) teamsEmptyActions.hidden = hasSession;
     if (hasSession) {
       bindText(teamsEmptyTitle, 'teams.emptyActiveTitle', 'No team members yet');
-      bindText(teamsEmptySubtitle, 'teams.emptyActiveSubtitle', 'Add a member to start tracking.');
+      if (!firebaseAdminCredentialsReady) {
+        bindText(teamsEmptySubtitle, 'teams.emptyActiveNeedsAdmin', 'Load Firebase Admin credentials to add members.');
+      } else {
+        bindText(teamsEmptySubtitle, 'teams.emptyActiveSubtitle', 'Add a member to start tracking.');
+      }
     } else {
       bindText(teamsEmptyTitle, 'teams.emptyTitle', 'No active session');
       bindText(teamsEmptySubtitle, 'teams.emptySubtitle', 'Start or resume a session to track team members.');
@@ -3758,11 +5283,7 @@
         teamsSessionTitleEl.textContent = t('teams.sessionTitleFallback', 'Untitled session');
       }
     }
-    if (teamsAddBtn) {
-      teamsAddBtn.disabled = !hasSession;
-      teamsAddBtn.setAttribute('aria-disabled', String(!hasSession));
-      teamsAddBtn.hidden = !hasSession;
-    }
+    updateTeamMemberActionsState();
     if (teamsStartSessionBtn) teamsStartSessionBtn.hidden = hasSession;
     if (teamsResumeSessionBtn) teamsResumeSessionBtn.hidden = hasSession;
     updateTeamsEmptyState();
@@ -4518,7 +6039,7 @@
     if (!handle) return { ok: false, reason: 'firestore' };
     const { sdkInfo, db } = handle;
     try {
-      const subcollections = ['trackers', 'updates'];
+      const subcollections = TEAMS_SESSION_SUBCOLLECTIONS;
       const subResults = await Promise.all(
         subcollections.map((name) => deleteTeamsSessionSubcollection(trimmed, name))
       );
@@ -4540,6 +6061,163 @@
     } catch (err) {
       console.warn('Failed to delete team session', trimmed, err);
       return { ok: false, reason: 'error', error: err };
+    }
+  };
+
+  const setFirebaseAdminClearSessionsStatus = (message, { i18nKey = null } = {}) => {
+    if (!firebaseAdminClearSessionsStatus) return;
+    if (!message) {
+      firebaseAdminClearSessionsStatus.hidden = true;
+      firebaseAdminClearSessionsStatus.textContent = '';
+      return;
+    }
+    firebaseAdminClearSessionsStatus.hidden = false;
+    firebaseAdminClearSessionsStatus.textContent = i18nKey ? t(i18nKey, message) : message;
+    if (i18nKey) {
+      firebaseAdminClearSessionsStatus.dataset.i18n = i18nKey;
+    } else {
+      firebaseAdminClearSessionsStatus.dataset.i18n = '';
+    }
+  };
+
+  const clearAllTeamsSessions = async () => {
+    if (!window.firebaseAdmin?.clearSessions) return { ok: false, reason: 'unavailable' };
+    const result = await window.firebaseAdmin.clearSessions();
+    if (!result || !result.ok) {
+      return { ok: false, reason: 'error', error: result?.error };
+    }
+    return { ok: true, count: result.count || 0 };
+  };
+
+  const setFirebaseAdminClearAnonymousUsersStatus = (message, { i18nKey = null } = {}) => {
+    if (!firebaseAdminClearAnonymousUsersStatus) return;
+    if (!message) {
+      firebaseAdminClearAnonymousUsersStatus.hidden = true;
+      firebaseAdminClearAnonymousUsersStatus.textContent = '';
+      return;
+    }
+    firebaseAdminClearAnonymousUsersStatus.hidden = false;
+    firebaseAdminClearAnonymousUsersStatus.textContent = i18nKey ? t(i18nKey, message) : message;
+    if (i18nKey) {
+      firebaseAdminClearAnonymousUsersStatus.dataset.i18n = i18nKey;
+    } else {
+      firebaseAdminClearAnonymousUsersStatus.dataset.i18n = '';
+    }
+  };
+
+  const clearAllAnonymousUsers = async () => {
+    if (!window.firebaseAdmin?.clearAnonymousUsers) return { ok: false, reason: 'unavailable' };
+    const result = await window.firebaseAdmin.clearAnonymousUsers();
+    if (!result || !result.ok) {
+      return { ok: false, reason: 'error', error: result?.error };
+    }
+    return { ok: true, deleted: result.deleted || 0, failures: result.failures || 0 };
+  };
+
+  const openFirebaseAdminClearSessionsModal = () => {
+    if (!firebaseAdminClearSessionsModal) return;
+    setFirebaseAdminClearSessionsStatus(null);
+    if (firebaseAdminClearSessionsConfirm) firebaseAdminClearSessionsConfirm.disabled = false;
+    if (firebaseAdminClearSessionsCancel) firebaseAdminClearSessionsCancel.disabled = false;
+    firebaseAdminClearSessionsModal.hidden = false;
+    firebaseAdminClearSessionsModal.setAttribute('aria-hidden', 'false');
+    try { firebaseAdminClearSessionsConfirm?.focus(); } catch {}
+  };
+
+  const closeFirebaseAdminClearSessionsModal = () => {
+    if (!firebaseAdminClearSessionsModal) return;
+    firebaseAdminClearSessionsModal.hidden = true;
+    firebaseAdminClearSessionsModal.setAttribute('aria-hidden', 'true');
+    setFirebaseAdminClearSessionsStatus(null);
+    firebaseAdminClearSessionsInFlight = false;
+  };
+
+  const openFirebaseAdminClearAnonymousUsersModal = () => {
+    if (!firebaseAdminClearAnonymousUsersModal) return;
+    setFirebaseAdminClearAnonymousUsersStatus(null);
+    if (firebaseAdminClearAnonymousUsersConfirm) firebaseAdminClearAnonymousUsersConfirm.disabled = false;
+    if (firebaseAdminClearAnonymousUsersCancel) firebaseAdminClearAnonymousUsersCancel.disabled = false;
+    firebaseAdminClearAnonymousUsersModal.hidden = false;
+    firebaseAdminClearAnonymousUsersModal.setAttribute('aria-hidden', 'false');
+    try { firebaseAdminClearAnonymousUsersConfirm?.focus(); } catch {}
+  };
+
+  const closeFirebaseAdminClearAnonymousUsersModal = () => {
+    if (!firebaseAdminClearAnonymousUsersModal) return;
+    firebaseAdminClearAnonymousUsersModal.hidden = true;
+    firebaseAdminClearAnonymousUsersModal.setAttribute('aria-hidden', 'true');
+    setFirebaseAdminClearAnonymousUsersStatus(null);
+    firebaseAdminClearAnonymousUsersInFlight = false;
+  };
+
+  const handleFirebaseAdminClearSessionsConfirm = async () => {
+    if (firebaseAdminClearSessionsInFlight) return;
+    firebaseAdminClearSessionsInFlight = true;
+    if (firebaseAdminClearSessionsConfirm) firebaseAdminClearSessionsConfirm.disabled = true;
+    if (firebaseAdminClearSessionsCancel) firebaseAdminClearSessionsCancel.disabled = true;
+    setFirebaseAdminClearSessionsStatus('Deleting sessions...', {
+      i18nKey: 'settings.firebaseAdminClearSessionsModal.deleting'
+    });
+    setTeamsLoadSessionBusy(true);
+    try {
+      const result = await clearAllTeamsSessions();
+      if (!result.ok) {
+        const fallback = t('settings.firebaseAdminClearSessionsModal.error', 'Unable to clear sessions. Check Firebase settings.');
+        const message = result.error || fallback;
+        setFirebaseAdminClearSessionsStatus(message, {
+          i18nKey: result.error ? null : 'settings.firebaseAdminClearSessionsModal.error'
+        });
+        showToast(result.error || t('settings.firebaseAdminClearSessionsModal.errorToast', 'Unable to clear sessions.'), 'error');
+        return;
+      }
+      if (teamsSessionId) {
+        resetTeamsSessionData();
+        setTeamsSessionState(null);
+        clearTeamsSessionMapState({ keepGpx: true });
+        closeTeamsSessionActionsModal();
+      }
+      closeFirebaseAdminClearSessionsModal();
+      const clearedMessage = result.count
+        ? t('settings.firebaseAdminClearSessionsModal.cleared', 'All sessions cleared.')
+        : t('settings.firebaseAdminClearSessionsModal.none', 'No sessions to clear.');
+      showToast(clearedMessage);
+      await refreshTeamsLoadSessionList();
+    } finally {
+      firebaseAdminClearSessionsInFlight = false;
+      if (firebaseAdminClearSessionsConfirm) firebaseAdminClearSessionsConfirm.disabled = false;
+      if (firebaseAdminClearSessionsCancel) firebaseAdminClearSessionsCancel.disabled = false;
+      setTeamsLoadSessionBusy(false);
+    }
+  };
+
+  const handleFirebaseAdminClearAnonymousUsersConfirm = async () => {
+    if (firebaseAdminClearAnonymousUsersInFlight) return;
+    firebaseAdminClearAnonymousUsersInFlight = true;
+    if (firebaseAdminClearAnonymousUsersConfirm) firebaseAdminClearAnonymousUsersConfirm.disabled = true;
+    if (firebaseAdminClearAnonymousUsersCancel) firebaseAdminClearAnonymousUsersCancel.disabled = true;
+    setFirebaseAdminClearAnonymousUsersStatus('Deleting anonymous users...', {
+      i18nKey: 'settings.firebaseAdminClearAnonymousUsersModal.deleting'
+    });
+    try {
+      const result = await clearAllAnonymousUsers();
+      if (!result.ok) {
+        const fallback = t('settings.firebaseAdminClearAnonymousUsersModal.error', 'Unable to clear anonymous users. Check Firebase settings.');
+        const message = result.error || fallback;
+        setFirebaseAdminClearAnonymousUsersStatus(message, {
+          i18nKey: result.error ? null : 'settings.firebaseAdminClearAnonymousUsersModal.error'
+        });
+        showToast(result.error || t('settings.firebaseAdminClearAnonymousUsersModal.errorToast', 'Unable to clear anonymous users.'), 'error');
+        return;
+      }
+      closeFirebaseAdminClearAnonymousUsersModal();
+      const clearedMessage = result.deleted
+        ? t('settings.firebaseAdminClearAnonymousUsersModal.cleared', 'Anonymous users cleared.')
+        : t('settings.firebaseAdminClearAnonymousUsersModal.none', 'No anonymous users to clear.');
+      showToast(clearedMessage);
+    } finally {
+      firebaseAdminClearAnonymousUsersInFlight = false;
+      if (firebaseAdminClearAnonymousUsersConfirm) firebaseAdminClearAnonymousUsersConfirm.disabled = false;
+      if (firebaseAdminClearAnonymousUsersCancel) firebaseAdminClearAnonymousUsersCancel.disabled = false;
     }
   };
 
@@ -4622,6 +6300,12 @@
         showToast(t('teams.deleteSessionModal.errorToast', 'Unable to delete session.'), 'error');
         return;
       }
+      if (teamsSessionId === trimmed) {
+        resetTeamsSessionData();
+        setTeamsSessionState(null);
+        clearTeamsSessionMapState({ keepGpx: true });
+        closeTeamsSessionActionsModal();
+      }
       closeTeamsDeleteSessionModal();
       showToast(t('teams.deleteSessionModal.deleted', 'Session deleted.'));
       await refreshTeamsLoadSessionList();
@@ -4637,6 +6321,7 @@
     clearTeamsLoadSessionList();
     if (!entries.length) {
       setTeamsLoadSessionStatus(null);
+      if (teamsResumeSessionInlineStart) teamsResumeSessionInlineStart.hidden = true;
       const emptyWrap = document.createElement('div');
       emptyWrap.className = 'session-empty';
       emptyWrap.setAttribute('role', 'listitem');
@@ -4670,6 +6355,7 @@
       teamsLoadSessionList.appendChild(emptyWrap);
       return;
     }
+    if (teamsResumeSessionInlineStart) teamsResumeSessionInlineStart.hidden = false;
     setTeamsLoadSessionStatus(null);
     const titleFallback = t('teams.sessionTitleFallback', 'Untitled session');
     const idLabel = t('teams.loadSessionModal.idLabel', 'ID');
@@ -4863,12 +6549,13 @@
   const handleTeamsStartSessionSubmit = async (event) => {
     if (event?.preventDefault) event.preventDefault();
     if (teamsStartSessionInFlight || teamsSessionId) return;
-    const title = (teamsStartSessionTitleInput?.value || '').trim();
-    if (!title) {
+    const rawTitle = (teamsStartSessionTitleInput?.value || '').trim();
+    if (!rawTitle) {
       showToast(t('teams.sessionTitleRequired', 'Please enter a session title.'), 'error');
       try { teamsStartSessionTitleInput?.focus(); } catch {}
       return;
     }
+    const title = `${dateYYYYMMDD()} - ${rawTitle}`;
     const coordinates = getSessionCenterCoordinates();
     const sessionId = generateSessionId();
     const payload = buildSessionPayload({ title, coordinates, startDate: new Date(), endDate: null });
@@ -4982,16 +6669,52 @@
     showToast(t('teams.sessionClosed', 'Session closed.'), 'success');
   };
 
-  const buildTeamMemberPayload = (trackerId) => {
+  const buildTeamMemberPayload = (trackerId, authToken) => {
     const resolvedTrackerId = trackerId || '';
     if (!teamsSessionId) return null;
+    if (!authToken) return null;
+    const firebaseConfig = readFirebaseConfigValue();
     return JSON.stringify({
       id: teamsSessionId,
       updateDocumentPath: `/sessions/${teamsSessionId}/trackers/${resolvedTrackerId}`,
       trackerId: resolvedTrackerId,
       mapboxApiKey: readMapboxToken(),
-      firebaseConfig: readFirebaseConfigString()
+      firebaseAuthToken: authToken,
+      firebaseConfig: firebaseConfig ?? null
     });
+  };
+
+  const requestFirebaseAnonymousToken = async () => {
+    if (!window.firebaseAdmin?.createAnonymousToken) {
+      return {
+        ok: false,
+        error: t('settings.firebaseAdminActionsStatus.unavailable', 'Firebase Admin integration is unavailable.'),
+        i18nKey: 'settings.firebaseAdminActionsStatus.unavailable'
+      };
+    }
+    const apiKey = firebaseSettings?.apiKey || '';
+    if (!apiKey) {
+      return {
+        ok: false,
+        error: t('teams.memberModal.tokenError', 'Firebase API key is missing from settings.'),
+        i18nKey: 'teams.memberModal.tokenError'
+      };
+    }
+    try {
+      const result = await window.firebaseAdmin.createAnonymousToken({ sessionDays: 5, apiKey });
+      if (result?.ok && result.token) return { ok: true, token: result.token };
+      return {
+        ok: false,
+        error: result?.error || t('teams.memberModal.tokenError', 'Unable to create a secure access token.'),
+        i18nKey: result?.i18nKey || 'teams.memberModal.tokenError'
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: t('teams.memberModal.tokenError', 'Unable to create a secure access token.'),
+        i18nKey: 'teams.memberModal.tokenError'
+      };
+    }
   };
 
   const ensureTeamTracker = (trackerId, { color } = {}) => {
@@ -5344,7 +7067,6 @@
         const coords = extractCoordsPayload(data || {});
         if (coords) {
           applyTrackerCoordsUpdate(trimmed, coords);
-          void writeTrackerUpdateDocument({ trackerId: trimmed, coords, sessionId, sdkInfo, db });
         }
       };
       const handleError = (err) => {
@@ -5358,7 +7080,7 @@
         scheduleTrackerSubscriptionRetry(trimmed, 'snapshot error');
       };
       if (sdkInfo.type === 'compat') {
-        const docRef = db.doc(`sessions/${teamsSessionId}/trackers/${trimmed}`);
+        const docRef = db.doc(`sessions/${sessionId}/trackers/${trimmed}`);
         unsubscribe = docRef.onSnapshot(handleSnapshot, handleError);
       } else {
         const { doc, onSnapshot } = sdkInfo.sdk || {};
@@ -5371,7 +7093,7 @@
           scheduleTrackerSubscriptionRetry(trimmed, 'modular sdk missing');
           return false;
         }
-        const docRef = doc(db, 'sessions', teamsSessionId, 'trackers', trimmed);
+        const docRef = doc(db, 'sessions', sessionId, 'trackers', trimmed);
         unsubscribe = onSnapshot(docRef, handleSnapshot, handleError);
       }
     } catch (err) {
@@ -5391,13 +7113,40 @@
     teamMemberModal.hidden = true;
     teamMemberModal.setAttribute('aria-hidden', 'true');
     pendingTeamMemberTrackerId = null;
+    teamMemberQrRequestId += 1;
+    teamMemberQrInFlight = false;
+    setTeamMemberModalLoading(false);
+    updateTeamMemberActionsState();
     updateTeamsEmptyState();
   };
 
+  const setTeamMemberModalStatus = (message, { i18nKey = null } = {}) => {
+    if (!teamMemberStatus) return;
+    if (typeof message === 'string') teamMemberStatus.textContent = message;
+    if (i18nKey) {
+      teamMemberStatus.dataset.i18n = i18nKey;
+    } else {
+      teamMemberStatus.dataset.i18n = '';
+    }
+  };
+
+  const setTeamMemberModalLoading = (isLoading) => {
+    if (teamMemberQrLoading) {
+      teamMemberQrLoading.hidden = !isLoading;
+      teamMemberQrLoading.setAttribute('aria-hidden', String(!isLoading));
+    }
+    if (teamMemberQr && isLoading) {
+      teamMemberQr.hidden = true;
+      teamMemberQr.removeAttribute('src');
+    }
+  };
+
   const setTeamMemberModalQr = (payload) => {
-    const qrUrl = generateQrDataUrl(payload, 360, 6);
+    const text = typeof payload === 'string' ? payload : '';
+    const qrUrl = text ? generateQrDataUrl(text, 560, 6) : null;
     if (teamMemberQr) {
       if (qrUrl) {
+        setTeamMemberModalLoading(false);
         teamMemberQr.hidden = false;
         teamMemberQr.src = qrUrl;
       } else {
@@ -5405,7 +7154,6 @@
         teamMemberQr.removeAttribute('src');
       }
     }
-    if (teamMemberStart) teamMemberStart.disabled = !qrUrl;
     if (teamMemberStatus) {
       const key = qrUrl ? 'teams.memberModal.subtitle' : 'teams.memberModal.error';
       teamMemberStatus.dataset.i18n = key;
@@ -5417,26 +7165,15 @@
     return qrUrl;
   };
 
-  const openTeamMemberModal = () => {
+  const openTeamMemberModalForTracker = async (trackerId, { startTracking = false } = {}) => {
     if (!teamMemberModal) return;
     if (!teamsSessionId) {
       showToast(t('teams.noActiveSessionAction', 'Start or resume a session to add team members.'), 'error');
       return;
     }
-    teamMemberModal.hidden = false;
-    teamMemberModal.setAttribute('aria-hidden', 'false');
-    pendingTeamMemberTrackerId = generateTrackerId();
-    const payload = buildTeamMemberPayload(pendingTeamMemberTrackerId);
-    updateTeamsEmptyState();
-    if (teamMemberStart) teamMemberStart.hidden = false;
-    setTeamMemberModalQr(payload);
-    try { teamMemberClose?.focus(); } catch {}
-  };
-
-  const openTeamMemberQrModal = (trackerId) => {
-    if (!teamMemberModal) return;
-    if (!teamsSessionId) {
-      showToast(t('teams.noActiveSessionAction', 'Start or resume a session to add team members.'), 'error');
+    if (teamMemberQrInFlight) return;
+    if (!firebaseAdminCredentialsReady) {
+      showToast(t('teams.addMemberRequiresAdmin', 'Load Firebase Admin credentials to add team members.'), 'error');
       return;
     }
     const resolvedId = String(trackerId || '').trim();
@@ -5445,14 +7182,64 @@
     teamMemberModal.setAttribute('aria-hidden', 'false');
     pendingTeamMemberTrackerId = resolvedId;
     updateTeamsEmptyState();
-    if (teamMemberStart) {
-      teamMemberStart.hidden = true;
-      teamMemberStart.disabled = true;
+    if (teamMemberQr) {
+      teamMemberQr.hidden = true;
+      teamMemberQr.removeAttribute('src');
     }
-    const payload = buildTeamMemberPayload(resolvedId);
-    setTeamMemberModalQr(payload);
-    if (teamMemberStart) teamMemberStart.disabled = true;
+    setTeamMemberModalLoading(true);
+    const requestId = (teamMemberQrRequestId += 1);
+    teamMemberQrInFlight = true;
+    updateTeamMemberActionsState();
+    setTeamMemberModalStatus(t('teams.memberModal.generating', 'Generating secure QR code...'), {
+      i18nKey: 'teams.memberModal.generating'
+    });
     try { teamMemberClose?.focus(); } catch {}
+    let tokenResult = null;
+    try {
+      tokenResult = await requestFirebaseAnonymousToken();
+    } catch (err) {
+      tokenResult = {
+        ok: false,
+        error: t('teams.memberModal.tokenError', 'Unable to create a secure access token.'),
+        i18nKey: 'teams.memberModal.tokenError'
+      };
+    }
+    if (requestId !== teamMemberQrRequestId) return;
+    teamMemberQrInFlight = false;
+    updateTeamMemberActionsState();
+    setTeamMemberModalLoading(false);
+    if (!tokenResult || !tokenResult.ok) {
+      const message = tokenResult?.error || t('teams.memberModal.tokenError', 'Unable to create a secure access token.');
+      setTeamMemberModalStatus(message, { i18nKey: tokenResult?.i18nKey });
+      showToast(message, 'error');
+      if (startTracking) {
+        pendingTeamMemberTrackerId = null;
+        updateTeamsEmptyState();
+      }
+      return;
+    }
+    const payload = buildTeamMemberPayload(resolvedId, tokenResult.token);
+    const qrUrl = setTeamMemberModalQr(payload);
+    if (!qrUrl) {
+      const message = t('teams.memberModal.error', 'Unable to render QR code.');
+      setTeamMemberModalStatus(message, { i18nKey: 'teams.memberModal.error' });
+      showToast(message, 'error');
+      if (startTracking) {
+        pendingTeamMemberTrackerId = null;
+        updateTeamsEmptyState();
+      }
+      return;
+    }
+    if (startTracking) startTrackingFromModal();
+  };
+
+  const openTeamMemberModal = () => {
+    const trackerId = generateTrackerId();
+    void openTeamMemberModalForTracker(trackerId, { startTracking: true });
+  };
+
+  const openTeamMemberQrModal = (trackerId) => {
+    void openTeamMemberModalForTracker(trackerId, { startTracking: false });
   };
 
   const startTrackingFromModal = () => {
@@ -5474,7 +7261,6 @@
     if (started) {
       showToast(t('teams.trackingStarted', 'Tracking started'));
     }
-    closeTeamMemberModal();
   };
 
   function ensureRecordingEntry(tracker) {
@@ -5892,6 +7678,7 @@
     }
     refreshTrackersControlsState();
     updateTeamsEmptyState();
+    updateTeamMemberActionsState();
   }
 
   const trackerColorPalette = ['#ff5722', '#03a9f4', '#8bc34a', '#ffc107', '#9c27b0', '#4caf50', '#00bcd4', '#ff9800'];
@@ -6264,8 +8051,23 @@
         const qrBtn = document.createElement('button');
         qrBtn.type = 'button';
         qrBtn.className = 'tracker-action tracker-qr';
-        qrBtn.title = 'Show QR code';
-        qrBtn.setAttribute('aria-label', `Show QR code for ${displayName}`);
+        const qrTitle = 'Show QR code';
+        const qrAria = `Show QR code for ${displayName}`;
+        qrBtn.title = qrTitle;
+        qrBtn.setAttribute('aria-label', qrAria);
+        qrBtn.dataset.defaultTitle = qrTitle;
+        qrBtn.dataset.defaultAriaLabel = qrAria;
+        const qrDisabled = !firebaseAdminCredentialsReady || teamMemberQrInFlight;
+        if (qrDisabled) {
+          const reason = !firebaseAdminCredentialsReady
+            ? t('teams.addMemberRequiresAdmin', 'Load Firebase Admin credentials to add team members.')
+            : t('teams.memberModal.generating', 'Generating secure QR code...');
+          qrBtn.disabled = true;
+          qrBtn.classList.add('is-disabled');
+          qrBtn.setAttribute('aria-disabled', 'true');
+          qrBtn.title = reason;
+          qrBtn.setAttribute('aria-label', reason);
+        }
         const qrIcon = document.createElement('img');
         qrIcon.src = './assets/icons/regular/qr-code.svg';
         qrIcon.alt = '';
@@ -6821,6 +8623,39 @@
       setTimeout(() => focusTarget?.focus(), 0);
     }
   };
+
+  const setActiveSettingsGroup = (groupId, { focus = false } = {}) => {
+    if (!settingsGroups.length) return;
+    const hasGroup = settingsGroups.some((group) => group.dataset.settingsGroup === groupId);
+    const fallback = settingsGroups.find((group) => !group.hidden)?.dataset.settingsGroup
+      || settingsGroups[0]?.dataset.settingsGroup;
+    const nextGroup = hasGroup ? groupId : fallback;
+    if (!nextGroup) return;
+
+    settingsGroups.forEach((group) => {
+      const isActive = group.dataset.settingsGroup === nextGroup;
+      group.hidden = !isActive;
+      group.classList.toggle('is-active', isActive);
+    });
+
+    settingsGroupButtons.forEach((btn) => {
+      const isActive = btn.dataset.settingsGroup === nextGroup;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
+      if (isActive) {
+        btn.setAttribute('aria-current', 'true');
+        if (focus) {
+          try { btn.focus(); } catch {}
+        }
+      } else {
+        btn.removeAttribute('aria-current');
+      }
+    });
+  };
+  const revealSettingsGroupForElement = (el) => {
+    const group = el?.closest?.('.settings-group')?.dataset?.settingsGroup;
+    if (group) setActiveSettingsGroup(group);
+  };
   
   const updateSettingsSaveState = () => {
     if (settingsSaveBtn) settingsSaveBtn.disabled = !settingsDirty;
@@ -6843,6 +8678,15 @@
     updateSettingsSaveState();
     setSettingsStatus(t('status.unsavedChanges', 'Unsaved changes'));
   };
+  const withSuppressedSettingsEvents = (fn) => {
+    const previous = suppressSettingsEvents;
+    suppressSettingsEvents = true;
+    try {
+      fn();
+    } finally {
+      suppressSettingsEvents = previous;
+    }
+  };
   const parseStartInputs = () => {
     const lat = Number(settingStartLat?.value);
     const lng = Number(settingStartLng?.value);
@@ -6864,6 +8708,12 @@
 
       loadFirebaseSettingsFromStorage({ syncInput: true, warnOnError: true });
       initFirestoreConnection();
+      const storedFirestoreRules = readStoredRules(FIRESTORE_RULES_STORAGE_KEY);
+      if (settingFirestoreRules) settingFirestoreRules.value = storedFirestoreRules !== null ? storedFirestoreRules : '';
+      const storedStorageRules = readStoredRules(STORAGE_RULES_STORAGE_KEY);
+      if (settingStorageRules) settingStorageRules.value = storedStorageRules !== null ? storedStorageRules : '';
+      const storedFunctionsIndex = readStoredRules(FUNCTIONS_INDEX_STORAGE_KEY);
+      if (settingFirebaseFunctionIndex) settingFirebaseFunctionIndex.value = storedFunctionsIndex !== null ? storedFunctionsIndex : '';
 
       const storedStyleUrl = localStorage.getItem('map.streetStyleUrl');
       const legacyStyleUrl = storedStyleUrl === null ? localStorage.getItem('map.styleUrl') : storedStyleUrl;
@@ -6910,6 +8760,8 @@
       settingsDirty = false;
       updateSettingsSaveState();
       setSettingsStatus('');
+      refreshFirebaseAdminStatus();
+      loadDefaultFirebaseRules();
     }
   };
   const gatherSettingsFromForm = () => {
@@ -6920,9 +8772,13 @@
     let satelliteStyleUrl = (settingSatelliteStyleUrl?.value || '').trim();
     let terrainStyleUrl = (settingTerrainStyleUrl?.value || '').trim();
     const firebaseConfigRaw = normalizeLineBreaks(settingFirebaseConfig?.value || '');
+    const firestoreRules = normalizeLineBreaks(settingFirestoreRules?.value || '');
+    const storageRules = normalizeLineBreaks(settingStorageRules?.value || '');
+    const functionsIndex = normalizeLineBreaks(settingFirebaseFunctionIndex?.value || '');
     const parsedFirebase = parseFirebaseSettingsText(firebaseConfigRaw);
     if (parsedFirebase.error) {
       alert(t('alerts.invalidFirebaseConfig', 'Firebase settings must be valid JSON.'));
+      revealSettingsGroupForElement(settingFirebaseConfig);
       settingFirebaseConfig?.focus();
       return null;
     }
@@ -6936,9 +8792,11 @@
       const lng = Number(settingStartLng?.value);
       if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
         alert(t('alerts.invalidLatitude', 'Please enter a valid start latitude.'));
+        revealSettingsGroupForElement(settingStartLat);
         settingStartLat?.focus();
       } else {
         alert(t('alerts.invalidLongitude', 'Please enter a valid start longitude.'));
+        revealSettingsGroupForElement(settingStartLng);
         settingStartLng?.focus();
       }
       return null;
@@ -6947,6 +8805,7 @@
     if (!Number.isFinite(startZoom)) startZoom = DEFAULT_START_ZOOM;
     if (startZoom < 0 || startZoom > 22) {
       alert(t('alerts.invalidZoom', 'Start zoom must be between 0 and 22.'));
+      revealSettingsGroupForElement(settingStartZoom);
       settingStartZoom?.focus();
       return null;
     }
@@ -6967,6 +8826,9 @@
       terrainStyleUrl,
       firebaseConfigRaw: parsedFirebase.raw,
       firebaseConfig: parsedFirebase.value,
+      firestoreRules,
+      storageRules,
+      functionsIndex,
     };
   };
   const applySettings = async () => {
@@ -7030,6 +8892,21 @@
         localStorage.setItem(FIREBASE_SETTINGS_STORAGE_KEY, values.firebaseConfigRaw);
       } else {
         localStorage.removeItem(FIREBASE_SETTINGS_STORAGE_KEY);
+      }
+      if (values.firestoreRules && values.firestoreRules.trim()) {
+        localStorage.setItem(FIRESTORE_RULES_STORAGE_KEY, values.firestoreRules);
+      } else {
+        localStorage.removeItem(FIRESTORE_RULES_STORAGE_KEY);
+      }
+      if (values.storageRules && values.storageRules.trim()) {
+        localStorage.setItem(STORAGE_RULES_STORAGE_KEY, values.storageRules);
+      } else {
+        localStorage.removeItem(STORAGE_RULES_STORAGE_KEY);
+      }
+      if (values.functionsIndex && values.functionsIndex.trim()) {
+        localStorage.setItem(FUNCTIONS_INDEX_STORAGE_KEY, values.functionsIndex);
+      } else {
+        localStorage.removeItem(FUNCTIONS_INDEX_STORAGE_KEY);
       }
       localStorage.setItem('map.streetStyleUrl', values.styleUrl);
       localStorage.setItem('map.styleUrl', values.styleUrl);
@@ -7105,6 +8982,23 @@
 
   loadSettingsForm();
   applyServiceAvailability();
+  setupDeployLogListener();
+  setRulesEditorExpanded(firestoreRulesEditor, firebaseCollapseFirestoreRulesBtn, false);
+  setRulesEditorExpanded(storageRulesEditor, firebaseCollapseStorageRulesBtn, false);
+  setRulesEditorExpanded(functionsRulesEditor, firebaseCollapseFunctionsBtn, false);
+  setRulesEditorExpanded(firebaseConfigEditor, firebaseCollapseConfigBtn, false);
+  if (settingsGroupButtons.length && settingsGroups.length) {
+    settingsGroupButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setActiveSettingsGroup(btn.dataset.settingsGroup, { focus: true });
+      });
+    });
+    const initialGroup = settingsGroupButtons.find((btn) => btn.classList.contains('is-active'))?.dataset.settingsGroup
+      || settingsGroups.find((group) => !group.hidden)?.dataset.settingsGroup
+      || settingsGroupButtons[0]?.dataset.settingsGroup
+      || settingsGroups[0]?.dataset.settingsGroup;
+    setActiveSettingsGroup(initialGroup);
+  }
   if (settingLanguage) {
     settingLanguage.addEventListener('change', () => {
       populateLanguageOptions(settingLanguage.value);
@@ -7129,14 +9023,124 @@
     settingsForm.addEventListener('input', (e) => {
       if (e && e.target === settingsSaveBtn) return;
       markSettingsDirty();
+      if (e?.target === settingFirestoreRules
+        || e?.target === settingStorageRules
+        || e?.target === settingFirebaseFunctionIndex) {
+        if (e.target === settingFirestoreRules) clearRulesStatusError(firebaseFirestoreRulesStatus);
+        if (e.target === settingStorageRules) clearRulesStatusError(firebaseStorageRulesStatus);
+        if (e.target === settingFirebaseFunctionIndex) clearRulesStatusError(firebaseFunctionsStatus);
+        updateFirebaseAdminActionsState();
+      }
     });
     settingsForm.addEventListener('change', (e) => {
       if (e && e.target === settingsSaveBtn) return;
       markSettingsDirty();
+      if (e?.target === settingFirestoreRules
+        || e?.target === settingStorageRules
+        || e?.target === settingFirebaseFunctionIndex) {
+        if (e.target === settingFirestoreRules) clearRulesStatusError(firebaseFirestoreRulesStatus);
+        if (e.target === settingStorageRules) clearRulesStatusError(firebaseStorageRulesStatus);
+        if (e.target === settingFirebaseFunctionIndex) clearRulesStatusError(firebaseFunctionsStatus);
+        updateFirebaseAdminActionsState();
+      }
     });
     settingsForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       await applySettings();
+    });
+  }
+  if (firebaseAdminSelectBtn) {
+    firebaseAdminSelectBtn.addEventListener('click', async () => {
+      if (firebaseAdminFileInput) {
+        firebaseAdminFileInput.value = '';
+        firebaseAdminFileInput.click();
+        return;
+      }
+      if (!window.firebaseAdmin?.selectCredentials) {
+        showToast(t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.'), 'error');
+        return;
+      }
+      setFirebaseAdminStatus(t('status.firebaseAdminSelecting', 'Select a credentials file to continue.'), { i18nKey: 'status.firebaseAdminSelecting' });
+      try {
+        const result = await window.firebaseAdmin.selectCredentials();
+        if (!result || result.cancelled) {
+          setFirebaseAdminStatus(t('status.firebaseAdminSelectionCancelled', 'Selection canceled.'), { i18nKey: 'status.firebaseAdminSelectionCancelled' });
+          return;
+        }
+        if (!result.ok) {
+          const fallback = t('alerts.firebaseAdminInvalid', 'Firebase Admin credentials are invalid.');
+          const message = formatFirebaseAdminError(result, fallback);
+          setFirebaseAdminStatus(message, { isError: true });
+          showToast(message, 'error');
+          return;
+        }
+        setFirebaseAdminStatus(t('status.firebaseAdminSaved', 'Firebase Admin credentials verified and saved.'), { i18nKey: 'status.firebaseAdminSaved' });
+        setFirebaseAdminProject(result.projectId || '');
+        setFirebaseAdminClearButton(true);
+        firebaseAdminCredentialsReady = true;
+        await applyFirebaseConfigFromAdmin();
+        updateFirebaseAdminActionsState();
+      } catch (err) {
+        const fallback = t('alerts.firebaseAdminVerifyFailed', 'Unable to verify Firebase Admin credentials.');
+        setFirebaseAdminStatus(fallback, { isError: true });
+        showToast(fallback, 'error');
+      }
+    });
+  }
+  if (firebaseAdminFileInput) {
+    firebaseAdminFileInput.addEventListener('change', async () => {
+      const file = firebaseAdminFileInput.files?.[0];
+      if (!file) {
+        setFirebaseAdminStatus(t('status.firebaseAdminSelectionCancelled', 'Selection canceled.'), { i18nKey: 'status.firebaseAdminSelectionCancelled' });
+        return;
+      }
+      if (!window.firebaseAdmin?.ingestCredentials) {
+        showToast(t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.'), 'error');
+        return;
+      }
+      setFirebaseAdminStatus(t('status.firebaseAdminSelecting', 'Select a credentials file to continue.'), { i18nKey: 'status.firebaseAdminSelecting' });
+      try {
+        const raw = await file.text();
+        const result = await window.firebaseAdmin.ingestCredentials({ raw, filename: file.name });
+        if (!result || result.cancelled) {
+          setFirebaseAdminStatus(t('status.firebaseAdminSelectionCancelled', 'Selection canceled.'), { i18nKey: 'status.firebaseAdminSelectionCancelled' });
+          return;
+        }
+        if (!result.ok) {
+          const fallback = t('alerts.firebaseAdminInvalid', 'Firebase Admin credentials are invalid.');
+          const message = formatFirebaseAdminError(result, fallback);
+          setFirebaseAdminStatus(message, { isError: true });
+          showToast(message, 'error');
+          return;
+        }
+        setFirebaseAdminStatus(t('status.firebaseAdminSaved', 'Firebase Admin credentials verified and saved.'), { i18nKey: 'status.firebaseAdminSaved' });
+        setFirebaseAdminProject(result.projectId || '');
+        setFirebaseAdminClearButton(true);
+        firebaseAdminCredentialsReady = true;
+        await applyFirebaseConfigFromAdmin();
+        updateFirebaseAdminActionsState();
+      } catch (err) {
+        const fallback = t('alerts.firebaseAdminVerifyFailed', 'Unable to verify Firebase Admin credentials.');
+        setFirebaseAdminStatus(fallback, { isError: true });
+        showToast(fallback, 'error');
+      }
+    });
+  }
+  if (firebaseAdminClearBtn) {
+    firebaseAdminClearBtn.addEventListener('click', async () => {
+      if (!window.firebaseAdmin?.clearCredentials) return;
+      try {
+        await window.firebaseAdmin.clearCredentials();
+        setFirebaseAdminStatus(t('status.firebaseAdminCleared', 'Firebase Admin credentials removed.'), { i18nKey: 'status.firebaseAdminCleared' });
+        setFirebaseAdminProject('');
+        setFirebaseAdminClearButton(false);
+        firebaseAdminCredentialsReady = false;
+        updateFirebaseAdminActionsState();
+      } catch (err) {
+        const fallback = t('alerts.firebaseAdminClearFailed', 'Unable to remove Firebase Admin credentials.');
+        setFirebaseAdminStatus(fallback, { isError: true });
+        showToast(fallback, 'error');
+      }
     });
   }
   // Per-drawing edit state
@@ -7273,11 +9277,11 @@
 
     if (!accessToken) {
       console.warn('No Mapbox access token set. Skipping map init.');
-      if (mapWelcome) mapWelcome.hidden = false;
+      updateWelcomeState();
       return;
     }
 
-    if (mapWelcome) mapWelcome.hidden = true;
+    updateWelcomeState();
 
     (window).mapboxgl.accessToken = accessToken;
     const map = new (window).mapboxgl.Map({
@@ -7328,6 +9332,7 @@
     }
     map.on('load', updateStats);
     map.on('move', updateStats);
+    map.on('zoom', () => applyLabelVisibility(map));
 
     // Pin toggle state
     let mapPinned = false;
@@ -7342,6 +9347,7 @@
       updateTrackerPathSource();
       applyFeaturesVisibility(map);
       applyTrackersVisibility(map);
+      refreshGridOverlay();
       updateMapCursor();
     });
     map.on('style.load', () => {
@@ -7355,9 +9361,15 @@
       updateFeatureLabels();
       if (weatherOverlayActive) scheduleWeatherRefresh();
       if (lastKnownCenter) updateFooterCenterDisplay(lastKnownCenter.lat, lastKnownCenter.lng);
+      refreshGridOverlay();
       updateMapCursor();
     });
     map.on('moveend', () => { if (!mapPinned) updatePlaceFromCenter(); });
+
+    // If the map style loaded before listeners were attached, ensure overlays render.
+    if (activeGridOverlay !== 'none' && typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+      refreshGridOverlay();
+    }
 
     const setPinned = (v) => {
       mapPinned = !!v;
@@ -7746,6 +9758,36 @@
             'text-color': '#000000',
             'text-halo-color': 'transparent',
             'text-halo-width': 0,
+            'text-halo-blur': 0,
+          }
+        });
+      }
+      if (!map.getLayer('draw-labels-polygon-side-length')) {
+        map.addLayer({
+          id: 'draw-labels-polygon-side-length',
+          type: 'symbol',
+          source: 'draw-labels',
+          filter: ['==', ['get', 'labelType'], 'polygon-side-length'],
+          layout: {
+            'visibility': 'none',
+            'symbol-placement': 'line-center',
+            'text-field': ['coalesce', ['get', 'length'], ''],
+            'icon-image': ['case', lineLengthLabelExpr, FEATURE_LABEL_BG_IMAGE_ID, ''],
+            'icon-text-fit': 'both',
+            'icon-text-fit-padding': [3, 6, 3, 6],
+            'text-size': scaleLabelValue(BASE_FEATURE_LABEL_SIZE),
+            'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+            'text-allow-overlap': false,
+            'text-keep-upright': true,
+            'text-rotation-alignment': 'map',
+            'text-max-width': 6,
+            'text-padding': 2,
+            'text-optional': false
+          },
+          paint: {
+            'text-color': '#000000',
+            'text-halo-color': 'transparent',
+            'text-halo-width': 0,
             'text-halo-blur': 0
           }
         });
@@ -8003,6 +10045,7 @@
       }
       return Math.abs(sum)/2;
     };
+    const POLYGON_SIDE_MIN_METERS = 10;
     const fmtLen = (m) => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
     const fmtArea = (a) => a >= 1_000_000 ? `${(a/1_000_000).toFixed(2)} km²` : `${Math.round(a).toLocaleString()} m²`;
     const polygonCentroid = (ring) => {
@@ -8078,6 +10121,24 @@
                 showSize
               }
             });
+            if (showSize) {
+              for (let i = 0; i < ring.length - 1; i++) {
+                const a = ring[i];
+                const b = ring[i + 1];
+                if (!Array.isArray(a) || !Array.isArray(b)) continue;
+                const lenMeters = distMeters(a, b);
+                if (!Number.isFinite(lenMeters) || lenMeters < POLYGON_SIDE_MIN_METERS) continue;
+                labels.push({
+                  type: 'Feature',
+                  geometry: { type: 'LineString', coordinates: [[a[0], a[1]], [b[0], b[1]]] },
+                  properties: {
+                    labelType: 'polygon-side-length',
+                    length: fmtLen(lenMeters),
+                    color
+                  }
+                });
+              }
+            }
             return;
           }
           if (geom?.type === 'LineString' && (kind === 'line' || kind === 'polyline' || kind === 'path' || kind === '')) {
@@ -8375,12 +10436,6 @@
     const onClick = (e) => {
       const tool = (window)._currentTool;
       if (!tool) return;
-      if (tool === 'weather') {
-        if (e?.preventDefault) e.preventDefault();
-        const lngLat = e?.lngLat;
-        if (lngLat) sampleWeatherAtPoint(lngLat);
-        return;
-      }
       if (tool === 'crosshair') {
         if (e?.preventDefault) e.preventDefault();
         const lngLat = e?.lngLat;
@@ -10113,6 +12168,10 @@
     if (target && target.dataset && target.dataset.action === 'close') closeTeamsStartSessionModal();
   });
   teamsResumeSessionClose?.addEventListener('click', closeTeamsResumeSessionModal);
+  teamsResumeSessionStart?.addEventListener('click', () => {
+    closeTeamsResumeSessionModal();
+    openTeamsStartSessionModal();
+  });
   teamsResumeSessionCancel?.addEventListener('click', closeTeamsResumeSessionModal);
   teamsResumeSessionModal?.addEventListener('click', (e) => {
     const target = e.target;
@@ -10133,9 +12192,337 @@
     const target = e.target;
     if (target && target.dataset && target.dataset.action === 'close') closeTeamsDeleteSessionModal();
   });
+  const setRulesButtonDisabled = (btn, disabled) => {
+    if (!btn) return;
+    btn.disabled = disabled;
+    btn.setAttribute('aria-disabled', String(disabled));
+    btn.classList.toggle('is-disabled', !!disabled);
+  };
+  const startFirebaseDeploy = (titleText) => {
+    firebaseDeploySessionId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    openDeployModal(titleText);
+    return firebaseDeploySessionId;
+  };
+  const handleDeployAllFirebase = async () => {
+    if (!window.firebaseAdmin?.deployFirestoreRules
+      || !window.firebaseAdmin?.deployStorageRules
+      || !window.firebaseAdmin?.deployTrackerUpdatesFunction) {
+      const message = t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.');
+      showToast(message, 'error');
+      return;
+    }
+    const firestore = getRulesText(settingFirestoreRules);
+    const storage = getRulesText(settingStorageRules);
+    const functions = getRulesText(settingFirebaseFunctionIndex);
+    if (!firestore.trimmed) {
+      const message = t('alerts.firebaseRulesEmpty', 'Rules content is empty.');
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, message, { isError: true, i18nKey: 'alerts.firebaseRulesEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    if (!storage.trimmed) {
+      const message = t('alerts.firebaseRulesEmpty', 'Rules content is empty.');
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, message, { isError: true, i18nKey: 'alerts.firebaseRulesEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    if (!functions.trimmed) {
+      const message = t('alerts.firebaseFunctionEmpty', 'Function code is empty.');
+      setFirebaseRulesStatus(firebaseFunctionsStatus, message, { isError: true, i18nKey: 'alerts.firebaseFunctionEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    const deployId = startFirebaseDeploy(t('settings.firebaseDeployingTitle', 'Deploying Firebase…'));
+    appendDeployLog('Starting full Firebase deploy.');
+    setRulesButtonDisabled(firebaseDeployFirestoreRulesBtn, true);
+    setRulesButtonDisabled(firebaseDeployStorageRulesBtn, true);
+    setRulesButtonDisabled(firebaseDeployFunctionsBtn, true);
+    if (firebaseDeployAllBtn) setRulesButtonDisabled(firebaseDeployAllBtn, true);
+    try {
+      setFirebaseRulesStatus(
+        firebaseFirestoreRulesStatus,
+        t('status.firebaseRulesDeployingFirestore', 'Deploying Firestore rules...'),
+        { i18nKey: 'status.firebaseRulesDeployingFirestore' }
+      );
+      appendDeployLog('Deploying Firestore rules...');
+      const firestoreResult = await window.firebaseAdmin.deployFirestoreRules({ content: firestore.raw, deployId });
+      if (!firestoreResult?.ok) {
+        const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+        const message = formatFirebaseAdminError(firestoreResult, fallback);
+        setFirebaseRulesStatus(firebaseFirestoreRulesStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(FIRESTORE_RULES_DEPLOY_KEY, firestore.raw);
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, '', { i18nKey: null });
+      firebaseFirestoreRulesStatus?.classList?.add('is-success-icon');
+      appendDeployLog('Firestore rules deployed.');
+
+      setFirebaseRulesStatus(
+        firebaseStorageRulesStatus,
+        t('status.firebaseRulesDeployingStorage', 'Deploying Storage rules...'),
+        { i18nKey: 'status.firebaseRulesDeployingStorage' }
+      );
+      appendDeployLog('Deploying Storage rules...');
+      const bucket = getStorageBucketFromInput();
+      const storageResult = await window.firebaseAdmin.deployStorageRules({ content: storage.raw, bucket, deployId });
+      if (!storageResult?.ok) {
+        const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+        const message = formatFirebaseAdminError(storageResult, fallback);
+        setFirebaseRulesStatus(firebaseStorageRulesStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(STORAGE_RULES_DEPLOY_KEY, storage.raw);
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, '', { i18nKey: null });
+      firebaseStorageRulesStatus?.classList?.add('is-success-icon');
+      appendDeployLog('Storage rules deployed.');
+
+      setFirebaseRulesStatus(
+        firebaseFunctionsStatus,
+        t('status.firebaseFunctionsDeploying', 'Deploying Cloud Function...'),
+        { i18nKey: 'status.firebaseFunctionsDeploying' }
+      );
+      appendDeployLog('Deploying Cloud Function...');
+      const functionsResult = await window.firebaseAdmin.deployTrackerUpdatesFunction({ content: functions.raw, deployId });
+      if (!functionsResult?.ok) {
+        const fallback = t('alerts.firebaseFunctionDeployFailed', 'Unable to deploy function.');
+        const message = formatFirebaseAdminError(functionsResult, fallback);
+        setFirebaseRulesStatus(firebaseFunctionsStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(FUNCTIONS_INDEX_DEPLOY_KEY, functions.raw);
+      setFirebaseRulesStatus(firebaseFunctionsStatus, '', { i18nKey: null });
+      firebaseFunctionsStatus?.classList?.add('is-success-icon');
+      appendDeployLog('Cloud Function deployed.');
+
+      const doneMessage = t('settings.firebaseDeployingDone', 'Firebase deploy complete.');
+      showToast(doneMessage);
+      finishDeployModal(doneMessage);
+    } catch (err) {
+      const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+      showToast(fallback, 'error');
+      appendDeployLog(`Error: ${fallback}`);
+      finishDeployModal(fallback);
+    } finally {
+      updateFirebaseAdminActionsState();
+    }
+  };
+  const handleDeployFirestoreRules = async () => {
+    if (!window.firebaseAdmin?.deployFirestoreRules) {
+      const message = t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.');
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, message, { isError: true });
+      showToast(message, 'error');
+      return;
+    }
+    const { raw, trimmed } = getRulesText(settingFirestoreRules);
+    if (!trimmed) {
+      const message = t('alerts.firebaseRulesEmpty', 'Rules content is empty.');
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, message, { isError: true, i18nKey: 'alerts.firebaseRulesEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    setRulesButtonDisabled(firebaseDeployFirestoreRulesBtn, true);
+    setFirebaseRulesStatus(
+      firebaseFirestoreRulesStatus,
+      t('status.firebaseRulesDeployingFirestore', 'Deploying Firestore rules...'),
+      { i18nKey: 'status.firebaseRulesDeployingFirestore' }
+    );
+    const deployId = startFirebaseDeploy(t('settings.firebaseDeployingTitleFirestore', 'Deploying Firestore rules…'));
+    appendDeployLog('Starting Firestore rules deployment.');
+    try {
+      const result = await window.firebaseAdmin.deployFirestoreRules({ content: raw, deployId });
+      if (!result?.ok) {
+        const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+        const message = formatFirebaseAdminError(result, fallback);
+        setFirebaseRulesStatus(firebaseFirestoreRulesStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(FIRESTORE_RULES_DEPLOY_KEY, raw);
+      const message = t('status.firebaseRulesDeployedFirestore', 'Firestore rules deployed.');
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, '', { i18nKey: null });
+      firebaseFirestoreRulesStatus?.classList?.add('is-success-icon');
+      showToast(message);
+      appendDeployLog('Firestore rules deployment complete.');
+      finishDeployModal(message);
+    } catch (err) {
+      const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+      setFirebaseRulesStatus(firebaseFirestoreRulesStatus, fallback, { isError: true });
+      showToast(fallback, 'error');
+      appendDeployLog(`Error: ${fallback}`);
+      finishDeployModal(fallback);
+    } finally {
+      updateFirebaseAdminActionsState();
+    }
+  };
+  const handleDeployStorageRules = async () => {
+    if (!window.firebaseAdmin?.deployStorageRules) {
+      const message = t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.');
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, message, { isError: true });
+      showToast(message, 'error');
+      return;
+    }
+    const { raw, trimmed } = getRulesText(settingStorageRules);
+    if (!trimmed) {
+      const message = t('alerts.firebaseRulesEmpty', 'Rules content is empty.');
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, message, { isError: true, i18nKey: 'alerts.firebaseRulesEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    setRulesButtonDisabled(firebaseDeployStorageRulesBtn, true);
+    setFirebaseRulesStatus(
+      firebaseStorageRulesStatus,
+      t('status.firebaseRulesDeployingStorage', 'Deploying Storage rules...'),
+      { i18nKey: 'status.firebaseRulesDeployingStorage' }
+    );
+    const deployId = startFirebaseDeploy(t('settings.firebaseDeployingTitleStorage', 'Deploying Storage rules…'));
+    appendDeployLog('Starting Storage rules deployment.');
+    try {
+      const bucket = getStorageBucketFromInput();
+      const result = await window.firebaseAdmin.deployStorageRules({ content: raw, bucket, deployId });
+      if (!result?.ok) {
+        const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+        const message = formatFirebaseAdminError(result, fallback);
+        setFirebaseRulesStatus(firebaseStorageRulesStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(STORAGE_RULES_DEPLOY_KEY, raw);
+      const message = t('status.firebaseRulesDeployedStorage', 'Storage rules deployed.');
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, '', { i18nKey: null });
+      firebaseStorageRulesStatus?.classList?.add('is-success-icon');
+      showToast(message);
+      appendDeployLog('Storage rules deployment complete.');
+      finishDeployModal(message);
+    } catch (err) {
+      const fallback = t('alerts.firebaseRulesDeployFailed', 'Unable to deploy rules.');
+      setFirebaseRulesStatus(firebaseStorageRulesStatus, fallback, { isError: true });
+      showToast(fallback, 'error');
+      appendDeployLog(`Error: ${fallback}`);
+      finishDeployModal(fallback);
+    } finally {
+      updateFirebaseAdminActionsState();
+    }
+  };
+  const handleDeployTrackerUpdatesFunction = async () => {
+    if (!window.firebaseAdmin?.deployTrackerUpdatesFunction) {
+      const message = t('alerts.firebaseAdminUnavailable', 'Firebase Admin integration is not available.');
+      setFirebaseRulesStatus(firebaseFunctionsStatus, message, { isError: true });
+      showToast(message, 'error');
+      return;
+    }
+    const { raw, trimmed } = getRulesText(settingFirebaseFunctionIndex);
+    if (!trimmed) {
+      const message = t('alerts.firebaseFunctionEmpty', 'Function code is empty.');
+      setFirebaseRulesStatus(firebaseFunctionsStatus, message, { isError: true, i18nKey: 'alerts.firebaseFunctionEmpty' });
+      showToast(message, 'error');
+      return;
+    }
+    setRulesButtonDisabled(firebaseDeployFunctionsBtn, true);
+    setFirebaseRulesStatus(
+      firebaseFunctionsStatus,
+      t('status.firebaseFunctionsDeploying', 'Deploying Cloud Function...'),
+      { i18nKey: 'status.firebaseFunctionsDeploying' }
+    );
+    const deployId = startFirebaseDeploy(t('settings.firebaseDeployingTitleFunctions', 'Deploying Cloud Function…'));
+    appendDeployLog('Starting Cloud Function deployment.');
+    try {
+      const result = await window.firebaseAdmin.deployTrackerUpdatesFunction({ content: raw, deployId });
+      if (!result?.ok) {
+        const fallback = t('alerts.firebaseFunctionDeployFailed', 'Unable to deploy function.');
+        const message = formatFirebaseAdminError(result, fallback);
+        setFirebaseRulesStatus(firebaseFunctionsStatus, message, { isError: true });
+        showToast(message, 'error');
+        appendDeployLog(`Error: ${message}`);
+        finishDeployModal(message);
+        return;
+      }
+      storeRulesDeployState(FUNCTIONS_INDEX_DEPLOY_KEY, raw);
+      const message = t('status.firebaseFunctionsDeployed', 'Cloud Function deployed.');
+      setFirebaseRulesStatus(firebaseFunctionsStatus, '', { i18nKey: null });
+      firebaseFunctionsStatus?.classList?.add('is-success-icon');
+      showToast(message);
+      appendDeployLog('Cloud Function deployment complete.');
+      finishDeployModal(message);
+    } catch (err) {
+      const fallback = t('alerts.firebaseFunctionDeployFailed', 'Unable to deploy function.');
+      setFirebaseRulesStatus(firebaseFunctionsStatus, fallback, { isError: true });
+      showToast(fallback, 'error');
+      appendDeployLog(`Error: ${fallback}`);
+      finishDeployModal(fallback);
+    } finally {
+      updateFirebaseAdminActionsState();
+    }
+  };
+  firebaseAdminClearSessionsBtn?.addEventListener('click', () => {
+    if (firebaseAdminClearSessionsBtn.disabled) return;
+    openFirebaseAdminClearSessionsModal();
+  });
+  firebaseAdminClearAnonymousUsersBtn?.addEventListener('click', () => {
+    if (firebaseAdminClearAnonymousUsersBtn.disabled) return;
+    openFirebaseAdminClearAnonymousUsersModal();
+  });
+  firebaseDeployFirestoreRulesBtn?.addEventListener('click', () => {
+    if (firebaseDeployFirestoreRulesBtn.disabled) return;
+    void handleDeployFirestoreRules();
+  });
+  firebaseDeployStorageRulesBtn?.addEventListener('click', () => {
+    if (firebaseDeployStorageRulesBtn.disabled) return;
+    void handleDeployStorageRules();
+  });
+  firebaseDeployFunctionsBtn?.addEventListener('click', () => {
+    if (firebaseDeployFunctionsBtn.disabled) return;
+    void handleDeployTrackerUpdatesFunction();
+  });
+  firebaseDeployAllBtn?.addEventListener('click', () => {
+    if (firebaseDeployAllBtn.disabled) return;
+    void handleDeployAllFirebase();
+  });
+  firebaseCollapseFirestoreRulesBtn?.addEventListener('click', () => {
+    toggleRulesEditor(firestoreRulesEditor, firebaseCollapseFirestoreRulesBtn);
+  });
+  firebaseCollapseStorageRulesBtn?.addEventListener('click', () => {
+    toggleRulesEditor(storageRulesEditor, firebaseCollapseStorageRulesBtn);
+  });
+  firebaseCollapseFunctionsBtn?.addEventListener('click', () => {
+    toggleRulesEditor(functionsRulesEditor, firebaseCollapseFunctionsBtn);
+  });
+  firebaseCollapseConfigBtn?.addEventListener('click', () => {
+    toggleRulesEditor(firebaseConfigEditor, firebaseCollapseConfigBtn);
+  });
+  firebaseAdminClearSessionsClose?.addEventListener('click', closeFirebaseAdminClearSessionsModal);
+  firebaseAdminClearSessionsCancel?.addEventListener('click', closeFirebaseAdminClearSessionsModal);
+  firebaseAdminClearSessionsConfirm?.addEventListener('click', handleFirebaseAdminClearSessionsConfirm);
+  firebaseAdminClearSessionsModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeFirebaseAdminClearSessionsModal();
+  });
+  firebaseAdminClearAnonymousUsersClose?.addEventListener('click', closeFirebaseAdminClearAnonymousUsersModal);
+  firebaseAdminClearAnonymousUsersCancel?.addEventListener('click', closeFirebaseAdminClearAnonymousUsersModal);
+  firebaseAdminClearAnonymousUsersConfirm?.addEventListener('click', handleFirebaseAdminClearAnonymousUsersConfirm);
+  firebaseAdminClearAnonymousUsersModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeFirebaseAdminClearAnonymousUsersModal();
+  });
+  firebaseDeployModalClose?.addEventListener('click', closeDeployModal);
+  firebaseDeployModalDone?.addEventListener('click', closeDeployModal);
+  firebaseDeployModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeDeployModal();
+  });
   teamMemberClose?.addEventListener('click', closeTeamMemberModal);
-  teamMemberDone?.addEventListener('click', closeTeamMemberModal);
-  teamMemberStart?.addEventListener('click', startTrackingFromModal);
   teamMemberModal?.addEventListener('click', (e) => {
     const target = e.target;
     if (target && target.dataset && target.dataset.action === 'close') closeTeamMemberModal();
@@ -10168,13 +12555,20 @@
       try { window.dispatchEvent(new Event('resize')); } catch {}
     }
   }
-  mapWelcomeSettings?.addEventListener('click', () => {
+  const openSettingsTab = () => {
     if (tabSettingsInput) tabSettingsInput.checked = true;
     if (tabMapInput) tabMapInput.checked = false;
     updateTabUI();
     try {
       if (tabSettingsLabel && typeof tabSettingsLabel.focus === 'function') tabSettingsLabel.focus();
     } catch {}
+  };
+  mapWelcomeSettings?.addEventListener('click', openSettingsTab);
+  settingsQuickBtn?.addEventListener('click', openSettingsTab);
+  settingsCloseBtn?.addEventListener('click', () => {
+    if (!tabMapInput) return;
+    tabMapInput.checked = true;
+    tabMapInput.dispatchEvent(new Event('change', { bubbles: true }));
   });
   tabMapInput?.addEventListener('change', () => {
     if (tabMapInput?.checked && settingsDirty) {
@@ -10584,7 +12978,7 @@
       if (previousTool === 'arrow' && tool !== 'arrow') {
         window._cleanupArrowInteraction?.();
       }
-      const all = [toolEdit, toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI, toolWeather, toolCrosshair];
+      const all = [toolEdit, toolRect, toolPoly, toolCircle, toolLine, toolArrow, toolPOI, toolCrosshair];
       all.forEach(btn => btn?.classList.remove('active'));
       // aria-pressed state for buttons
       all.forEach(btn => btn && btn.setAttribute('aria-pressed', String(false)));
@@ -10600,10 +12994,6 @@
           toolPOI?.classList.add('active');
           toolPOI?.setAttribute('aria-pressed', String(true));
           break;
-        case 'weather':
-          toolWeather?.classList.add('active');
-          toolWeather?.setAttribute('aria-pressed', String(true));
-          break;
         case 'crosshair':
           toolCrosshair?.classList.add('active');
           toolCrosshair?.setAttribute('aria-pressed', String(true));
@@ -10615,7 +13005,7 @@
       } else if (previousTool === 'crosshair') {
         setCrosshairMode(false);
       }
-      if (tool && tool !== 'poi' && tool !== 'weather' && tool !== 'crosshair' && tool !== 'team-goto') {
+      if (tool && tool !== 'poi' && tool !== 'crosshair' && tool !== 'team-goto') {
         ensureFeaturesVisible();
       }
       try { (window)._setEditToolActive && (window)._setEditToolActive(tool === 'edit'); } catch {}
@@ -10648,7 +13038,6 @@
       }
     });
     toolPOI?.addEventListener('click', () => setActiveTool((window)._currentTool === 'poi' ? null : 'poi'));
-    toolWeather?.addEventListener('click', () => setActiveTool((window)._currentTool === 'weather' ? null : 'weather'));
     toolCrosshair?.addEventListener('click', () => setActiveTool((window)._currentTool === 'crosshair' ? null : 'crosshair'));
 
     const applyScaleFromDenominator = (scaleValue) => {
@@ -10820,31 +13209,38 @@
         console.warn('drawWeatherMarkersForSnapshot failed', err);
       }
 
-      const targetAspect = 297 / 210;
-      const safeMapHeight = mapHeight || 1;
-      const mapAspect = mapWidth / safeMapHeight;
-      let mapCropWidth = mapWidth;
-      let mapCropHeight = mapHeight;
-      let mapCropX = 0;
-      let mapCropY = 0;
-      if (mapAspect > targetAspect && safeMapHeight > 0) {
-        mapCropWidth = Math.round(safeMapHeight * targetAspect);
-        mapCropWidth = Math.max(1, Math.min(mapCropWidth, mapWidth));
-        mapCropX = Math.round((mapWidth - mapCropWidth) / 2);
-      } else if (mapAspect < targetAspect && mapWidth > 0) {
-        mapCropHeight = Math.round(mapWidth / targetAspect);
-        mapCropHeight = Math.max(1, Math.min(mapCropHeight, mapHeight));
-        mapCropY = Math.round((mapHeight - mapCropHeight) / 2);
-      }
-      const mapRenderWidth = mapCropWidth;
-      const mapRenderHeight = mapCropHeight;
-
       const cssWidth = rect?.width;
       const pxScaleRaw = (cssWidth && cssWidth > 0)
         ? mapWidth / cssWidth
         : (Number.isFinite(dpr) && dpr > 0 ? dpr : 1);
       const pxScale = Math.max(1, pxScaleRaw || 1);
       const sidebarWidthPx = Math.max(1, Math.round(300 * pxScale));
+      const targetAspect = 297 / 210;
+      let mapCropWidth = mapWidth;
+      let mapCropHeight = mapHeight;
+      let mapCropX = 0;
+      let mapCropY = 0;
+
+      // Crop the map so the final export (map + sidebar) matches A4 landscape.
+      if (mapHeight > 0 && mapWidth > 0) {
+        let desiredMapWidth = Math.round(targetAspect * mapHeight - sidebarWidthPx);
+        if (desiredMapWidth > 0 && desiredMapWidth <= mapWidth) {
+          mapCropWidth = desiredMapWidth;
+          mapCropX = Math.round((mapWidth - mapCropWidth) / 2);
+        } else {
+          let desiredMapHeight = Math.round((mapWidth + sidebarWidthPx) / targetAspect);
+          desiredMapHeight = Math.max(1, Math.min(desiredMapHeight, mapHeight));
+          mapCropHeight = desiredMapHeight;
+          mapCropY = Math.round((mapHeight - mapCropHeight) / 2);
+          const fallbackWidth = Math.round(targetAspect * mapCropHeight - sidebarWidthPx);
+          if (fallbackWidth > 0 && fallbackWidth < mapCropWidth) {
+            mapCropWidth = fallbackWidth;
+            mapCropX = Math.round((mapWidth - mapCropWidth) / 2);
+          }
+        }
+      }
+      const mapRenderWidth = mapCropWidth;
+      const mapRenderHeight = mapCropHeight;
 
       const exportCanvas = document.createElement('canvas');
       exportCanvas.width = mapRenderWidth + sidebarWidthPx;
@@ -11242,6 +13638,20 @@
       };
     };
 
+    const showExportLoading = (labelKey, fallback) => {
+      if (!exportLoadingModal) return;
+      if (exportLoadingText) {
+        exportLoadingText.textContent = t(labelKey, fallback);
+      }
+      exportLoadingModal.hidden = false;
+    };
+
+    const hideExportLoading = () => {
+      if (exportLoadingModal) exportLoadingModal.hidden = true;
+    };
+
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
     const handleSaveMapSnapshot = async () => {
       if (!toolPrint || toolPrint.disabled) return;
       toolPrint.disabled = true;
@@ -11251,7 +13661,11 @@
           showToast(t('alerts.mapNotReady', 'Map is not ready yet.'), 'error', 2200);
           return;
         }
-        const snapshot = await captureMapSnapshot();
+        showExportLoading('export.loadingSnapshot', 'Preparing snapshot export...');
+        const [snapshot] = await Promise.all([
+          captureMapSnapshot(),
+          wait(1200)
+        ]);
         if (!snapshot?.dataUrl) {
           showToast(t('alerts.snapshotUnavailable', 'Snapshot export is not available.'), 'error', 2600);
           return;
@@ -11279,11 +13693,66 @@
         console.error('handleSaveMapSnapshot failed', err);
         showToast(t('alerts.snapshotFailed', 'Failed to save map snapshot.'), 'error', 2600);
       } finally {
+        hideExportLoading();
         toolPrint.disabled = false;
       }
     };
 
     toolPrint?.addEventListener('click', handleSaveMapSnapshot);
+
+    const handleExportMapPdf = async () => {
+      if (!toolExportPdf || toolExportPdf.disabled) return;
+      toolExportPdf.disabled = true;
+      try {
+        const map = getMap();
+        if (!map) {
+          showToast(t('alerts.mapNotReady', 'Map is not ready yet.'), 'error', 2200);
+          return;
+        }
+        showExportLoading('export.loadingPdf', 'Preparing PDF export...');
+        const [snapshot] = await Promise.all([
+          captureMapSnapshot(),
+          wait(1200)
+        ]);
+        if (!snapshot?.dataUrl) {
+          showToast(t('alerts.pdfUnavailable', 'PDF export is not available.'), 'error', 2600);
+          return;
+        }
+        if (!window.mapTools || typeof window.mapTools.saveMapPdf !== 'function') {
+          showToast(t('alerts.pdfUnavailable', 'PDF export is not available.'), 'error', 2400);
+          return;
+        }
+        const defaultPdfName = typeof snapshot.defaultFileName === 'string'
+          ? snapshot.defaultFileName.replace(/\.png$/i, '.pdf')
+          : `map-snapshot-${new Date().toISOString().replace(/[:]/g, '').replace(/\..+/, '')}.pdf`;
+        const result = await window.mapTools.saveMapPdf({
+          ...snapshot,
+          defaultFileName: defaultPdfName
+        });
+        if (!result) {
+          showToast(t('alerts.pdfFailed', 'Failed to export map PDF.'), 'error', 2600);
+          return;
+        }
+        if (result.ok) {
+          showToast(t('alerts.pdfSuccess', 'Map PDF exported.'), 'success', 2000);
+        } else if (result.canceled) {
+          showToast(t('alerts.pdfCancelled', 'Export cancelled.'), 'error', 2000);
+        } else {
+          const message = typeof result.error === 'string' && result.error.trim()
+            ? result.error
+            : t('alerts.pdfFailed', 'Failed to export map PDF.');
+          showToast(message, 'error', 2600);
+        }
+      } catch (err) {
+        console.error('handleExportMapPdf failed', err);
+        showToast(t('alerts.pdfFailed', 'Failed to export map PDF.'), 'error', 2600);
+      } finally {
+        hideExportLoading();
+        toolExportPdf.disabled = false;
+      }
+    };
+
+    toolExportPdf?.addEventListener('click', handleExportMapPdf);
 
     // Legacy prompt search removed; using modal + Places API (New) instead
     // Search modal open
@@ -11514,7 +13983,6 @@
         case '4': toggleToolShortcut('line'); event.preventDefault(); return;
         case '5': toggleToolShortcut('arrow'); event.preventDefault(); return;
         case '6': toggleToolShortcut('poi'); event.preventDefault(); return;
-        case '7': toggleToolShortcut('weather'); event.preventDefault(); return;
         case '8': toggleToolShortcut('crosshair'); event.preventDefault(); return;
         case '9':
           openScaleDialog();
@@ -11565,6 +14033,11 @@
         case 'T':
         case 't':
           toggleTrackersSidebarViaShortcut();
+          event.preventDefault();
+          return;
+        case 'G':
+        case 'g':
+          cycleGridOverlay();
           event.preventDefault();
           return;
         case 'C':
@@ -11729,6 +14202,14 @@
       closeTeamsSessionActionsModal();
       return true;
     }
+    if (firebaseAdminClearSessionsModal && firebaseAdminClearSessionsModal.hidden === false) {
+      closeFirebaseAdminClearSessionsModal();
+      return true;
+    }
+    if (firebaseAdminClearAnonymousUsersModal && firebaseAdminClearAnonymousUsersModal.hidden === false) {
+      closeFirebaseAdminClearAnonymousUsersModal();
+      return true;
+    }
     if (searchModal && searchModal.hidden === false) {
       closeSearchModal();
       return true;
@@ -11755,6 +14236,10 @@
       return;
     try { (window).setActiveTool && (window).setActiveTool(null); } catch {}
     try { (window).abortActiveTool && (window).abortActiveTool(); } catch {}
+    try {
+      const m = getMap();
+      if (m) m.easeTo({ bearing: 0, pitch: 0, duration: 350 });
+    } catch {}
   });
 
   // --- Edit vertices interactions ---

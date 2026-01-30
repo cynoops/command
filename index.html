@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com https://firestore.googleapis.com; worker-src 'self' blob:;"
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://api.mapbox.com; img-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://maps.gstatic.com https://maps.gstatic.com/*; font-src 'self' data: https://api.mapbox.com; script-src 'self'; connect-src 'self' data: blob: https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://maps.googleapis.com https://places.googleapis.com https://geocoding.googleapis.com https://weather.googleapis.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com; worker-src 'self' blob:;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Command - CYNOOPS</title>
@@ -19,79 +19,81 @@
 
     <!-- Header -->
     <header class="app-header">
-      <nav class="main-menu" role="tablist" aria-label="Main view">
-        <label class="tab" for="tab-map" role="tab" aria-controls="view-map" aria-selected="true">MAP</label>
-        <label class="tab" for="tab-settings" role="tab" aria-controls="view-settings" aria-selected="false">Settings</label>
-      </nav>
-
       <div class="app-toolbar" role="toolbar" aria-label="Map tools">
-        <button id="toolSearch" class="tool-btn" title="Search address" aria-pressed="false" data-tooltip="Search address">
-          <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolGoTo" class="tool-btn" title="Go to coordinates" aria-pressed="false" data-tooltip="Go to coordinates">
-          <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
-        </button>
-        <!-- View controls -->
-        <button id="toolZoomIn" class="tool-btn" title="Zoom in" data-tooltip="Zoom in">
-          <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolZoomOut" class="tool-btn" title="Zoom out" data-tooltip="Zoom out">
-          <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolResetView" class="tool-btn" title="Reset bearing & pitch" data-tooltip="Reset bearing & pitch">
-          <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolPin" class="tool-btn" title="Pin/unpin map" aria-pressed="false" data-tooltip="Pin/unpin map">
-          <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
-        </button>
-        <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolEdit" class="tool-btn" title="Edit features" aria-pressed="false" data-tooltip="Edit features">
-          <img class="icon" src="./assets/icons/regular/arrows-out-cardinal.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolRect" class="tool-btn" title="Draw rectangle" aria-pressed="false" data-tooltip="Draw rectangle">
-          <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolPoly" class="tool-btn" title="Draw polygon" aria-pressed="false" data-tooltip="Draw polygon">
-          <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolCircle" class="tool-btn" title="Draw circle" aria-pressed="false" data-tooltip="Draw circle">
-          <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolLine" class="tool-btn" title="Draw polyline" aria-pressed="false" data-tooltip="Draw polyline">
-          <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolArrow" class="tool-btn" title="Draw arrow" aria-pressed="false" data-tooltip="Draw arrow">
-          <img class="icon" src="./assets/icons/regular/arrow-fat-line-right.svg" alt="" aria-hidden="true" />
-        </button>
-        <!-- POI button sits next to Line -->
-        <button id="toolPOI" class="tool-btn" title="Add POI" aria-pressed="false" data-tooltip="Add POI">
-          <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
-        </button>
-        <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolWeather" class="tool-btn" title="Sample weather" aria-pressed="false" data-tooltip="Sample weather">
-          <img class="icon" src="./assets/icons/regular/cloud.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolCrosshair" class="tool-btn" title="Show coordinates" aria-pressed="false" data-tooltip="Show coordinates">
-          <img class="icon" src="./assets/icons/regular/crosshair.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolSetScale" class="tool-btn" title="Set scale" aria-pressed="false" data-tooltip="Set scale">
-          <img class="icon" src="./assets/icons/regular/ruler.svg" alt="" aria-hidden="true" />
-        </button>
-        <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolLabelIncrease" class="tool-btn" title="Increase label & symbol size" aria-pressed="false" data-tooltip="Increase label & symbol size">
-          <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
-        </button>
-        <button id="toolLabelDecrease" class="tool-btn" title="Decrease label & symbol size" aria-pressed="false" data-tooltip="Decrease label & symbol size">
-          <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
-        </button>
-        <div class="tool-divider" aria-hidden="true"></div>
-        <button id="toolPrint" class="tool-btn" title="Save snapshot" aria-pressed="false" data-tooltip="Save snapshot">
-          <img class="icon" src="./assets/icons/regular/printer.svg" alt="" aria-hidden="true" />
-        </button>
-        <div class="tool-spacer"></div>
-        <button id="toolShortcuts" class="tool-btn" title="Keyboard shortcuts" data-tooltip="Keyboard shortcuts">
-          <img class="icon" src="./assets/icons/regular/keyboard.svg" alt="" aria-hidden="true" />
-        </button>
+        <div class="tool-group tool-group--nav" data-label="NAV">
+          <!-- View controls -->
+          <button id="toolZoomIn" class="tool-btn" data-tooltip="Zoom in">
+            <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolZoomOut" class="tool-btn" data-tooltip="Zoom out">
+            <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolResetView" class="tool-btn" data-tooltip="Reset bearing & pitch">
+            <img class="icon" src="./assets/icons/regular/compass.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolPin" class="tool-btn" aria-pressed="false" data-tooltip="Pin/unpin map">
+            <img class="icon" src="./assets/icons/regular/lock.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="tool-group tool-group--draw" data-label="DRAW">
+          <button id="toolEdit" class="tool-btn" aria-pressed="false" data-tooltip="Edit features">
+            <img class="icon" src="./assets/icons/regular/arrows-out-cardinal.svg" alt="" aria-hidden="true" />
+          </button>
+          <span class="tool-spacer" aria-hidden="true"></span>
+          <button id="toolRect" class="tool-btn" aria-pressed="false" data-tooltip="Draw rectangle">
+            <img class="icon" src="./assets/icons/regular/bounding-box.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolPoly" class="tool-btn" aria-pressed="false" data-tooltip="Draw polygon">
+            <img class="icon" src="./assets/icons/regular/polygon.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolCircle" class="tool-btn" aria-pressed="false" data-tooltip="Draw circle">
+            <img class="icon" src="./assets/icons/regular/circle.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolLine" class="tool-btn" aria-pressed="false" data-tooltip="Draw polyline">
+            <img class="icon" src="./assets/icons/regular/line-segments.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolArrow" class="tool-btn" aria-pressed="false" data-tooltip="Draw arrow">
+            <img class="icon" src="./assets/icons/regular/arrow-fat-line-right.svg" alt="" aria-hidden="true" />
+          </button>
+          <!-- POI button sits next to Line -->
+          <button id="toolPOI" class="tool-btn" aria-pressed="false" data-tooltip="Add POI">
+            <img class="icon" src="./assets/icons/regular/map-pin-plus.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="tool-group tool-group--utility" data-label="UTILITY">
+          <button id="toolSearch" class="tool-btn" aria-pressed="false" data-tooltip="Search address">
+            <img class="icon" src="./assets/icons/regular/magnifying-glass.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolGoTo" class="tool-btn" aria-pressed="false" data-tooltip="Go to coordinates">
+            <img class="icon" src="./assets/icons/regular/map-pin-line.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolCrosshair" class="tool-btn" aria-pressed="false" data-tooltip="Show coordinates">
+            <img class="icon" src="./assets/icons/regular/crosshair.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolSetScale" class="tool-btn" aria-pressed="false" data-tooltip="Set scale">
+            <img class="icon" src="./assets/icons/regular/ruler.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="tool-group tool-group--overlays" data-label="OVERLAYS">
+          <label class="visually-hidden" for="overlaySelect" data-i18n="map.overlays.label">Overlays</label>
+          <div class="tool-select-wrap">
+            <img class="tool-select-icon" src="./assets/icons/regular/grid-nine.svg" alt="" aria-hidden="true" />
+            <select id="overlaySelect" class="tool-select" aria-label="Overlays" data-i18n-aria-label="map.overlays.label">
+              <option value="none" data-i18n="map.overlays.none">None</option>
+              <option value="utm" data-i18n="map.overlays.utm">UTM Grid</option>
+              <option value="gcs" data-i18n="map.overlays.gcs">GCS Grid</option>
+            </select>
+            <img class="tool-select-caret" src="./assets/icons/regular/caret-down.svg" alt="" aria-hidden="true" />
+          </div>
+        </div>
+        <div class="tool-group tool-group--export" data-label="EXPORT">
+          <button id="toolPrint" class="tool-btn" aria-pressed="false" data-tooltip="Save snapshot">
+            <img class="icon" src="./assets/icons/regular/file-image.svg" alt="" aria-hidden="true" />
+          </button>
+          <button id="toolExportPdf" class="tool-btn" aria-pressed="false" data-tooltip="Export PDF">
+            <img class="icon" src="./assets/icons/regular/file-pdf.svg" alt="" aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <dialog id="scaleDialog" class="scale-dialog" aria-labelledby="scaleDialogTitle">
@@ -118,8 +120,11 @@
       </dialog>
 
       <div class="actions">
+        <button id="settingsQuickBtn" class="btn-icon action-icon" type="button" title="Settings" aria-label="Settings" data-tooltip="Settings" data-i18n-title="nav.settings" data-i18n-aria-label="nav.settings">
+          <img class="icon" src="./assets/icons/regular/gear.svg" alt="" aria-hidden="true" />
+        </button>
         <div class="lang-dropdown" id="languageDropdown">
-          <button class="btn-icon" id="languageToggle" type="button" aria-haspopup="true" aria-expanded="false" title="Change language" aria-label="Change language">
+          <button class="btn-icon" id="languageToggle" type="button" aria-haspopup="true" aria-expanded="false" title="Change language" aria-label="Change language" data-tooltip="Change language">
             <img class="icon" src="./assets/icons/regular/globe.svg" alt="" aria-hidden="true" />
           </button>
           <div class="lang-menu" id="languageMenu" role="menu" hidden>
@@ -130,7 +135,10 @@
           <button class="lang-menu-item" type="button" role="menuitem" data-lang="it">Italiano</button>
           </div>
         </div>
-        <button id="fullscreenBtn" class="action-btn" title="Toggle full screen" aria-label="Toggle full screen">
+        <button id="toolShortcuts" class="btn-icon action-icon" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-tooltip="Keyboard shortcuts">
+          <img class="icon" src="./assets/icons/regular/keyboard.svg" alt="" aria-hidden="true" />
+        </button>
+        <button id="fullscreenBtn" class="btn-icon action-icon" title="Toggle full screen" aria-label="Toggle full screen" data-tooltip="Toggle full screen">
           <img class="icon" src="./assets/icons/regular/corners-out.svg" alt="" aria-hidden="true" />
         </button>
       </div>
@@ -161,6 +169,8 @@
           </div>
         </div>
         <div id="map" class="map-container" aria-label="Interactive map">
+          <div id="mapWindOverlay" class="map-wind-overlay" aria-hidden="true" hidden></div>
+          <div id="mapRainOverlay" class="map-rain-overlay" aria-hidden="true" hidden></div>
           <!-- Crosshair overlay (placed inside container so it's always centered) -->
           <div id="mapCrosshair" class="map-crosshair" aria-hidden="false"></div>
         </div>
@@ -209,6 +219,20 @@
                 <span class="visually-hidden">Toggle satellite map style</span>
               </button>
             </div>
+          </div>
+        </div>
+        <div class="map-bottom-center">
+          <div id="mapWindIndicator" class="map-wind-indicator" aria-live="polite" aria-hidden="true" hidden>
+            <img class="map-wind-indicator__arrow" src="./assets/icons/regular/arrow-up.svg" alt="" aria-hidden="true" />
+            <span class="map-wind-indicator__label">Wind</span>
+          </div>
+          <div class="map-label-scale" aria-label="Label size controls">
+            <button id="toolLabelIncrease" class="tool-btn" aria-pressed="false" data-tooltip="Increase label & symbol size">
+              <img class="icon" src="./assets/icons/regular/plus.svg" alt="" aria-hidden="true" />
+            </button>
+            <button id="toolLabelDecrease" class="tool-btn" aria-pressed="false" data-tooltip="Decrease label & symbol size">
+              <img class="icon" src="./assets/icons/regular/minus.svg" alt="" aria-hidden="true" />
+            </button>
           </div>
         </div>
         <!-- Location inputs panel removed -->
@@ -280,99 +304,229 @@
       <!-- SETTINGS VIEW -->
       <section id="view-settings" class="view view-settings" role="tabpanel" aria-labelledby="tab-settings">
         <div class="panel settings-panel">
-          <h2>Settings</h2>
-          <form id="settingsForm" class="settings-form">
-            <div class="settings-group">
-              <h3>General</h3>
-              <div class="settings-fields">
-                <label class="field">
-                  <span class="label">App Language</span>
-                  <select id="settingLanguage" autocomplete="off">
-                    <option value="en">English</option>
-                    <option value="de">German</option>
-                    <option value="fr">French</option>
-                    <option value="es">Spanish</option>
-                    <option value="it">Italian</option>
-                  </select>
-                </label>
+          <div class="settings-header">
+            <h2 data-i18n="settings.title">Settings</h2>
+          </div>
+          <div class="settings-layout">
+            <aside class="settings-sidebar" aria-label="Categories" data-i18n-aria-label="settings.groupsTitle">
+              <span class="settings-nav-title" data-i18n="settings.groupsTitle">Categories</span>
+              <div class="settings-nav">
+                <button id="settings-group-btn-general" class="settings-nav-item is-active" type="button" data-settings-group="general" aria-pressed="true" aria-controls="settings-group-general" data-i18n="settings.section.general">General</button>
+                <button id="settings-group-btn-api" class="settings-nav-item" type="button" data-settings-group="api-keys" aria-pressed="false" aria-controls="settings-group-api-keys" data-i18n="settings.section.apiKeys">API Keys</button>
+                <button id="settings-group-btn-firebase" class="settings-nav-item" type="button" data-settings-group="firebase" aria-pressed="false" aria-controls="settings-group-firebase" data-i18n="settings.section.firebase">Firebase</button>
+                <button id="settings-group-btn-map" class="settings-nav-item" type="button" data-settings-group="map" aria-pressed="false" aria-controls="settings-group-map" data-i18n="settings.section.map">Map Settings</button>
               </div>
-            </div>
+            </aside>
+            <div class="settings-content">
+              <form id="settingsForm" class="settings-form">
+                <div class="settings-group is-active" data-settings-group="general" id="settings-group-general" role="region" aria-labelledby="settings-group-general-title">
+                  <h3 id="settings-group-general-title" data-i18n="settings.section.general">General</h3>
+                  <div class="settings-fields">
+                    <label class="field">
+                      <span class="label">App Language</span>
+                      <select id="settingLanguage" autocomplete="off">
+                        <option value="en">English</option>
+                        <option value="de">German</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="it">Italian</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
 
-            <div class="settings-group">
-              <h3>API Keys</h3>
-              <div class="settings-fields">
-                <label class="field">
-                  <span class="label label-with-help">Mapbox Access Token
-                    <button type="button" class="label-help" aria-label="Where to find your Mapbox access token" data-tooltip="Sign in at mapbox.com, open your account dashboard, and copy a public access token.">info</button>
-                  </span>
-                  <input id="settingAccessToken" type="password" autocomplete="off" placeholder="pk.•••" />
-                </label>
-                <label class="field">
-                  <span class="label label-with-help">Google Maps API Key
-                    <button type="button" class="label-help" aria-label="How to get a Google Maps API key" data-tooltip="Use the Google Cloud Console to create a project, enable Maps JavaScript & Places APIs, then create an API key under Credentials.">info</button>
-                  </span>
-                  <input id="settingGoogleKey" type="password" autocomplete="off" placeholder="AIza•••" />
-                </label>
-                <label class="field">
-                  <span class="label label-with-help">OpenAI API Key
-                    <button type="button" class="label-help" aria-label="How to get an OpenAI API key" data-tooltip="Go to platform.openai.com/account/api-keys, create a new secret key, and paste it here.">info</button>
-                  </span>
-                  <input id="settingOpenAIKey" type="password" autocomplete="off" placeholder="sk-•••" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.firebaseConfig">Firebase Settings (JSON)</span>
-                  <textarea id="settingFirebaseConfig" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'></textarea>
-                </label>
-              </div>
-            </div>
+                <div class="settings-group" data-settings-group="api-keys" id="settings-group-api-keys" role="region" aria-labelledby="settings-group-api-keys-title" hidden>
+                  <h3 id="settings-group-api-keys-title" data-i18n="settings.section.apiKeys">API Keys</h3>
+                  <div class="settings-fields">
+                    <label class="field">
+                      <span class="label label-with-help">Mapbox Access Token
+                        <button type="button" class="label-help" aria-label="Where to find your Mapbox access token" data-tooltip="Sign in at mapbox.com, open your account dashboard, and copy a public access token.">info</button>
+                      </span>
+                      <input id="settingAccessToken" type="password" autocomplete="off" placeholder="pk.•••" />
+                    </label>
+                    <label class="field">
+                      <span class="label label-with-help">Google Maps API Key
+                        <button type="button" class="label-help" aria-label="How to get a Google Maps API key" data-tooltip="Use the Google Cloud Console to create a project, enable Maps JavaScript & Places APIs, then create an API key under Credentials.">info</button>
+                      </span>
+                      <input id="settingGoogleKey" type="password" autocomplete="off" placeholder="AIza•••" />
+                    </label>
+                    <label class="field">
+                      <span class="label label-with-help">OpenAI API Key
+                        <button type="button" class="label-help" aria-label="How to get an OpenAI API key" data-tooltip="Go to platform.openai.com/account/api-keys, create a new secret key, and paste it here.">info</button>
+                      </span>
+                      <input id="settingOpenAIKey" type="password" autocomplete="off" placeholder="sk-•••" />
+                    </label>
+                  </div>
+                </div>
 
-            <div class="settings-group">
-              <h3 data-i18n="settings.section.map">Map Settings</h3>
-              <div class="settings-fields">
-                <label class="field">
-                  <span class="label" data-i18n="settings.streetStyleUrl">Street Map Style URL</span>
-                  <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.satelliteStyleUrl">Satellite Map Style URL</span>
-                  <input id="settingSatelliteStyleUrl" type="text" placeholder="mapbox://styles/mapbox/standard-satellite" value="mapbox://styles/mapbox/standard-satellite" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.terrainStyleUrl">Terrain Map Style URL</span>
-                  <input id="settingTerrainStyleUrl" type="text" placeholder="mapbox://styles/mapbox/outdoors-v12" value="mapbox://styles/mapbox/outdoors-v12" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.homeAddress">Home Address</span>
-                  <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.startLatitude">Start Latitude</span>
-                  <input id="settingStartLat" type="number" step="0.000001" min="-90" max="90" placeholder="49.610000" value="49.610000" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.startLongitude">Start Longitude</span>
-                  <input id="settingStartLng" type="number" step="0.000001" min="-180" max="180" placeholder="6.130000" value="6.130000" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.startZoom">Start Zoom</span>
-                  <input id="settingStartZoom" type="number" min="0" max="22" step="0.1" value="12" />
-                </label>
-                <label class="field">
-                  <span class="label" data-i18n="settings.coordinateSystem">Coordinate System</span>
-                  <select id="settingCoordinateSystem">
-                    <option value="latlng" data-i18n="settings.coord.latlng">Lat/Long</option>
-                    <option value="utm" data-i18n="settings.coord.utm">UTM</option>
-                    <option value="gk" data-i18n="settings.coord.gk">GK</option>
-                  </select>
-                </label>
-              </div>
-            </div>
+                <div class="settings-group" data-settings-group="firebase" id="settings-group-firebase" role="region" aria-labelledby="settings-group-firebase-title" hidden>
+                  <h3 id="settings-group-firebase-title" data-i18n="settings.section.firebase">Firebase</h3>
+                  <div class="settings-fields">
+                    <label class="field firebase-panel firebase-admin-credentials">
+                      <div class="firebase-admin-header">
+                        <div class="firebase-admin-title">
+                          <span id="firebaseAdminLabelText" data-i18n="settings.firebaseAdminCredentials">Firebase Admin Credentials (JSON)</span>
+                          <span class="firebase-admin-badge">Service account</span>
+                        </div>
+                      </div>
+                      <div class="firebase-admin-body">
+                        <div class="firebase-admin-row">
+                          <button id="firebaseAdminSelectBtn" class="btn" type="button" data-i18n="settings.firebaseAdminSelect">Select JSON</button>
+                          <button id="firebaseAdminClearBtn" class="btn" type="button" data-i18n="settings.firebaseAdminClear" hidden>Remove</button>
+                        </div>
+                        <input id="firebaseAdminFileInput" type="file" accept="application/json,.json" hidden />
+                        <div class="firebase-admin-row firebase-admin-meta-row">
+                          <div class="firebase-admin-meta">
+                            <span id="firebaseAdminStatus" class="firebase-admin-status" data-i18n="settings.firebaseAdminStatus.empty">No Firebase Admin credentials loaded.</span>
+                            <span id="firebaseAdminProject" class="firebase-admin-project" hidden></span>
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                    <div class="firebase-admin-actions firebase-panel">
+                      <div class="firebase-admin-actions-title" data-i18n="settings.firebaseAdminActionsTitle">Firebase Admin Actions</div>
+                      <div class="firebase-admin-actions-hint muted" data-i18n="settings.firebaseAdminActionsHint">These actions modify Firestore data for all sessions.</div>
+                      <div class="firebase-admin-actions-row">
+                        <button id="firebaseDeployAllBtn" class="btn btn-primary" type="button" data-i18n="settings.firebaseDeployAll">Deploy all Firebase</button>
+                      </div>
+                      <div class="firebase-admin-actions-row firebase-admin-actions-danger">
+                        <button id="firebaseAdminClearSessionsBtn" class="btn btn-danger" type="button" data-i18n="settings.firebaseAdminClearSessions">Clear all sessions</button>
+                        <button id="firebaseAdminClearAnonymousUsersBtn" class="btn btn-danger" type="button" data-i18n="settings.firebaseAdminClearAnonymousUsers">Clear anonymous users</button>
+                      </div>
+                      <div id="firebaseAdminActionsStatus" class="firebase-admin-actions-status muted" data-i18n="settings.firebaseAdminActionsStatus.needsAdmin">Requires Firebase Admin credentials.</div>
+                    </div>
+                    <div class="firebase-rules firebase-panel">
+                      <div class="firebase-panel-header">
+                        <div>
+                          <div class="firebase-rules-title" data-i18n="settings.firebaseRulesTitle">Firebase Rules</div>
+                          <div class="firebase-rules-hint muted" data-i18n="settings.firebaseRulesHint">Edit and deploy Firestore rules.</div>
+                        </div>
+                        <div id="firebaseFirestoreRulesStatus" class="firebase-rules-status muted" role="status" aria-live="polite"></div>
+                      </div>
+                      <div class="field rules-editor" id="firestoreRulesEditor">
+                        <div class="rules-editor-header">
+                          <span id="firestoreRulesLabel" class="label" data-i18n="settings.firebaseFirestoreRules">firestore.rules</span>
+                          <button id="firebaseCollapseFirestoreRulesBtn" class="btn btn-tertiary btn-small rules-toggle-btn" type="button" aria-label="Collapse editor" data-i18n-aria-label="settings.firebaseRulesCollapseLabel">▴</button>
+                        </div>
+                        <div class="rules-editor-row">
+                          <textarea id="settingFirestoreRules" class="rules-editor-input" spellcheck="false" aria-labelledby="firestoreRulesLabel"></textarea>
+                          <div class="rules-editor-actions">
+                            <button id="firebaseDeployFirestoreRulesBtn" class="btn btn-primary btn-small" type="button" data-i18n="settings.firebaseRulesDeploy">Deploy</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="firebase-rules firebase-storage firebase-panel">
+                      <div class="firebase-panel-header">
+                        <div>
+                          <div class="firebase-rules-title" data-i18n="settings.firebaseStorageRulesTitle">Storage Rules</div>
+                          <div class="firebase-rules-hint muted" data-i18n="settings.firebaseStorageRulesHint">Edit and deploy Storage rules.</div>
+                        </div>
+                        <div id="firebaseStorageRulesStatus" class="firebase-rules-status muted" role="status" aria-live="polite"></div>
+                      </div>
+                      <div class="field rules-editor" id="storageRulesEditor">
+                        <div class="rules-editor-header">
+                          <span id="storageRulesLabel" class="label" data-i18n="settings.firebaseStorageRules">storage.rules</span>
+                          <button id="firebaseCollapseStorageRulesBtn" class="btn btn-tertiary btn-small rules-toggle-btn" type="button" aria-label="Collapse editor" data-i18n-aria-label="settings.firebaseRulesCollapseLabel">▴</button>
+                        </div>
+                        <div class="rules-editor-row">
+                          <textarea id="settingStorageRules" class="rules-editor-input" spellcheck="false" aria-labelledby="storageRulesLabel"></textarea>
+                          <div class="rules-editor-actions">
+                            <button id="firebaseDeployStorageRulesBtn" class="btn btn-primary btn-small" type="button" data-i18n="settings.firebaseRulesDeploy">Deploy</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="firebase-functions firebase-panel">
+                      <div class="firebase-panel-header">
+                        <div>
+                          <div class="firebase-functions-title" data-i18n="settings.firebaseFunctionsTitle">Firebase Functions</div>
+                          <div class="firebase-functions-hint muted" data-i18n="settings.firebaseFunctionsHint">Edit and deploy the tracker updates function.</div>
+                        </div>
+                        <div id="firebaseFunctionsStatus" class="firebase-rules-status muted" role="status" aria-live="polite"></div>
+                      </div>
+                      <div class="field rules-editor" id="functionsRulesEditor">
+                        <div class="rules-editor-header">
+                          <span id="functionsRulesLabel" class="label" data-i18n="settings.firebaseFunctionsIndexLabel">functions/index.js</span>
+                          <button id="firebaseCollapseFunctionsBtn" class="btn btn-tertiary btn-small rules-toggle-btn" type="button" aria-label="Collapse editor" data-i18n-aria-label="settings.firebaseRulesCollapseLabel">▴</button>
+                        </div>
+                        <div class="rules-editor-row">
+                          <textarea id="settingFirebaseFunctionIndex" class="rules-editor-input" spellcheck="false" aria-labelledby="functionsRulesLabel"></textarea>
+                          <div class="rules-editor-actions">
+                            <button id="firebaseDeployFunctionsBtn" class="btn btn-primary btn-small" type="button" data-i18n="settings.firebaseRulesDeploy">Deploy</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="firebase-config firebase-panel">
+                      <div class="firebase-panel-header">
+                        <div>
+                          <div id="firebaseConfigLabel" class="firebase-rules-title" data-i18n="settings.firebaseConfig">Firebase Settings (JSON)</div>
+                          <div class="firebase-rules-hint muted" data-i18n="settings.firebaseConfigHint">Auto-generated from Admin credentials; stored locally (read-only).</div>
+                        </div>
+                        <button id="firebaseCollapseConfigBtn" class="btn btn-tertiary btn-small rules-toggle-btn" type="button" aria-label="Collapse editor" data-i18n-aria-label="settings.firebaseRulesCollapseLabel">▴</button>
+                      </div>
+                      <div class="field rules-editor" id="firebaseConfigEditor">
+                        <div class="rules-editor-row">
+                          <textarea id="settingFirebaseConfig" class="rules-editor-input" aria-labelledby="firebaseConfigLabel" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}' readonly aria-readonly="true"></textarea>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-            <div class="settings-actions">
-              <span class="settings-status" aria-live="polite"></span>
-              <button id="settingsSaveBtn" class="btn btn-primary" type="submit" disabled>Save Settings</button>
+                <div class="settings-group" data-settings-group="map" id="settings-group-map" role="region" aria-labelledby="settings-group-map-title" hidden>
+                  <h3 id="settings-group-map-title" data-i18n="settings.section.map">Map Settings</h3>
+                  <div class="settings-fields">
+                    <label class="field">
+                      <span class="label" data-i18n="settings.streetStyleUrl">Street Map Style URL</span>
+                      <input id="settingStyleUrl" type="text" placeholder="mapbox://styles/your-style-id" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.satelliteStyleUrl">Satellite Map Style URL</span>
+                      <input id="settingSatelliteStyleUrl" type="text" placeholder="mapbox://styles/mapbox/standard-satellite" value="mapbox://styles/mapbox/standard-satellite" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.terrainStyleUrl">Terrain Map Style URL</span>
+                      <input id="settingTerrainStyleUrl" type="text" placeholder="mapbox://styles/mapbox/outdoors-v12" value="mapbox://styles/mapbox/outdoors-v12" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.homeAddress">Home Address</span>
+                      <input id="settingHomeAddress" type="text" placeholder="e.g., 1600 Amphitheatre Parkway, Mountain View, CA" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.startLatitude">Start Latitude</span>
+                      <input id="settingStartLat" type="number" step="0.000001" min="-90" max="90" placeholder="49.610000" value="49.610000" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.startLongitude">Start Longitude</span>
+                      <input id="settingStartLng" type="number" step="0.000001" min="-180" max="180" placeholder="6.130000" value="6.130000" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.startZoom">Start Zoom</span>
+                      <input id="settingStartZoom" type="number" min="0" max="22" step="0.1" value="12" />
+                    </label>
+                    <label class="field">
+                      <span class="label" data-i18n="settings.coordinateSystem">Coordinate System</span>
+                      <select id="settingCoordinateSystem">
+                        <option value="latlng" data-i18n="settings.coord.latlng">Lat/Long</option>
+                        <option value="utm" data-i18n="settings.coord.utm">UTM</option>
+                        <option value="gk" data-i18n="settings.coord.gk">GK</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+              </form>
             </div>
-          </form>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <div class="settings-actions">
+            <span class="settings-status" aria-live="polite"></span>
+            <button id="settingsCloseBtn" class="btn" type="button" data-i18n="settings.close">Close Settings</button>
+            <button id="settingsSaveBtn" class="btn btn-primary" type="submit" form="settingsForm" disabled>Save Settings</button>
+          </div>
         </div>
       </section>
     </main>
@@ -502,23 +656,41 @@
     </div>
   </div>
 
+  <div id="exportLoadingModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="exportLoadingTitle" hidden>
+    <div class="modal-backdrop"></div>
+    <div class="modal-panel export-loading-panel">
+      <div class="modal-header">
+        <h3 id="exportLoadingTitle" data-i18n="export.loadingTitle">Preparing export</h3>
+      </div>
+      <div class="modal-body export-loading-body">
+        <div class="loading-spinner loading-spinner--lg" aria-hidden="true"></div>
+        <div id="exportLoadingText" class="modal-text muted" data-i18n="export.loadingSnapshot">Preparing snapshot export...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Team Member Modal -->
   <div id="teamMemberModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamMemberTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>
-    <div class="modal-panel" style="width:min(520px, 92vw);">
+    <div class="modal-panel" style="width:min(980px, 96vw);">
       <div class="modal-header">
         <h3 id="teamMemberTitle" data-i18n="teams.memberModal.title">Add team member</h3>
         <button id="teamMemberClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
       </div>
       <div class="modal-body team-member-body">
-        <div id="teamMemberStatus" class="muted" data-i18n="teams.memberModal.subtitle">Scan this QR code to join the team.</div>
-        <div class="team-member-preview">
-          <img id="teamMemberQr" src="" alt="Team member QR code" />
+        <div class="team-member-content">
+          <div class="team-member-preview">
+            <div id="teamMemberQrLoading" class="team-member-qr-loading" aria-hidden="true" hidden>
+              <div class="loading-spinner loading-spinner--lg" aria-hidden="true"></div>
+            </div>
+            <img id="teamMemberQr" src="" alt="Team member QR code" />
+          </div>
+          <div class="team-member-explainer">
+            <h4 class="team-member-heading" data-i18n="teams.memberModal.qrHeading">Scan the QR-Code using the Tracker (CYNOOPS) mobile app</h4>
+            <p class="team-member-copy" data-i18n="teams.memberModal.qrCopy">The Tracker app allows to see team members on the map in real-time* and see where they are.</p>
+            <div id="teamMemberStatus" class="muted team-member-status" data-i18n="teams.memberModal.subtitle">Scan this QR code to join the team.</div>
+          </div>
         </div>
-        <button id="teamMemberStart" class="btn btn-primary" type="button" data-i18n="teams.memberModal.startTracking">Start tracking</button>
-      </div>
-      <div class="modal-footer team-member-actions">
-        <button id="teamMemberDone" class="btn" type="button" data-i18n="common.close">Close</button>
       </div>
     </div>
   </div>
@@ -535,6 +707,7 @@
         <label class="field">
           <span class="label" data-i18n="teams.startSessionModal.label">Session title</span>
           <input id="teamsStartSessionTitleInput" type="text" autocomplete="off" data-i18n-placeholder="teams.startSessionModal.placeholder" placeholder="e.g., Mountain Rescue A" />
+          <div class="field-note muted" data-i18n="teams.startSessionModal.note">A date prefix (YYYYMMDD - ) is added automatically.</div>
         </label>
         <div class="modal-row">
           <div class="spacer"></div>
@@ -558,6 +731,10 @@
         <div id="teamsLoadSessionList" class="session-list" role="list" aria-live="polite"></div>
         <div class="modal-row">
           <div class="spacer"></div>
+          <div id="teamsResumeSessionInlineStart" class="modal-inline-start" hidden>
+            <span class="muted" data-i18n="teams.loadSessionModal.or">or</span>
+            <button id="teamsResumeSessionStart" class="btn btn-primary" type="button" data-i18n="teams.loadSessionModal.startInline">Start a new session</button>
+          </div>
           <button id="teamsResumeSessionCancel" class="btn" type="button" data-i18n="common.close">Close</button>
         </div>
       </div>
@@ -625,6 +802,64 @@
           <div class="spacer"></div>
           <button id="teamsDeleteSessionCancel" class="btn" type="button" data-i18n="teams.deleteSessionModal.cancel">Cancel</button>
           <button id="teamsDeleteSessionConfirm" class="btn btn-danger" type="button" data-i18n="teams.deleteSessionModal.confirm">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clear All Sessions Modal -->
+  <div id="firebaseAdminClearSessionsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="firebaseAdminClearSessionsTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(520px, 92vw);">
+      <div class="modal-header">
+        <h3 id="firebaseAdminClearSessionsTitle" data-i18n="settings.firebaseAdminClearSessionsModal.title">Clear all sessions?</h3>
+        <button id="firebaseAdminClearSessionsClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-text" data-i18n="settings.firebaseAdminClearSessionsModal.message">This will permanently delete every session document and its tracker/update data in Firestore.</p>
+        <p class="modal-text modal-text-danger" data-i18n="settings.firebaseAdminClearSessionsModal.warning">Danger: this cannot be undone.</p>
+        <div id="firebaseAdminClearSessionsStatus" class="muted" role="status" aria-live="polite" hidden></div>
+        <div class="modal-row">
+          <div class="spacer"></div>
+          <button id="firebaseAdminClearSessionsCancel" class="btn" type="button" data-i18n="settings.firebaseAdminClearSessionsModal.cancel">Cancel</button>
+          <button id="firebaseAdminClearSessionsConfirm" class="btn btn-danger" type="button" data-i18n="settings.firebaseAdminClearSessionsModal.confirm">Clear all sessions</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clear Anonymous Users Modal -->
+  <div id="firebaseAdminClearAnonymousUsersModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="firebaseAdminClearAnonymousUsersTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(520px, 92vw);">
+      <div class="modal-header">
+        <h3 id="firebaseAdminClearAnonymousUsersTitle" data-i18n="settings.firebaseAdminClearAnonymousUsersModal.title">Clear anonymous users?</h3>
+        <button id="firebaseAdminClearAnonymousUsersClose" class="btn-icon" title="Close" data-i18n-title="common.close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-text" data-i18n="settings.firebaseAdminClearAnonymousUsersModal.message">This will permanently delete all anonymous users in Firebase Authentication.</p>
+        <p class="modal-text modal-text-danger" data-i18n="settings.firebaseAdminClearAnonymousUsersModal.warning">Danger: this cannot be undone.</p>
+        <div id="firebaseAdminClearAnonymousUsersStatus" class="muted" role="status" aria-live="polite" hidden></div>
+        <div class="modal-row">
+          <div class="spacer"></div>
+          <button id="firebaseAdminClearAnonymousUsersCancel" class="btn" type="button" data-i18n="settings.firebaseAdminClearAnonymousUsersModal.cancel">Cancel</button>
+          <button id="firebaseAdminClearAnonymousUsersConfirm" class="btn btn-danger" type="button" data-i18n="settings.firebaseAdminClearAnonymousUsersModal.confirm">Clear anonymous users</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="firebaseDeployModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="firebaseDeployTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(720px, 94vw);">
+      <div class="modal-header">
+        <h3 id="firebaseDeployTitle" data-i18n="settings.firebaseDeployingTitle">Deploying Firebase…</h3>
+        <button id="firebaseDeployModalClose" class="btn btn-icon" type="button" aria-label="Close" data-action="close">✕</button>
+      </div>
+      <div class="modal-body firebase-deploy-body">
+        <div id="firebaseDeployStatus" class="modal-text muted" data-i18n="settings.firebaseDeployingHint">Deployment in progress. Logs below.</div>
+        <pre id="firebaseDeployLog" class="firebase-deploy-log" aria-live="polite"></pre>
+        <div class="modal-row">
+          <button id="firebaseDeployModalDone" class="btn btn-primary" type="button" data-i18n="settings.firebaseDeployingClose" disabled>Close</button>
         </div>
       </div>
     </div>

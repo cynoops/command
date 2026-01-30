@@ -82,10 +82,30 @@ contextBridge.exposeInMainWorld("electronAPI", {
 });
 
 contextBridge.exposeInMainWorld("mapTools", {
-  saveMapSnapshot: (payload) => ipcRenderer.invoke('map:save-map-snapshot', payload)
+  saveMapSnapshot: (payload) => ipcRenderer.invoke('map:save-map-snapshot', payload),
+  saveMapPdf: (payload) => ipcRenderer.invoke('map:save-map-pdf', payload)
 });
 
 contextBridge.exposeInMainWorld("settings", {
   setLanguage: (language) => ipcRenderer.invoke('settings:setLanguage', { language }),
   getLanguage: () => ipcRenderer.invoke('settings:getLanguage')
+});
+
+contextBridge.exposeInMainWorld("firebaseAdmin", {
+  selectCredentials: () => ipcRenderer.invoke('firebase-admin:select-credentials'),
+  getStatus: () => ipcRenderer.invoke('firebase-admin:get-status'),
+  clearCredentials: () => ipcRenderer.invoke('firebase-admin:clear-credentials'),
+  ingestCredentials: (payload) => ipcRenderer.invoke('firebase-admin:ingest-credentials', payload),
+  clearSessions: () => ipcRenderer.invoke('firebase-admin:clear-sessions'),
+  clearAnonymousUsers: () => ipcRenderer.invoke('firebase-admin:clear-anonymous-users'),
+  createAnonymousToken: (payload) => ipcRenderer.invoke('firebase-admin:create-anonymous-token', payload),
+  getFirebaseConfig: () => ipcRenderer.invoke('firebase-admin:get-firebase-config'),
+  deployFirestoreRules: (payload) => ipcRenderer.invoke('firebase-admin:deploy-firestore-rules', payload),
+  deployStorageRules: (payload) => ipcRenderer.invoke('firebase-admin:deploy-storage-rules', payload),
+  deployTrackerUpdatesFunction: (payload) => ipcRenderer.invoke('firebase-admin:deploy-tracker-updates-function', payload),
+  onDeployLog: (cb) => {
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on('firebase-admin:deploy-log', listener);
+    return () => ipcRenderer.off('firebase-admin:deploy-log', listener);
+  }
 });

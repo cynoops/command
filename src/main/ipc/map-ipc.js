@@ -1,7 +1,9 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const fsp = fs.promises;
 
@@ -13,12 +15,6 @@ const clampDimension = (value, fallback = 1024) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.max(MIN_DIMENSION, Math.min(Math.round(num), MAX_DIMENSION));
-};
-
-const cssPixelsToMicrons = (px) => {
-  const num = Number(px);
-  if (!Number.isFinite(num) || num <= 0) return 25400; // default to 1 inch
-  return Math.max(1, Math.round((num / 96) * 25400));
 };
 
 const appendExtension = (filePath, extension) => {
@@ -39,42 +35,67 @@ const decodePngDataUrl = (dataUrl) => {
   }
 };
 
-async function createPdfFromPng({ buffer, width, height, targetPath, BrowserWindow }) {
+const PDF_PAGE_MM = {
+  width: 210,
+  height: 297
+};
+
+async function createPdfFromPng({ buffer, width, height, targetPath, BrowserWindow, forceLandscape = false }) {
   if (!BrowserWindow) throw new Error('BrowserWindow unavailable for PDF export');
-  const base64 = buffer.toString('base64');
+  const pageWidthMm = forceLandscape ? PDF_PAGE_MM.height : PDF_PAGE_MM.width;
+  const pageHeightMm = forceLandscape ? PDF_PAGE_MM.width : PDF_PAGE_MM.height;
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cynoops-map-pdf-'));
+  const htmlPath = path.join(tempDir, 'index.html');
+  const imagePath = path.join(tempDir, 'snapshot.png');
+  const imageUrl = pathToFileURL(imagePath).toString();
+  await fsp.writeFile(imagePath, buffer);
   const html = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <style>
+    @page {
+      margin: 0;
+    }
     html, body {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
       background: #ffffff;
+      overflow: hidden;
     }
     body {
       display: flex;
-      align-items: center;
-      justify-content: center;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+    .page {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
     }
     img {
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
+      width: 100%;
+      height: 100%;
+      display: block;
       object-fit: contain;
     }
   </style>
 </head>
 <body>
-  <img src="data:image/png;base64,${base64}" alt="Map snapshot" />
+  <div class="page">
+    <img src="${imageUrl}" alt="Map snapshot" />
+  </div>
 </body>
 </html>`;
+  await fsp.writeFile(htmlPath, html);
 
-  const windowWidth = Math.min(Math.max(Math.round(width / 2), 400), 1200);
-  const windowHeight = Math.min(Math.max(Math.round(height / 2), 400), 1200);
+  const windowScale = 3;
+  const windowWidth = Math.min(Math.max(Math.round(pageWidthMm * windowScale), 600), 1600);
+  const windowHeight = Math.min(Math.max(Math.round(pageHeightMm * windowScale), 600), 1200);
   const pdfWindow = new BrowserWindow({
     show: false,
     width: windowWidth,
@@ -87,21 +108,45 @@ async function createPdfFromPng({ buffer, width, height, targetPath, BrowserWind
   });
 
   try {
-    const encodedHtml = Buffer.from(html, 'utf8').toString('base64');
-    await pdfWindow.loadURL(`data:text/html;base64,${encodedHtml}`);
+    await pdfWindow.loadFile(htmlPath);
+    await pdfWindow.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const img = document.querySelector('img');
+        const done = () => resolve();
+        if (!img) return done();
+        if (img.complete) {
+          if (img.decode) {
+            img.decode().then(done).catch(done);
+          } else {
+            done();
+          }
+          return;
+        }
+        img.addEventListener('load', () => {
+          if (img.decode) {
+            img.decode().then(done).catch(done);
+          } else {
+            done();
+          }
+        }, { once: true });
+        img.addEventListener('error', done, { once: true });
+        setTimeout(done, 2000);
+      })
+    `);
+    await pdfWindow.webContents.executeJavaScript(
+      'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))'
+    );
     const pdfBuffer = await pdfWindow.webContents.printToPDF({
       printBackground: true,
-      landscape: width >= height,
-      marginsType: 1,
-      pageSize: {
-        width: cssPixelsToMicrons(width),
-        height: cssPixelsToMicrons(height)
-      }
+      landscape: forceLandscape,
+      marginsType: 0,
+      pageSize: 'A4'
     });
     await fsp.writeFile(targetPath, pdfBuffer);
   } finally {
     try { if (!pdfWindow.isDestroyed()) pdfWindow.close(); } catch {}
     try { if (!pdfWindow.isDestroyed()) pdfWindow.destroy(); } catch {}
+    try { await fsp.rm(tempDir, { recursive: true, force: true }); } catch {}
   }
 }
 
@@ -173,7 +218,8 @@ function registerMapIPC({ ipcMain, dialog, BrowserWindow }, state) {
           width: dimWidth,
           height: dimHeight,
           targetPath,
-          BrowserWindow
+          BrowserWindow,
+          forceLandscape: true
         });
         return { ok: true, path: targetPath, meta };
       }
@@ -190,6 +236,83 @@ function registerMapIPC({ ipcMain, dialog, BrowserWindow }, state) {
     } catch (err) {
       console.error('map:save-map-snapshot failed', err);
       return { ok: false, error: err?.message || 'Failed to save map snapshot.' };
+    }
+  });
+
+  ipcMain.handle('map:save-map-pdf', async (_event, payload = {}) => {
+    try {
+      const {
+        dataUrl,
+        width,
+        height,
+        devicePixelRatio,
+        defaultFileName = null
+      } = payload;
+
+      const buffer = decodePngDataUrl(dataUrl);
+      if (!buffer || !buffer.length) {
+        return { ok: false, error: 'Invalid snapshot data.' };
+      }
+
+      const rawWidth = clampDimension(width, 1024);
+      const rawHeight = clampDimension(height, 768);
+      const aspect = rawHeight > 0 ? rawWidth / rawHeight : 1;
+      let dimWidth = rawWidth;
+      let dimHeight = rawHeight;
+
+      if (dimWidth > MAX_DIMENSION) {
+        dimWidth = MAX_DIMENSION;
+        dimHeight = Math.max(MIN_DIMENSION, Math.round(dimWidth / (aspect || 1)));
+      }
+      if (dimHeight > MAX_DIMENSION) {
+        dimHeight = MAX_DIMENSION;
+        dimWidth = Math.max(MIN_DIMENSION, Math.round(dimHeight * (aspect || 1)));
+      }
+
+      const dpi = Number(devicePixelRatio);
+      const meta = {
+        width: dimWidth,
+        height: dimHeight,
+        devicePixelRatio: Number.isFinite(dpi) ? dpi : null
+      };
+
+      const defaultName = typeof defaultFileName === 'string' && defaultFileName.trim()
+        ? defaultFileName.trim()
+        : `map-snapshot-${Date.now()}.pdf`;
+
+      const saveDialog = await dialog.showSaveDialog(state?.mainWindow || null, {
+        title: 'Export Map PDF',
+        defaultPath: defaultName,
+        filters: [
+          { name: 'PDF Document', extensions: ['pdf'] }
+        ]
+      });
+
+      if (saveDialog.canceled || !saveDialog.filePath) {
+        return { ok: false, canceled: true };
+      }
+
+      let targetPath = saveDialog.filePath;
+      const ext = path.extname(targetPath).toLowerCase();
+
+      if (!ext) {
+        targetPath = appendExtension(targetPath, '.pdf');
+      } else if (ext !== '.pdf') {
+        targetPath = appendExtension(targetPath.slice(0, -ext.length), '.pdf');
+      }
+
+      await createPdfFromPng({
+        buffer,
+        width: dimWidth,
+        height: dimHeight,
+        targetPath,
+        BrowserWindow,
+        forceLandscape: true
+      });
+      return { ok: true, path: targetPath, meta };
+    } catch (err) {
+      console.error('map:save-map-pdf failed', err);
+      return { ok: false, error: err?.message || 'Failed to export map PDF.' };
     }
   });
 }

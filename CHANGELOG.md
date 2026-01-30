@@ -1,13 +1,63 @@
 # Changelog
 
 ## Unreleased
+- Add a keyboard shortcut to cycle map grid overlays.
+- Reset map bearing and pitch on ESC.
+- Update the default Firebase tracker cloud function to write track segments with speed/altitude metadata.
+- Add a subtle animated rain overlay when the weather overlay reports rain.
+- Show the active grid coordinate next to the mouse cursor while hovering the map.
+- Add GCS minor grid subdivisions for finer reference lines.
+- Position grid overlay labels along the top and left edges of the map.
+- Increase grid overlay visibility and adapt grid subdivision density to zoom level.
+- Add an Overlays tool group with UTM and GCS grid overlays for the map.
+- Auto-render weather overlay indicators in the map corners, refresh them on map movement, and remove the weather sampling tool from the toolbar.
+- Inset weather overlay markers about 15% from the map edges for better spacing.
+- Clear weather overlay markers while the map moves and refresh them once movement stops.
+- Show a wind direction indicator above the label scale controls when the weather overlay is active.
+- Include wind speed in the indicator and keep the arrow aligned with map bearing while moving.
+- Hide the wind indicator when the weather overlay is toggled off.
+- Add a subtle animated wind overlay on the map that reflects wind direction and speed.
+- Increase wind overlay visibility and broaden wind direction parsing.
+- Make the wind overlay animation more pronounced and directional.
+- Align wind overlay flow direction with the wind indicator arrow.
+- Animate wind overlay using moving gradient highlights through the wind lines.
+- Extend wind gradient motion to sweep across the full wind overlay area.
+- Expand the wind overlay bounds so it always covers the visible map.
+- Add an export loading modal before snapshot/PDF save dialogs appear.
+- Force exported map PDFs to use landscape page orientation.
+- Update the Snapshot tool icon to file-image and add an Export PDF tool for map exports.
+- Add an EXPORT tool group and move the Snapshot tool into it.
+- Move the Firebase Settings (JSON) panel to the end of the Firebase settings list.
+- Redesign the Firebase Admin credentials panel header and actions layout.
+- Move Settings footer actions (status, close, save) outside the settings panel.
+- Move tracker update writes into a deployable Firebase Cloud Function editor with local deploy workflow.
+- Add Firestore/Storage rules editors with deploy buttons in Firebase settings.
+- Add Firebase Admin service account upload with validation, verification, and project display in Settings.
+- Add Firebase Admin actions panel with a confirmed Clear All Sessions flow.
+- Move Firebase settings into a dedicated Settings group.
+- Group toolbar tools into separate clusters with spacing between groups.
+- Add distinct background colors per toolbar group based on tool type.
+- Move label size controls to a bottom-centered map overlay.
+- Add a header settings gear button next to the language selector that jumps to the Settings tab.
+- Hide the header settings gear button while the Settings tab is active.
+- Remove the MAP/Settings tab switcher buttons from the header.
+- Style the fullscreen button as a round icon button to match the other header actions.
+- Remove the header grid gap to eliminate spacing between header columns.
+- Keep header action buttons right-aligned even when the toolbar is hidden.
+- Add a Close Settings button next to Save Settings that returns to the map view.
+- Split the map tools into separate grouped toolbars in the header.
+- Clear active team session state (trackers/map) if that session is deleted from Firestore.
+- Ensure the load session list shows the delete button alongside each session row.
 - Add a map session overlay for start/resume/stop actions with editable session titles.
 - Refresh feature and team layers after map style changes.
 - Restore session features from Firestore when resuming a session so drawings reappear.
 - Normalize session feature payloads to avoid nested `features` objects in stored documents.
 - Allow clicking the footer scale value to open the Set scale dialog.
 - Include the Mapbox API key in team member QR payloads.
-- Include Firebase config JSON strings in team member QR payloads.
+- Require validated Firebase Admin credentials before adding team members or generating QR codes.
+- Generate team member QR payloads with anonymous Firebase Auth tokens alongside Firebase config.
+- Generate team member custom auth tokens via Firebase Admin for longer-lived sign-in sessions.
+- Update welcome screen copy to remove Firebase web config requirement.
 - Subscribe to team member tracker documents by tracker ID when sessions start or members are added.
 - Create Firestore LIVE session documents with start time and visible map features.
 - Added Teams session start/resume flow with Firestore-backed session metadata.

@@ -9,6 +9,7 @@ const { registerFileIPC } = require('./src/main/ipc/file-ipc');
 const { registerAppIPC } = require('./src/main/ipc/app-ipc');
 const { registerAIIPC } = require('./src/main/ipc/ai-ipc');
 const { registerSettingsIPC } = require('./src/main/ipc/settings-ipc');
+const { registerFirebaseAdminIPC } = require('./src/main/ipc/firebase-admin-ipc');
 const { registerMapIPC } = require('./src/main/ipc/map-ipc');
 
 // Electron apps launched from Finder on macOS may not have writable stdout/stderr.
@@ -87,6 +88,7 @@ app.whenReady().then(async () => {
   registerAppIPC({ ipcMain, shell }, state);
   registerAIIPC({ ipcMain }, state);
   registerSettingsIPC({ ipcMain }, state);
+  registerFirebaseAdminIPC({ ipcMain, dialog }, state);
   registerMapIPC({ ipcMain, dialog, BrowserWindow }, state);
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

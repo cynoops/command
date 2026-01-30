@@ -48,6 +48,14 @@ Open the Settings tab inside the app and fill in:
 
 Settings persist in `localStorage` on your machine. Tokens are not synced anywhere.
 
+### Firebase (Teams)
+
+Optional Firebase integrations are configured under Settings → Firebase:
+
+- Paste Firebase config JSON (client) and Firebase Admin credentials (service account).
+- Edit `functions/index.js` in the Functions editor to mirror tracker updates into `/sessions/{sessionId}/updates`.
+- Click Deploy to run a local deploy (temp project folder, `npm install`, and Cloud Functions deploy in Europe/Germany).
+
 ## Using Drawings
 
 - Pick a tool: Rectangle, Polygon, Circle, Line, or POI.
