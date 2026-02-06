@@ -695,6 +695,54 @@
     </div>
   </div>
 
+  <!-- Trim Member Session Modal -->
+  <div id="trimMemberModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="trimMemberTitle" hidden>
+    <div class="modal-backdrop" data-action="close"></div>
+    <div class="modal-panel" style="width:min(980px, 96vw);">
+      <div class="modal-header">
+        <h3 id="trimMemberTitle">Trim member session</h3>
+        <button id="trimMemberClose" class="btn-icon" title="Close">×</button>
+      </div>
+      <div class="modal-body trim-member-body">
+        <div class="trim-member-map-wrap">
+          <div id="trimMemberMap" class="trim-member-map" aria-label="Trim member map"></div>
+          <div id="trimMemberMapEmpty" class="trim-member-empty" hidden>No location data yet.</div>
+        </div>
+        <div id="trimMemberSlider" class="trim-member-slider" aria-label="Trim range">
+          <div class="trim-range-meta">
+            <div class="trim-range-meta-block trim-range-meta-start">
+              <span class="trim-range-meta-title">Start</span>
+              <span id="trimMemberRangeStartLabel" class="trim-range-meta-value">—</span>
+              <span id="trimMemberRangeStartDate" class="trim-range-meta-sub">—</span>
+            </div>
+            <div class="trim-range-meta-block trim-range-meta-length">
+              <span class="trim-range-meta-title">Length</span>
+              <span id="trimMemberRangeLength" class="trim-range-meta-value">—</span>
+              <span id="trimMemberRangePoints" class="trim-range-meta-sub">—</span>
+            </div>
+            <div class="trim-range-meta-block trim-range-meta-end">
+              <span class="trim-range-meta-title">End</span>
+              <span id="trimMemberRangeEndLabel" class="trim-range-meta-value">—</span>
+              <span id="trimMemberRangeEndDate" class="trim-range-meta-sub">—</span>
+            </div>
+          </div>
+          <div class="trim-range-control">
+            <div class="trim-range-track">
+              <div id="trimMemberRangeFill" class="trim-range-fill"></div>
+            </div>
+            <input id="trimMemberRangeStart" class="trim-range-input trim-range-start" type="range" min="0" max="1" value="0" step="1" aria-label="Trim start" />
+            <input id="trimMemberRangeEnd" class="trim-range-input trim-range-end" type="range" min="0" max="1" value="1" step="1" aria-label="Trim end" />
+          </div>
+        </div>
+        <div class="modal-row trim-member-footer">
+          <div id="trimMemberStatus" class="trim-member-status muted">Showing full track</div>
+          <div class="spacer"></div>
+          <button id="trimMemberExtract" class="btn btn-primary" type="button" hidden>Extract to Feature</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Start Team Session Modal -->
   <div id="teamsStartSessionModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="teamsStartSessionTitle" hidden>
     <div class="modal-backdrop" data-action="close"></div>

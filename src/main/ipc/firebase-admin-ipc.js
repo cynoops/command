@@ -20,7 +20,7 @@ const REQUIRED_FIELDS = [
   'client_x509_cert_url',
   'universe_domain'
 ];
-const TEAMS_SESSION_SUBCOLLECTIONS = ['trackers', 'updates'];
+const TEAMS_SESSION_SUBCOLLECTIONS = ['trackers', 'updates', 'tracks'];
 const FIREBASE_RULES_BASE_URL = 'https://firebaserules.googleapis.com/v1';
 const FIREBASE_MGMT_BASE_URL = 'https://firebase.googleapis.com/v1beta1';
 const FIREBASE_AUTH_BASE_URL = 'https://identitytoolkit.googleapis.com/v1';

@@ -3,7 +3,7 @@
   "version": "0.0.2-alpha",
   "main": "index.js",
   "build": {
-    "productName": "Command",
+    "productName": "CYNOOPS Command",
     "appId": "com.cynoops.command",
     "files": [
       "index.js",
@@ -60,7 +60,7 @@
     "symbols:combine": "node ./scripts/generate-symbols-combined.js"
   },
   "keywords": [],
-  "author": "Georges Jentgen <georges@polysign.lu>",
+  "author": "Georges Jentgen <georges@cynoops.com>",
   "license": "ISC",
   "description": "",
   "dependencies": {

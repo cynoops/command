@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Improve trim UI with separated handles, live length indicator, and start/end date display.
+- Require authentication for Firestore read/write rules.
+- Delete session track subcollections alongside trackers and updates.
+- Ensure resumed sessions populate the teams panel with existing team members.
+- Start tracker track subscriptions when teams are loaded into the panel.
 - Add a keyboard shortcut to cycle map grid overlays.
 - Reset map bearing and pitch on ESC.
 - Update the default Firebase tracker cloud function to write track segments with speed/altitude metadata.
@@ -10,6 +15,7 @@
 - Position grid overlay labels along the top and left edges of the map.
 - Increase grid overlay visibility and adapt grid subdivision density to zoom level.
 - Add an Overlays tool group with UTM and GCS grid overlays for the map.
+- Re-render grid overlays after switching base map layers.
 - Auto-render weather overlay indicators in the map corners, refresh them on map movement, and remove the weather sampling tool from the toolbar.
 - Inset weather overlay markers about 15% from the map edges for better spacing.
 - Clear weather overlay markers while the map moves and refresh them once movement stops.

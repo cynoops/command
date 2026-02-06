@@ -34,6 +34,8 @@
   let teamsSessionTrackerIds = new Set();
   let teamsSessionSubscriptionId = null;
   let teamsSessionSubscription = null;
+  let teamsSessionTrackersSubscriptionId = null;
+  let teamsSessionTrackersSubscription = null;
   let teamsSessionTitleUpdateInFlight = false;
   let teamsSessionEndInFlight = false;
   const generateTrackerId = () => generateSessionId();
@@ -44,14 +46,16 @@
     labelShow: './assets/icons/regular/text-t.svg',
     labelHide: './assets/icons/regular/text-t-slash.svg',
     size: './assets/icons/regular/ruler.svg',
+    focus: './assets/icons/regular/crosshair.svg',
     ai: './assets/icons/regular/sparkle.svg',
     delete: './assets/icons/regular/x.svg',
-    poiIcon: './assets/icons/regular/image-square.svg'
+    poiIcon: './assets/icons/regular/image-square.svg',
+    trim: './assets/icons/regular/scissors.svg'
   };
   const TEAMS_SESSION_ICON_PATHS = {
     delete: './assets/icons/regular/trash-simple.svg'
   };
-  const TEAMS_SESSION_SUBCOLLECTIONS = ['trackers', 'updates'];
+  const TEAMS_SESSION_SUBCOLLECTIONS = ['trackers', 'updates', 'tracks'];
   const FEATURE_NAME_MAX = 26;
   const FEATURE_IMPORT_BASE = 24;
   const FEATURE_NAME_ELLIPSIS = '...';
@@ -1157,6 +1161,20 @@
     try {
       (window)._lastStyleUrl = target;
       map.setStyle(target, { diff: false });
+      if (activeGridOverlay !== 'none') {
+        if (typeof map.once === 'function') {
+          const refreshToken = (gridOverlayStyleRefreshToken += 1);
+          map.once('style.load', () => {
+            if (gridOverlayStyleRefreshToken !== refreshToken) return;
+            map.once('idle', () => {
+              if (gridOverlayStyleRefreshToken !== refreshToken) return;
+              refreshGridOverlay();
+            });
+          });
+        } else {
+          refreshGridOverlay();
+        }
+      }
     } catch (err) {
       console.error('Failed to apply map style', err);
     }
@@ -2060,6 +2078,23 @@
   const teamMemberStatus = q('#teamMemberStatus');
   const teamMemberQrLoading = q('#teamMemberQrLoading');
   const teamMemberQr = q('#teamMemberQr');
+  const trimMemberModal = q('#trimMemberModal');
+  const trimMemberClose = q('#trimMemberClose');
+  const trimMemberTitle = q('#trimMemberTitle');
+  const trimMemberMapEl = q('#trimMemberMap');
+  const trimMemberMapEmpty = q('#trimMemberMapEmpty');
+  const trimMemberSlider = q('#trimMemberSlider');
+  const trimMemberRangeFill = q('#trimMemberRangeFill');
+  const trimMemberRangeStart = q('#trimMemberRangeStart');
+  const trimMemberRangeEnd = q('#trimMemberRangeEnd');
+  const trimMemberRangeStartLabel = q('#trimMemberRangeStartLabel');
+  const trimMemberRangeStartDate = q('#trimMemberRangeStartDate');
+  const trimMemberRangeEndLabel = q('#trimMemberRangeEndLabel');
+  const trimMemberRangeEndDate = q('#trimMemberRangeEndDate');
+  const trimMemberRangeLength = q('#trimMemberRangeLength');
+  const trimMemberRangePoints = q('#trimMemberRangePoints');
+  const trimMemberStatus = q('#trimMemberStatus');
+  const trimMemberExtract = q('#trimMemberExtract');
   const teamsStartSessionModal = q('#teamsStartSessionModal');
   const teamsStartSessionClose = q('#teamsStartSessionClose');
   const teamsStartSessionForm = q('#teamsStartSessionForm');
@@ -2093,6 +2128,7 @@
   const shortcutsClose = q('#shortcutsClose');
   const shortcutsList = q('#shortcutsList');
   if (teamMemberModal) teamMemberModal.setAttribute('aria-hidden', 'true');
+  if (trimMemberModal) trimMemberModal.setAttribute('aria-hidden', 'true');
   if (teamsStartSessionModal) teamsStartSessionModal.setAttribute('aria-hidden', 'true');
   if (teamsResumeSessionModal) teamsResumeSessionModal.setAttribute('aria-hidden', 'true');
   if (teamsSessionActionsModal) teamsSessionActionsModal.setAttribute('aria-hidden', 'true');
@@ -3742,6 +3778,7 @@
   let gridPointerLabelEl = null;
   let gridPointerMoveHandler = null;
   let gridPointerLeaveHandler = null;
+  let gridOverlayStyleRefreshToken = 0;
 
   const ensureGridPointerLabel = () => {
     if (gridPointerLabelEl) return gridPointerLabelEl;
@@ -4690,6 +4727,22 @@
   const trackerBlinkQueue = new Set();
   const trackerPositionsStore = new Map();
   const trackerGoToLocations = new Map();
+  const TRIM_MEMBER_PATH_SOURCE_ID = 'trim-member-path';
+  const TRIM_MEMBER_POINTS_SOURCE_ID = 'trim-member-points';
+  const TRIM_MEMBER_PATH_LAYER_ID = 'trim-member-path-line';
+  const TRIM_MEMBER_POINTS_LAYER_ID = 'trim-member-points';
+  let trimMemberMap = null;
+  let trimMemberMapReady = false;
+  let trimMemberActiveId = null;
+  let trimMemberPositions = [];
+  let trimMemberStartIndex = 0;
+  let trimMemberEndIndex = 0;
+  let trimMemberFitNextUpdate = false;
+  let trimMemberDisplayName = '';
+  let trimMemberColor = null;
+  let trimMemberMapUnavailable = false;
+  let trimMemberSourceType = null;
+  let trimMemberSourceFeatureId = null;
   (window)._trackerPositions = trackerPositionsStore;
   (window)._trackerStore = trackerStore;
   (window).getTrackerData = () => Array.from(trackerStore.values());
@@ -5038,8 +5091,26 @@
   const replaceTeamsSessionTrackerIds = (value) => {
     const next = normalizeSessionTrackerIds(value);
     teamsSessionTrackerIds.clear();
-    next.forEach((id) => registerTeamsSessionTrackerId(id, { updateUI: false }));
-    updateTeamsEmptyState();
+    let added = false;
+    next.forEach((id) => {
+      registerTeamsSessionTrackerId(id, { updateUI: false, subscribe: false });
+      const trimmed = String(id || '').trim();
+      if (!trimmed) return;
+      if (!trackerStore.has(trimmed)) {
+        ensureTeamTracker(trimmed, { skipUpdate: true });
+        added = true;
+      }
+      startTrackerSubscription(trimmed);
+    });
+    if (added) {
+      updateTrackerSource();
+      updateTrackerPathSource();
+      renderTrackersList();
+      updateTrackersPanelState();
+      refreshTrackersControlsState();
+    } else {
+      updateTeamsEmptyState();
+    }
   };
 
   const normalizeTeamsGoToMap = (value) => {
@@ -5089,6 +5160,92 @@
         }
       }
     } catch {}
+  };
+
+  const clearTeamsSessionTrackersSubscription = () => {
+    if (!teamsSessionTrackersSubscription) {
+      teamsSessionTrackersSubscriptionId = null;
+      return;
+    }
+    const unsubscribe = teamsSessionTrackersSubscription;
+    teamsSessionTrackersSubscription = null;
+    teamsSessionTrackersSubscriptionId = null;
+    try {
+      if (typeof unsubscribe === 'function') unsubscribe();
+      else if (typeof unsubscribe === 'string') {
+        const sdkInfo = resolveFirebaseSdk();
+        if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+          sdkInfo.sdk.unsubscribe(unsubscribe);
+        }
+      }
+    } catch {}
+  };
+
+  const startTeamsSessionTrackersSubscription = (sessionId) => {
+    const trimmed = String(sessionId || '').trim();
+    if (!trimmed) return false;
+    if (teamsSessionTrackersSubscription && teamsSessionTrackersSubscriptionId === trimmed) return true;
+    clearTeamsSessionTrackersSubscription();
+    const handle = getFirestoreHandle({ warn: false });
+    if (!handle) return false;
+    const { sdkInfo, db } = handle;
+    let unsubscribe = null;
+    try {
+      const handleSnapshot = (snapshot) => {
+        if (!snapshot) return;
+        if (teamsSessionId !== trimmed) return;
+        let added = false;
+        snapshot.forEach((docSnap) => {
+          if (!docSnap) return;
+          const data = typeof docSnap.data === 'function' ? docSnap.data() : docSnap.data;
+          const docId = String(docSnap.id || data?.id || '').trim();
+          if (!docId) return;
+          const wasKnown = trackerStore.has(docId);
+          registerTeamsSessionTrackerId(docId, { updateUI: false, subscribe: false });
+          ensureTeamTracker(docId, { skipUpdate: true });
+          startTrackerSubscription(docId);
+          if (!wasKnown) added = true;
+          const profile = extractProfilePayload(data || {});
+          if (profile) applyTrackerProfileUpdate(docId, profile);
+          const coords = extractCoordsPayload(data || {});
+          if (coords) applyTrackerCoordsUpdate(docId, coords);
+        });
+        if (added) {
+          updateTrackerSource();
+          updateTrackerPathSource();
+          renderTrackersList();
+          updateTrackersPanelState();
+          refreshTrackersControlsState();
+        } else {
+          updateTeamsEmptyState();
+        }
+      };
+      const handleError = (err) => {
+        console.warn('Firestore trackers subscription failed', trimmed, err);
+        clearTeamsSessionTrackersSubscription();
+      };
+      if (sdkInfo.type === 'compat') {
+        if (typeof db.collection !== 'function') return false;
+        const colRef = db.collection('sessions').doc(trimmed).collection('trackers');
+        unsubscribe = colRef.onSnapshot(handleSnapshot, handleError);
+      } else {
+        const { collection, onSnapshot } = sdkInfo.sdk || {};
+        if (typeof collection !== 'function' || typeof onSnapshot !== 'function') {
+          console.warn('Firebase modular SDK missing collection/onSnapshot');
+          return false;
+        }
+        const colRef = collection(db, 'sessions', trimmed, 'trackers');
+        unsubscribe = onSnapshot(colRef, handleSnapshot, handleError);
+      }
+    } catch (err) {
+      console.warn('Failed to subscribe to session trackers', trimmed, err);
+    }
+    if (typeof unsubscribe === 'function' || typeof unsubscribe === 'string') {
+      teamsSessionTrackersSubscription = unsubscribe;
+      teamsSessionTrackersSubscriptionId = trimmed;
+      return true;
+    }
+    return false;
   };
 
   const startTeamsSessionSubscription = (sessionId) => {
@@ -5395,32 +5552,30 @@
     updateTeamsSessionUI();
     if (teamsSessionId) {
       startTeamsSessionSubscription(teamsSessionId);
+      startTeamsSessionTrackersSubscription(teamsSessionId);
       if (!skipFeaturesSync) {
         requestFirestoreFeaturesSync(0);
       }
     } else {
       clearTeamsSessionSubscription();
+      clearTeamsSessionTrackersSubscription();
     }
   };
 
   const resetTeamsSessionData = () => {
     teamsSessionTrackerIds.clear();
+    clearTeamsSessionTrackersSubscription();
     trackerStore.clear();
     trackerPositionsStore.clear();
     trackerGoToLocations.clear();
     clearActiveTrackerGoTo({ skipToolReset: true });
     trackerAutoReveal.clear();
     trackerSubscriptions.forEach((entry) => {
-      const unsubscribe = entry?.unsubscribe;
-      try {
-        if (typeof unsubscribe === 'function') unsubscribe();
-        else if (typeof unsubscribe === 'string') {
-          const sdkInfo = resolveFirebaseSdk();
-          if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
-            sdkInfo.sdk.unsubscribe(unsubscribe);
-          }
-        }
-      } catch {}
+      safeUnsubscribe(entry?.unsubscribe);
+      if (entry?.trackUnsubscribes instanceof Map) {
+        entry.trackUnsubscribes.forEach((unsub) => safeUnsubscribe(unsub));
+        entry.trackUnsubscribes.clear();
+      }
     });
     trackerSubscriptions.clear();
     trackerSubscriptionRetries.forEach((entry) => {
@@ -6717,7 +6872,7 @@
     }
   };
 
-  const ensureTeamTracker = (trackerId, { color } = {}) => {
+  const ensureTeamTracker = (trackerId, { color, skipUpdate = false } = {}) => {
     const trimmed = String(trackerId || '').trim();
     if (!trimmed) return null;
     let tracker = trackerStore.get(trimmed);
@@ -6740,11 +6895,13 @@
       };
       trackerStore.set(trimmed, tracker);
       ensureTrackerHistoryEntry(trimmed);
-      updateTrackerSource();
-      updateTrackerPathSource();
-      renderTrackersList();
-      updateTrackersPanelState();
-      refreshTrackersControlsState();
+      if (!skipUpdate) {
+        updateTrackerSource();
+        updateTrackerPathSource();
+        renderTrackersList();
+        updateTrackersPanelState();
+        refreshTrackersControlsState();
+      }
       return tracker;
     }
     return tracker;
@@ -7007,6 +7164,235 @@
     try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
   };
 
+  const readTrackNumber = (value) => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    if (value && typeof value === 'object') {
+      const candidate = value.doubleValue ?? value.integerValue ?? value.stringValue ?? value.floatValue;
+      if (candidate !== undefined) {
+        const parsed = Number(candidate);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+    }
+    return null;
+  };
+
+  const normalizeTrackTimestamp = (value) => {
+    if (!value) return null;
+    if (typeof value === 'object' && value.__time__) {
+      return normalizeTrackTimestamp(value.__time__);
+    }
+    const date = normalizeSessionDate(value);
+    if (date) return date.getTime();
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  };
+
+  const normalizeTrackSuffix = (value) => {
+    if (!value) return null;
+    const raw = readStringField(value) || (typeof value === 'string' ? value : null);
+    const trimmed = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (trimmed.length !== 1) return null;
+    if (trimmed < 'a' || trimmed > 'z') return null;
+    return trimmed;
+  };
+
+  const buildTrackSuffixes = (lastSuffix, trackDocs) => {
+    const normalized = normalizeTrackSuffix(lastSuffix);
+    if (!normalized) {
+      if (trackDocs && typeof trackDocs.keys === 'function') {
+        return Array.from(trackDocs.keys()).sort();
+      }
+      return ['a'];
+    }
+    const start = 'a'.charCodeAt(0);
+    const end = normalized.charCodeAt(0);
+    const result = [];
+    for (let i = start; i <= end; i += 1) {
+      result.push(String.fromCharCode(i));
+    }
+    return result;
+  };
+
+  const extractTrackEntryCoords = (entry) => {
+    if (!entry || typeof entry !== 'object') return null;
+    const coordsField = entry.coords ?? entry.coord ?? entry.location ?? null;
+    const arrayCandidate = Array.isArray(coordsField)
+      ? coordsField
+      : coordsField?.arrayValue?.values
+        ? coordsField.arrayValue.values
+        : null;
+    if (arrayCandidate) {
+      const a = readTrackNumber(arrayCandidate[0]);
+      const b = readTrackNumber(arrayCandidate[1]);
+      if (Number.isFinite(a) && Number.isFinite(b)) {
+        const aAbs = Math.abs(a);
+        const bAbs = Math.abs(b);
+        if (aAbs > 90 && bAbs <= 90) return { longitude: a, latitude: b };
+        if (bAbs > 90 && aAbs <= 90) return { longitude: b, latitude: a };
+        return { longitude: a, latitude: b };
+      }
+    }
+    return extractCoordsPayload(entry);
+  };
+
+  const normalizeTrackEntry = (entry) => {
+    if (!entry || typeof entry !== 'object') return null;
+    const coords = extractTrackEntryCoords(entry);
+    if (!coords || !Number.isFinite(coords.longitude) || !Number.isFinite(coords.latitude)) return null;
+    const altitudeValue = readTrackNumber(entry.altitude);
+    const altitude = Number.isFinite(altitudeValue)
+      ? altitudeValue
+      : (Number.isFinite(coords.altitude) ? coords.altitude : null);
+    const timestamp = normalizeTrackTimestamp(entry.t ?? entry.time ?? entry.timestamp ?? entry.createdAt);
+    return {
+      longitude: coords.longitude,
+      latitude: coords.latitude,
+      altitude,
+      timestamp
+    };
+  };
+
+  const normalizeTrackDocPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return { nextSuffix: null, coords: [] };
+    const data = unwrapFirestoreFields(payload);
+    const rawCoords = data?.coords?.arrayValue?.values
+      ? data.coords.arrayValue.values
+      : Array.isArray(data?.coords)
+        ? data.coords
+        : [];
+    const coords = Array.isArray(rawCoords)
+      ? rawCoords.map(normalizeTrackEntry).filter(Boolean)
+      : [];
+    const nextSuffix = normalizeTrackSuffix(data?.next ?? data?.fields?.next ?? null);
+    return { nextSuffix, coords };
+  };
+
+  const scheduleTrackerTrackRebuild = (trackerId) => {
+    const trimmed = String(trackerId || '').trim();
+    if (!trimmed) return;
+    const entry = trackerSubscriptions.get(trimmed);
+    if (!entry) return;
+    if (entry.trackRebuildQueued) return;
+    entry.trackRebuildQueued = true;
+    const run = () => {
+      const current = trackerSubscriptions.get(trimmed);
+      if (!current) return;
+      current.trackRebuildQueued = false;
+      applyTrackerTrackDocs(trimmed, current);
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(run);
+    } else {
+      setTimeout(run, 0);
+    }
+  };
+
+  const applyTrackerTrackDocs = (trackerId, entry) => {
+    if (!entry) return;
+    const history = ensureTrackerHistoryEntry(trackerId);
+    history.positions.length = 0;
+    history.segments.length = 0;
+    const suffixes = buildTrackSuffixes(entry.nextSuffix, entry.trackDocs);
+    const points = [];
+    suffixes.forEach((suffix) => {
+      const docPoints = entry.trackDocs?.get(suffix);
+      if (Array.isArray(docPoints)) docPoints.forEach((pt) => points.push(pt));
+    });
+    if (!points.length) {
+      entry.hasTrackCoords = false;
+      updateTrackerPathSource();
+      return;
+    }
+    const tracker = ensureTeamTracker(trackerId);
+    const resolvedColor = tracker?.color || nextTrackerColor();
+    let lastPoint = null;
+    const pushPosition = (lng, lat, timestamp) => {
+      const last = history.positions[history.positions.length - 1];
+      if (last && last.longitude === lng && last.latitude === lat) return;
+      history.positions.push({
+        longitude: lng,
+        latitude: lat,
+        timestamp: Number.isFinite(timestamp) ? timestamp : null
+      });
+    };
+    points.forEach((pt) => {
+      if (!pt) return;
+      const lng = Number(pt.longitude);
+      const lat = Number(pt.latitude);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      const timestamp = Number.isFinite(pt.timestamp) ? pt.timestamp : null;
+      pushPosition(lng, lat, timestamp);
+      if (lastPoint) {
+        const distance = haversineMeters(lastPoint, { longitude: lng, latitude: lat });
+        if (distance > 3) {
+          history.segments.push({
+            from: { longitude: lastPoint.longitude, latitude: lastPoint.latitude },
+            to: { longitude: lng, latitude: lat },
+            distance,
+            timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+            color: resolvedColor
+          });
+        }
+      }
+      lastPoint = {
+        longitude: lng,
+        latitude: lat,
+        altitude: Number.isFinite(pt.altitude) ? pt.altitude : null,
+        timestamp
+      };
+    });
+    entry.hasTrackCoords = !!lastPoint;
+    if (!lastPoint) {
+      updateTrackerPathSource();
+      return;
+    }
+    const prev = trackerStore.get(trackerId);
+    const prevLng = prev?.longitude;
+    const prevLat = prev?.latitude;
+    const hasPrev = Number.isFinite(prevLng) && Number.isFinite(prevLat);
+    trackerStore.set(trackerId, {
+      ...prev,
+      id: trackerId,
+      longitude: lastPoint.longitude,
+      latitude: lastPoint.latitude,
+      altitude: Number.isFinite(lastPoint.altitude) ? lastPoint.altitude : prev?.altitude ?? null,
+      updatedAt: Number.isFinite(lastPoint.timestamp) ? lastPoint.timestamp : (prev?.updatedAt || Date.now()),
+      color: prev?.color || resolvedColor,
+      visible: prev?.visible === false ? false : true
+    });
+    maybeAutoClearTrackerGoTo(trackerId, {
+      longitude: lastPoint.longitude,
+      latitude: lastPoint.latitude,
+      altitude: lastPoint.altitude
+    }, { skipUpdate: true });
+    updateTrackerSource();
+    updateTrackerPathSource();
+    renderTrackersList();
+    updateTrackersPanelState();
+    maybeRevealTrackerOnMap(trackerId, { longitude: lastPoint.longitude, latitude: lastPoint.latitude }, { force: !hasPrev });
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+  };
+
+  const safeUnsubscribe = (unsubscribe) => {
+    if (!unsubscribe) return;
+    try {
+      if (typeof unsubscribe === 'function') unsubscribe();
+      else if (typeof unsubscribe === 'string') {
+        const sdkInfo = resolveFirebaseSdk();
+        if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
+          sdkInfo.sdk.unsubscribe(unsubscribe);
+        }
+      }
+    } catch {}
+  };
+
   const maybeRevealTrackerOnMap = (trackerId, coords, { force = false } = {}) => {
     const map = getMap();
     if (!map || !coords) return;
@@ -7055,33 +7441,128 @@
       scheduleTrackerSubscriptionRetry(trimmed, 'firestore unavailable');
       return false;
     }
-    let unsubscribe = null;
+    const entry = {
+      unsubscribe: null,
+      trackUnsubscribes: new Map(),
+      trackDocs: new Map(),
+      nextSuffix: 'a',
+      trackRebuildQueued: false,
+      hasTrackCoords: false
+    };
+    trackerSubscriptions.set(trimmed, entry);
+    const cleanupAndRetry = (reason) => {
+      const current = trackerSubscriptions.get(trimmed);
+      if (current) {
+        safeUnsubscribe(current.unsubscribe);
+        current.unsubscribe = null;
+        if (current.trackUnsubscribes instanceof Map) {
+          current.trackUnsubscribes.forEach((unsub) => safeUnsubscribe(unsub));
+          current.trackUnsubscribes.clear();
+        }
+        trackerSubscriptions.delete(trimmed);
+      }
+      scheduleTrackerSubscriptionRetry(trimmed, reason);
+    };
+    const ensureTrackSuffixes = (lastSuffix) => {
+      const suffixes = buildTrackSuffixes(lastSuffix, entry.trackDocs);
+      const wanted = new Set(suffixes);
+      suffixes.forEach((suffix) => {
+        if (entry.trackUnsubscribes.has(suffix)) return;
+        let trackUnsubscribe = null;
+        try {
+          const handleTrackSnapshot = (snapshot) => {
+            if (!snapshot) return;
+            if (trackerSubscriptions.get(trimmed) !== entry) return;
+            const exists = typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists;
+            if (exists === false) {
+              entry.trackDocs.delete(suffix);
+              if (suffix === 'a') {
+                entry.nextSuffix = 'a';
+                ensureTrackSuffixes('a');
+              }
+              scheduleTrackerTrackRebuild(trimmed);
+              return;
+            }
+            const data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
+            const normalized = normalizeTrackDocPayload(data || {});
+            entry.trackDocs.set(suffix, normalized.coords);
+            if (suffix === 'a') {
+              const nextSuffix = normalized.nextSuffix || 'a';
+              if (nextSuffix !== entry.nextSuffix) {
+                entry.nextSuffix = nextSuffix;
+                ensureTrackSuffixes(nextSuffix);
+              }
+            }
+            scheduleTrackerTrackRebuild(trimmed);
+          };
+          const handleTrackError = (err) => {
+            console.warn('Firestore track subscription failed', trimmed, suffix, err);
+            cleanupAndRetry('track snapshot error');
+          };
+          if (sdkInfo.type === 'compat') {
+            const docRef = db.doc(`sessions/${sessionId}/tracks/${trimmed}_${suffix}`);
+            trackUnsubscribe = docRef.onSnapshot(handleTrackSnapshot, handleTrackError);
+          } else {
+            const { doc, onSnapshot } = sdkInfo.sdk || {};
+            if (typeof doc !== 'function' || typeof onSnapshot !== 'function') {
+              console.warn('Firebase modular SDK missing doc/onSnapshot');
+              if (!firestoreUnavailableToasted) {
+                firestoreUnavailableToasted = true;
+                showToast(t('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.'), 'error');
+              }
+              cleanupAndRetry('modular sdk missing');
+              return;
+            }
+            const docRef = doc(db, 'sessions', sessionId, 'tracks', `${trimmed}_${suffix}`);
+            trackUnsubscribe = onSnapshot(docRef, handleTrackSnapshot, handleTrackError);
+          }
+        } catch (err) {
+          console.warn('Failed to subscribe to track updates', trimmed, suffix, err);
+          cleanupAndRetry('track subscription error');
+          return;
+        }
+        if (typeof trackUnsubscribe === 'function' || typeof trackUnsubscribe === 'string') {
+          entry.trackUnsubscribes.set(suffix, trackUnsubscribe);
+        }
+      });
+      entry.trackUnsubscribes.forEach((unsub, suffix) => {
+        if (!wanted.has(suffix)) {
+          safeUnsubscribe(unsub);
+          entry.trackUnsubscribes.delete(suffix);
+          entry.trackDocs.delete(suffix);
+        }
+      });
+      const normalized = normalizeTrackSuffix(lastSuffix);
+      entry.nextSuffix = normalized || entry.nextSuffix || 'a';
+    };
+    try {
+      ensureTrackSuffixes('a');
+    } catch (err) {
+      console.warn('Failed to initialize tracker track subscription', trimmed, err);
+      cleanupAndRetry('track init error');
+      return false;
+    }
     try {
       const handleSnapshot = (snapshot) => {
         if (!snapshot) return;
+        if (trackerSubscriptions.get(trimmed) !== entry) return;
         const exists = typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists;
         if (exists === false) return;
         const data = typeof snapshot.data === 'function' ? snapshot.data() : snapshot.data;
         const profile = extractProfilePayload(data || {});
         if (profile) applyTrackerProfileUpdate(trimmed, profile);
-        const coords = extractCoordsPayload(data || {});
-        if (coords) {
-          applyTrackerCoordsUpdate(trimmed, coords);
+        if (!entry.hasTrackCoords) {
+          const coords = extractCoordsPayload(data || {});
+          if (coords) applyTrackerCoordsUpdate(trimmed, coords);
         }
       };
       const handleError = (err) => {
         console.warn('Firestore tracker subscription failed', trimmed, err);
-        if (typeof unsubscribe === 'function') {
-          try { unsubscribe(); } catch {}
-        } else if (typeof unsubscribe === 'string' && sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
-          try { sdkInfo.sdk.unsubscribe(unsubscribe); } catch {}
-        }
-        trackerSubscriptions.delete(trimmed);
-        scheduleTrackerSubscriptionRetry(trimmed, 'snapshot error');
+        cleanupAndRetry('snapshot error');
       };
       if (sdkInfo.type === 'compat') {
         const docRef = db.doc(`sessions/${sessionId}/trackers/${trimmed}`);
-        unsubscribe = docRef.onSnapshot(handleSnapshot, handleError);
+        entry.unsubscribe = docRef.onSnapshot(handleSnapshot, handleError);
       } else {
         const { doc, onSnapshot } = sdkInfo.sdk || {};
         if (typeof doc !== 'function' || typeof onSnapshot !== 'function') {
@@ -7090,21 +7571,21 @@
             firestoreUnavailableToasted = true;
             showToast(t('teams.firestoreUnavailable', 'Firestore is not available. Check Firebase settings.'), 'error');
           }
-          scheduleTrackerSubscriptionRetry(trimmed, 'modular sdk missing');
+          cleanupAndRetry('modular sdk missing');
           return false;
         }
         const docRef = doc(db, 'sessions', sessionId, 'trackers', trimmed);
-        unsubscribe = onSnapshot(docRef, handleSnapshot, handleError);
+        entry.unsubscribe = onSnapshot(docRef, handleSnapshot, handleError);
       }
     } catch (err) {
       console.warn('Failed to subscribe to tracker updates', trimmed, err);
-      scheduleTrackerSubscriptionRetry(trimmed, 'subscription error');
+      cleanupAndRetry('subscription error');
+      return false;
     }
-    if (typeof unsubscribe === 'function' || typeof unsubscribe === 'string') {
-      trackerSubscriptions.set(trimmed, { unsubscribe });
+    if ((typeof entry.unsubscribe === 'function' || typeof entry.unsubscribe === 'string') || entry.trackUnsubscribes.size > 0) {
       return true;
     }
-    scheduleTrackerSubscriptionRetry(trimmed, 'no unsubscribe handle');
+    cleanupAndRetry('no unsubscribe handle');
     return false;
   };
 
@@ -7261,6 +7742,488 @@
     if (started) {
       showToast(t('teams.trackingStarted', 'Tracking started'));
     }
+  };
+
+  const setTrimMemberMapEmpty = (message) => {
+    if (!trimMemberMapEmpty) return;
+    const text = typeof message === 'string' ? message : '';
+    if (text) {
+      trimMemberMapEmpty.textContent = text;
+      trimMemberMapEmpty.hidden = false;
+    } else {
+      trimMemberMapEmpty.hidden = true;
+    }
+  };
+
+  const formatTrimMemberTime = (timestamp) => {
+    if (!Number.isFinite(timestamp)) return '';
+    try {
+      return new Date(timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const formatTrimMemberDate = (timestamp) => {
+    if (!Number.isFinite(timestamp)) return '';
+    try {
+      return new Date(timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const formatTrimMemberLabel = (index, total, timestamp) => {
+    if (!Number.isFinite(index) || !Number.isFinite(total) || total <= 0) return '—';
+    const count = `${index + 1}/${total}`;
+    const time = formatTrimMemberTime(timestamp);
+    return time ? `${count} @ ${time}` : count;
+  };
+
+  const formatTrimMemberLength = (meters) => {
+    if (!Number.isFinite(meters)) return '';
+    if (meters >= 1000) {
+      const km = meters / 1000;
+      const digits = km >= 100 ? 0 : (km >= 10 ? 1 : 2);
+      return `${km.toFixed(digits)} km`;
+    }
+    if (meters >= 100) return `${Math.round(meters)} m`;
+    return `${meters.toFixed(1)} m`;
+  };
+
+  const computeTrimMemberLengthMeters = (slice) => {
+    if (!Array.isArray(slice) || slice.length < 2) return 0;
+    let meters = 0;
+    for (let i = 1; i < slice.length; i += 1) {
+      meters += haversineMeters(slice[i - 1], slice[i]);
+    }
+    return meters;
+  };
+
+  const updateTrimMemberRangeUI = (slice, lengthMeters) => {
+    const total = trimMemberPositions.length;
+    const max = Math.max(1, total - 1);
+    const startPct = total > 1 ? (trimMemberStartIndex / max) * 100 : 0;
+    const endPct = total > 1 ? (trimMemberEndIndex / max) * 100 : 100;
+    if (trimMemberSlider) {
+      trimMemberSlider.style.setProperty('--trim-start', `${startPct}%`);
+      trimMemberSlider.style.setProperty('--trim-end', `${endPct}%`);
+    }
+    const startTs = trimMemberPositions[trimMemberStartIndex]?.timestamp;
+    const endTs = trimMemberPositions[trimMemberEndIndex]?.timestamp;
+    if (trimMemberRangeStartLabel) {
+      trimMemberRangeStartLabel.textContent = formatTrimMemberLabel(trimMemberStartIndex, total, startTs);
+    }
+    if (trimMemberRangeStartDate) {
+      const date = formatTrimMemberDate(startTs);
+      trimMemberRangeStartDate.textContent = date || '—';
+    }
+    if (trimMemberRangeEndLabel) {
+      trimMemberRangeEndLabel.textContent = formatTrimMemberLabel(trimMemberEndIndex, total, endTs);
+    }
+    if (trimMemberRangeEndDate) {
+      const date = formatTrimMemberDate(endTs);
+      trimMemberRangeEndDate.textContent = date || '—';
+    }
+    const activeSlice = Array.isArray(slice) ? slice : getTrimMemberSlice();
+    const pointsCount = activeSlice.length;
+    const meters = Number.isFinite(lengthMeters) ? lengthMeters : computeTrimMemberLengthMeters(activeSlice);
+    if (trimMemberRangeLength) {
+      const label = total ? formatTrimMemberLength(meters) : '';
+      trimMemberRangeLength.textContent = label || '—';
+    }
+    if (trimMemberRangePoints) {
+      trimMemberRangePoints.textContent = total ? `${pointsCount} of ${total} points` : 'No points';
+    }
+    if (trimMemberRangeStart && trimMemberRangeEnd) {
+      const startOnTop = trimMemberStartIndex >= trimMemberEndIndex;
+      trimMemberRangeStart.style.zIndex = startOnTop ? '4' : '2';
+      trimMemberRangeEnd.style.zIndex = startOnTop ? '3' : '4';
+    }
+  };
+
+  const getTrimMemberSlice = () => {
+    if (!Array.isArray(trimMemberPositions) || trimMemberPositions.length === 0) return [];
+    const total = trimMemberPositions.length;
+    let start = Number.isFinite(trimMemberStartIndex) ? trimMemberStartIndex : 0;
+    let end = Number.isFinite(trimMemberEndIndex) ? trimMemberEndIndex : total - 1;
+    start = Math.max(0, Math.min(total - 1, start));
+    end = Math.max(start, Math.min(total - 1, end));
+    return trimMemberPositions.slice(start, end + 1);
+  };
+
+  const computeTrimMemberBounds = (coords) => {
+    if (!Array.isArray(coords) || coords.length === 0) return null;
+    let minLng = Infinity;
+    let maxLng = -Infinity;
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    coords.forEach((coord) => {
+      const lng = Array.isArray(coord) ? coord[0] : null;
+      const lat = Array.isArray(coord) ? coord[1] : null;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    });
+    if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null;
+    return [[minLng, minLat], [maxLng, maxLat]];
+  };
+
+  const ensureTrimMemberMapLayers = () => {
+    if (!trimMemberMap) return;
+    if (!trimMemberMap.getSource(TRIM_MEMBER_PATH_SOURCE_ID)) {
+      trimMemberMap.addSource(TRIM_MEMBER_PATH_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    if (!trimMemberMap.getSource(TRIM_MEMBER_POINTS_SOURCE_ID)) {
+      trimMemberMap.addSource(TRIM_MEMBER_POINTS_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    if (!trimMemberMap.getLayer(TRIM_MEMBER_PATH_LAYER_ID)) {
+      trimMemberMap.addLayer({
+        id: TRIM_MEMBER_PATH_LAYER_ID,
+        type: 'line',
+        source: TRIM_MEMBER_PATH_SOURCE_ID,
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+          'line-width': 3
+        }
+      });
+    }
+    if (!trimMemberMap.getLayer(TRIM_MEMBER_POINTS_LAYER_ID)) {
+      trimMemberMap.addLayer({
+        id: TRIM_MEMBER_POINTS_LAYER_ID,
+        type: 'circle',
+        source: TRIM_MEMBER_POINTS_SOURCE_ID,
+        paint: {
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'start', '#22c55e',
+            'end', '#ef4444',
+            '#3b82f6'
+          ],
+          'circle-radius': 5,
+          'circle-stroke-width': 1.2,
+          'circle-stroke-color': '#ffffff'
+        }
+      });
+    }
+  };
+
+  const ensureTrimMemberMap = () => {
+    if (!trimMemberMapEl) return false;
+    if (trimMemberMap) return true;
+    trimMemberMapUnavailable = false;
+    if (!(window).mapboxgl) {
+      trimMemberMapUnavailable = true;
+      setTrimMemberMapEmpty('Map unavailable.');
+      return false;
+    }
+    const accessToken = (localStorage.getItem('map.accessToken') || defaultAccessToken || '').trim();
+    if (!accessToken) {
+      trimMemberMapUnavailable = true;
+      setTrimMemberMapEmpty('Map unavailable.');
+      return false;
+    }
+    try {
+      (window).mapboxgl.accessToken = accessToken;
+      const styleUrl = (getTargetMapStyleUrl() || DEFAULT_STYLE_URL || '').trim();
+      trimMemberMap = new (window).mapboxgl.Map({
+        container: trimMemberMapEl,
+        style: styleUrl || DEFAULT_STYLE_URL,
+        center: [defaultStartLng, defaultStartLat],
+        zoom: Number.isFinite(defaultStartZoom) ? defaultStartZoom : DEFAULT_START_ZOOM,
+        attributionControl: false,
+        preserveDrawingBuffer: true
+      });
+      trimMemberMapReady = false;
+      trimMemberMap.on('load', () => {
+        trimMemberMapReady = true;
+        ensureTrimMemberMapLayers();
+        updateTrimMemberMapData();
+      });
+      trimMemberMap.on('style.load', () => {
+        ensureTrimMemberMapLayers();
+        updateTrimMemberMapData();
+      });
+      return true;
+    } catch (err) {
+      console.error('Trim map init failed', err);
+      trimMemberMapUnavailable = true;
+      setTrimMemberMapEmpty('Map unavailable.');
+      return false;
+    }
+  };
+
+  const updateTrimMemberMapData = () => {
+    const total = trimMemberPositions.length;
+    if (trimMemberMapUnavailable) {
+      setTrimMemberMapEmpty('Map unavailable.');
+    } else if (!total) {
+      setTrimMemberMapEmpty('No location data yet.');
+    } else {
+      setTrimMemberMapEmpty('');
+    }
+    const hasChanges = total > 0 && (trimMemberStartIndex > 0 || trimMemberEndIndex < total - 1);
+    if (trimMemberExtract) {
+      trimMemberExtract.hidden = false;
+      trimMemberExtract.disabled = !hasChanges;
+    }
+    const slice = getTrimMemberSlice();
+    const lengthMeters = computeTrimMemberLengthMeters(slice);
+    const lengthLabel = formatTrimMemberLength(lengthMeters);
+    if (trimMemberStatus) {
+      if (!total) {
+        trimMemberStatus.textContent = 'No location data yet.';
+      } else if (!hasChanges) {
+        trimMemberStatus.textContent = `Showing full track (${total} points${lengthLabel ? `, ${lengthLabel}` : ''})`;
+      } else {
+        trimMemberStatus.textContent = `Showing points ${trimMemberStartIndex + 1}-${trimMemberEndIndex + 1} of ${total}${lengthLabel ? ` (${lengthLabel})` : ''}`;
+      }
+    }
+    updateTrimMemberRangeUI(slice, lengthMeters);
+    if (!trimMemberMap || !trimMemberMapReady) return;
+    const coords = slice.map((pos) => [pos.longitude, pos.latitude]).filter((pair) => Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+    const lineFeatures = [];
+    if (coords.length >= 2) {
+      lineFeatures.push({
+        type: 'Feature',
+        properties: { color: trimMemberColor || '#3b82f6' },
+        geometry: { type: 'LineString', coordinates: coords }
+      });
+    }
+    const pointFeatures = [];
+    if (coords.length >= 1) {
+      pointFeatures.push({ type: 'Feature', properties: { kind: 'start' }, geometry: { type: 'Point', coordinates: coords[0] } });
+      if (coords.length > 1) {
+        pointFeatures.push({ type: 'Feature', properties: { kind: 'end' }, geometry: { type: 'Point', coordinates: coords[coords.length - 1] } });
+      }
+    }
+    try {
+      const pathSource = trimMemberMap.getSource(TRIM_MEMBER_PATH_SOURCE_ID);
+      if (pathSource) pathSource.setData({ type: 'FeatureCollection', features: lineFeatures });
+      const pointSource = trimMemberMap.getSource(TRIM_MEMBER_POINTS_SOURCE_ID);
+      if (pointSource) pointSource.setData({ type: 'FeatureCollection', features: pointFeatures });
+    } catch (err) {
+      console.warn('Trim map update failed', err);
+    }
+    if (trimMemberFitNextUpdate && coords.length) {
+      trimMemberFitNextUpdate = false;
+      const bounds = computeTrimMemberBounds(coords);
+      if (bounds) {
+        try {
+          trimMemberMap.fitBounds(bounds, { padding: 36, duration: 0 });
+        } catch {}
+      } else if (coords[0]) {
+        try {
+          trimMemberMap.jumpTo({ center: coords[0], zoom: Math.max(12, trimMemberMap.getZoom() || 12) });
+        } catch {}
+      }
+    }
+  };
+
+  const syncTrimMemberRange = (source) => {
+    const total = trimMemberPositions.length;
+    if (!total) return;
+    let startVal = Number(trimMemberRangeStart?.value);
+    let endVal = Number(trimMemberRangeEnd?.value);
+    if (!Number.isFinite(startVal)) startVal = 0;
+    if (!Number.isFinite(endVal)) endVal = total - 1;
+    if (startVal > endVal) {
+      if (source === 'start') endVal = startVal;
+      else startVal = endVal;
+    }
+    trimMemberStartIndex = Math.max(0, Math.min(total - 1, startVal));
+    trimMemberEndIndex = Math.max(trimMemberStartIndex, Math.min(total - 1, endVal));
+    if (trimMemberRangeStart) trimMemberRangeStart.value = String(trimMemberStartIndex);
+    if (trimMemberRangeEnd) trimMemberRangeEnd.value = String(trimMemberEndIndex);
+  };
+
+  const handleTrimMemberRangeInput = (source) => {
+    syncTrimMemberRange(source);
+    updateTrimMemberMapData();
+  };
+
+  const openTrimMemberModalWithData = ({ positions, displayName, color, title, sourceType, sourceId } = {}) => {
+    if (!trimMemberModal) return;
+    trimMemberActiveId = sourceId || null;
+    trimMemberDisplayName = displayName || '';
+    trimMemberColor = color || null;
+    trimMemberMapUnavailable = false;
+    trimMemberSourceType = sourceType || null;
+    trimMemberSourceFeatureId = sourceType === 'gpx' ? sourceId || null : null;
+    if (trimMemberTitle) trimMemberTitle.textContent = title || 'Trim member session';
+    const list = Array.isArray(positions) ? positions : [];
+    trimMemberPositions = list
+      .map((pos) => {
+        const longitude = Number(pos?.longitude);
+        const latitude = Number(pos?.latitude);
+        const rawTs = pos?.timestamp;
+        const timestamp = Number.isFinite(rawTs) ? Number(rawTs) : null;
+        return { longitude, latitude, timestamp };
+      })
+      .filter((pos) => Number.isFinite(pos.longitude) && Number.isFinite(pos.latitude));
+    const max = Math.max(0, trimMemberPositions.length - 1);
+    trimMemberStartIndex = 0;
+    trimMemberEndIndex = max;
+    if (trimMemberRangeStart) {
+      trimMemberRangeStart.min = '0';
+      trimMemberRangeStart.max = String(max);
+      trimMemberRangeStart.value = '0';
+      trimMemberRangeStart.disabled = trimMemberPositions.length === 0;
+    }
+    if (trimMemberRangeEnd) {
+      trimMemberRangeEnd.min = '0';
+      trimMemberRangeEnd.max = String(max);
+      trimMemberRangeEnd.value = String(max);
+      trimMemberRangeEnd.disabled = trimMemberPositions.length === 0;
+    }
+    trimMemberFitNextUpdate = true;
+    updateTrimMemberMapData();
+    trimMemberModal.hidden = false;
+    trimMemberModal.setAttribute('aria-hidden', 'false');
+    try { trimMemberClose?.focus(); } catch {}
+    if (ensureTrimMemberMap()) {
+      setTimeout(() => {
+        try { trimMemberMap?.resize(); } catch {}
+        try { updateTrimMemberMapData(); } catch {}
+      }, 60);
+    }
+  };
+
+  const openTrimMemberModal = (trackerId) => {
+    if (!trimMemberModal) return;
+    const resolvedId = String(trackerId || '').trim();
+    if (!resolvedId) return;
+    const tracker = trackerStore.get(resolvedId);
+    const entry = trackerPositionsStore.get(resolvedId);
+    const positions = Array.isArray(entry?.positions) ? entry.positions : [];
+    openTrimMemberModalWithData({
+      positions,
+      displayName: tracker ? getTrackerDisplayName(tracker) : resolvedId,
+      color: tracker?.color || null,
+      title: 'Trim member session',
+      sourceType: 'tracker',
+      sourceId: resolvedId
+    });
+  };
+
+  const openTrimMemberModalForFeature = (feature) => {
+    if (!trimMemberModal || !feature) return;
+    const geom = feature.geometry;
+    if (!geom) return;
+    if (geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) {
+      showToast('Only line features can be trimmed.', 'error');
+      return;
+    }
+    const coords = geom.coordinates;
+    if (coords.length < 2) {
+      showToast('Line feature has no trim range.', 'error');
+      return;
+    }
+    const positions = coords.map((coord) => ({
+      longitude: Array.isArray(coord) ? Number(coord[0]) : NaN,
+      latitude: Array.isArray(coord) ? Number(coord[1]) : NaN,
+      timestamp: null
+    }));
+    const featureNameRaw = sanitizeFeatureNameDraft(feature.properties?.name || '');
+    const displayName = featureNameRaw || 'Line feature';
+    const isGpx = feature.properties?.importSource === 'gpx';
+    openTrimMemberModalWithData({
+      positions,
+      displayName,
+      color: feature.properties?.color || null,
+      title: isGpx ? 'Trim GPX feature' : 'Trim line feature',
+      sourceType: isGpx ? 'gpx' : 'feature',
+      sourceId: feature.properties?.id || null
+    });
+  };
+
+  const closeTrimMemberModal = () => {
+    if (!trimMemberModal) return;
+    trimMemberModal.hidden = true;
+    trimMemberModal.setAttribute('aria-hidden', 'true');
+    trimMemberActiveId = null;
+    trimMemberPositions = [];
+    trimMemberStartIndex = 0;
+    trimMemberEndIndex = 0;
+    trimMemberDisplayName = '';
+    trimMemberColor = null;
+    trimMemberFitNextUpdate = false;
+    trimMemberMapUnavailable = false;
+    trimMemberSourceType = null;
+    trimMemberSourceFeatureId = null;
+    if (trimMemberTitle) trimMemberTitle.textContent = 'Trim member session';
+    setTrimMemberMapEmpty('');
+  };
+
+  const handleTrimMemberExtract = () => {
+    const storeRef = (window)._drawStore;
+    if (!storeRef || !Array.isArray(storeRef.features)) {
+      showToast('Unable to add feature. Drawing store is not ready.', 'error');
+      return;
+    }
+    const slice = getTrimMemberSlice();
+    if (!slice.length) {
+      showToast('No data to extract.', 'error');
+      return;
+    }
+    const coords = slice.map((pos) => [pos.longitude, pos.latitude]);
+    const geometry = coords.length > 1
+      ? { type: 'LineString', coordinates: coords }
+      : { type: 'Point', coordinates: coords[0] };
+    const baseName = trimMemberDisplayName
+      || (trimMemberSourceType === 'gpx'
+        ? 'GPX track'
+        : (trimMemberSourceType === 'feature' ? 'Line feature' : (trimMemberActiveId || 'Tracker')));
+    const featureName = `Trimmed ${baseName}`;
+    const kind = geometry.type === 'LineString' ? 'line' : 'poi';
+    const generateId = () => (typeof newId === 'function')
+      ? newId()
+      : `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const feature = {
+      type: 'Feature',
+      geometry,
+      properties: {
+        id: generateId(),
+        kind,
+        name: featureName,
+        color: trimMemberColor || '#1565C0'
+      }
+    };
+    const hideOriginalLine = () => {
+      if (!trimMemberSourceFeatureId) return false;
+      const original = storeRef.features.find((f) => f?.properties?.id === trimMemberSourceFeatureId);
+      if (!original || !original.properties) return false;
+      original.properties._featureHidden = true;
+      const relatedId = original.properties.id;
+      storeRef.features.forEach((feat) => {
+        if (feat?.properties?.relatedLineId === relatedId) {
+          feat.properties._featureHidden = true;
+        }
+      });
+      return true;
+    };
+    storeRef.features.push(feature);
+    try {
+      if (geometry.type === 'LineString' && typeof addLineEndpoints === 'function') {
+        addLineEndpoints(feature, coords);
+      }
+    } catch {}
+    const shouldHideOriginal = trimMemberSourceType === 'feature' || trimMemberSourceType === 'gpx';
+    if (shouldHideOriginal) hideOriginalLine();
+    try {
+      if (typeof (window)._refreshDraw === 'function') (window)._refreshDraw();
+      else if (typeof refreshDraw === 'function') refreshDraw();
+    } catch {}
+    try { if (typeof updateDrawingsPanel === 'function') updateDrawingsPanel(); } catch {}
+    setDirty(true);
+    requestFirestoreFeaturesSync(0);
+    try { (window).applyTrackerVisibilityToDrawings?.(); } catch {}
+    try { if (typeof computeFeatureBounds === 'function' && typeof focusMapOnBounds === 'function') focusMapOnBounds(computeFeatureBounds([feature])); } catch {}
+    showToast('Feature extracted');
+    closeTrimMemberModal();
   };
 
   function ensureRecordingEntry(tracker) {
@@ -7878,16 +8841,11 @@
 
     const subscription = trackerSubscriptions.get(trimmed);
     if (subscription) {
-      const unsubscribe = subscription?.unsubscribe;
-      try {
-        if (typeof unsubscribe === 'function') unsubscribe();
-        else if (typeof unsubscribe === 'string') {
-          const sdkInfo = resolveFirebaseSdk();
-          if (sdkInfo?.type === 'modular' && typeof sdkInfo.sdk?.unsubscribe === 'function') {
-            sdkInfo.sdk.unsubscribe(unsubscribe);
-          }
-        }
-      } catch {}
+      safeUnsubscribe(subscription.unsubscribe);
+      if (subscription.trackUnsubscribes instanceof Map) {
+        subscription.trackUnsubscribes.forEach((unsub) => safeUnsubscribe(unsub));
+        subscription.trackUnsubscribes.clear();
+      }
     }
     trackerSubscriptions.delete(trimmed);
     clearTrackerSubscriptionRetry(trimmed);
@@ -8076,6 +9034,20 @@
         qrBtn.addEventListener('click', () => openTeamMemberQrModal(tracker.id));
         actions.appendChild(poiIconBtn);
         actions.appendChild(qrBtn);
+
+        const trimBtn = document.createElement('button');
+        trimBtn.type = 'button';
+        trimBtn.className = 'tracker-action tracker-trim';
+        const trimLabel = 'Trim member session';
+        trimBtn.title = trimLabel;
+        trimBtn.setAttribute('aria-label', displayName ? `${trimLabel} (${displayName})` : trimLabel);
+        const trimIcon = document.createElement('img');
+        trimIcon.src = './assets/icons/regular/scissors.svg';
+        trimIcon.alt = '';
+        trimIcon.setAttribute('aria-hidden', 'true');
+        trimBtn.appendChild(trimIcon);
+        trimBtn.addEventListener('click', () => openTrimMemberModal(tracker.id));
+        actions.appendChild(trimBtn);
 
         const gotoBtn = document.createElement('button');
         gotoBtn.type = 'button';
@@ -11097,6 +12069,8 @@
       const isPoiFeature = g.type === 'Point';
       row.classList.toggle('drawing-row--poi', isPoiFeature);
       const poiHasSymbol = isPoiFeature && typeof f.properties?.poiIcon === 'string' && f.properties.poiIcon.trim();
+      const isGpxFeature = f.properties?.importSource === 'gpx';
+      const canTrimLine = g.type === 'LineString' && Array.isArray(g.coordinates) && g.coordinates.length > 1;
       const isArrowFeature = (f.properties?.kind || '').toLowerCase() === 'arrow';
       const disableEditAi = isArrowFeature;
       let editBtn = null;
@@ -11153,6 +12127,11 @@
       sizeToggleBtn.className = 'drawing-toggle drawing-size-toggle';
       const sizeToggleIcon = makeButtonIcon(DRAWING_ICON_PATHS.size);
       sizeToggleBtn.appendChild(sizeToggleIcon);
+      const focusBtn = document.createElement('button');
+      focusBtn.type = 'button';
+      focusBtn.className = 'drawing-toggle drawing-focus';
+      const focusIcon = makeButtonIcon(DRAWING_ICON_PATHS.focus);
+      focusBtn.appendChild(focusIcon);
       let aiBtn = null;
       if (!disableEditAi && !isReadOnlyFeature) {
         aiBtn = document.createElement('button');
@@ -11216,9 +12195,25 @@
       row.appendChild(header);
       if (editBtn) actions.appendChild(editBtn);
       if (poiIconBtn) actions.appendChild(poiIconBtn);
+      if (canTrimLine) {
+        const trimBtn = document.createElement('button');
+        trimBtn.type = 'button';
+        trimBtn.className = 'drawing-trim';
+        const trimLabel = isGpxFeature ? 'Trim GPX feature' : 'Trim line feature';
+        trimBtn.title = trimLabel;
+        trimBtn.setAttribute('aria-label', trimLabel);
+        const trimIcon = makeButtonIcon(DRAWING_ICON_PATHS.trim);
+        trimBtn.appendChild(trimIcon);
+        trimBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openTrimMemberModalForFeature(f);
+        });
+        actions.appendChild(trimBtn);
+      }
       actions.appendChild(toggleBtn);
       actions.appendChild(labelToggleBtn);
       actions.appendChild(sizeToggleBtn);
+      actions.appendChild(focusBtn);
       if (aiBtn) actions.appendChild(aiBtn);
       actions.appendChild(del);
       if (poiHasSymbol) {
@@ -11437,6 +12432,49 @@
         setDirty(true);
         refreshDrawMapOnly();
         notifyFeatureModified(t(nextHidden ? 'messages.featureSizeHidden' : 'messages.featureSizeShown', nextHidden ? 'Feature size hidden' : 'Feature size shown'));
+      });
+      const getFeatureCenter = () => {
+        try {
+          const geom = f?.geometry;
+          if (!geom) return null;
+          if (geom.type === 'Point' && Array.isArray(geom.coordinates)) {
+            const [lng, lat] = geom.coordinates;
+            if (Number.isFinite(lng) && Number.isFinite(lat)) return { lng, lat };
+          }
+          const centroid = centroidOfGeom(geom);
+          if (centroid && Number.isFinite(centroid.lng) && Number.isFinite(centroid.lat)) return centroid;
+          const bounds = computeFeatureBounds([f]);
+          if (!bounds) return null;
+          const lng = (bounds.minLng + bounds.maxLng) / 2;
+          const lat = (bounds.minLat + bounds.maxLat) / 2;
+          if (Number.isFinite(lng) && Number.isFinite(lat)) return { lng, lat };
+        } catch {}
+        return null;
+      };
+      const applyFocusState = () => {
+        const labelText = 'Center map on feature';
+        focusBtn.title = labelText;
+        focusBtn.setAttribute('aria-label', labelText);
+        const center = getFeatureCenter();
+        const ok = !!center;
+        focusBtn.disabled = !ok;
+        focusBtn.classList.toggle('is-disabled', !ok);
+        if (!ok) focusBtn.setAttribute('aria-disabled', 'true');
+        else focusBtn.removeAttribute('aria-disabled');
+      };
+      applyFocusState();
+      focusBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const center = getFeatureCenter();
+        if (!center) return;
+        const map = getMap();
+        if (!map) return;
+        const currentZoom = map.getZoom();
+        map.flyTo({
+          center: [center.lng, center.lat],
+          zoom: Number.isFinite(currentZoom) ? Math.max(12, currentZoom) : 12,
+          duration: 600
+        });
       });
       aiBtn?.addEventListener('click', (e) => {
         if (!aiEnabled) return;
@@ -12527,6 +13565,20 @@
     const target = e.target;
     if (target && target.dataset && target.dataset.action === 'close') closeTeamMemberModal();
   });
+  trimMemberClose?.addEventListener('click', closeTrimMemberModal);
+  trimMemberModal?.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target && target.dataset && target.dataset.action === 'close') closeTrimMemberModal();
+  });
+  trimMemberModal?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeTrimMemberModal();
+      e.stopPropagation();
+    }
+  });
+  trimMemberRangeStart?.addEventListener('input', () => handleTrimMemberRangeInput('start'));
+  trimMemberRangeEnd?.addEventListener('input', () => handleTrimMemberRangeInput('end'));
+  trimMemberExtract?.addEventListener('click', handleTrimMemberExtract);
 
   refreshTrackersControlsState();
   updateTeamsSessionUI();
